@@ -261,6 +261,60 @@ public class TrinetraSession {
         TrinetraCommon.writeJsonFile(TrinetraCommon.GLOBAL_BRAIN_STATE, global);
     }
 
+    // ── Normalized Results ──
+
+    /**
+     * Read the normalized_results array from a session's brain state.
+     * Backward compatible: returns an empty list when the field is absent
+     * (older brain-state files).
+     */
+    public static List<Map<String, Object>> getNormalizedResults(String sessionName) {
+        Map<String, Object> state = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionBrainState(sessionName));
+        return TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);
+    }
+
+    /**
+     * Append one entry to the brain-state normalized_results array and
+     * persist atomically via TrinetraCommon.writeJsonFile.
+     *
+     * Entry shape: {device_id, vendor, test_id, raw_output,
+     *               normalized_result, timestamp}.  A missing timestamp
+     * is filled with the current UTC time.  All existing required
+     * brain-state fields are left untouched.
+     *
+     * @return true on success, false when the brain-state file is
+     *         missing/unreadable or the entry is invalid.
+     */
+    public static boolean appendNormalizedResult(String sessionName,
+                                                 Map<String, Object> entry) {
+        if (entry == null) return false;
+        Path statePath = TrinetraCommon.sessionBrainState(sessionName);
+        Map<String, Object> state = TrinetraCommon.readJsonFile(statePath);
+        if (state.isEmpty()) {
+            TrinetraCommon.logError(
+                "Cannot append normalized result, brain state not found: "
+                + statePath);
+            return false;
+        }
+
+        Map<String, Object> record = TrinetraCommon.newMap();
+        for (String key : NORMALIZED_RESULT_REQUIRED) {
+            Object v = entry.get(key);
+            if (v == null && "timestamp".equals(key)) v = TrinetraCommon.nowIso();
+            record.put(key, v);
+        }
+
+        List<Map<String, Object>> results =
+            TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);
+        results.add(record);
+        state.put(NORMALIZED_RESULTS_FIELD, results);
+
+        state.put("last_updated", TrinetraCommon.nowIso());
+        TrinetraCommon.writeJsonFile(statePath, state);   // atomic write
+        return true;
+    }
+
     // ── Schema Validation ──
 
     private static final List<String> SESSION_REQUIRED = List.of("session_name", "target", "created_at", "findings");
@@ -268,6 +322,13 @@ public class TrinetraSession {
         "byte_size", "estimated_tokens", "compression_count", "already_run_v_codes", "confirmed_findings",
         "suspected_findings", "counts", "latest_suggestion", "suggestion_history", "latest_score");
     private static final List<String> FINDING_REQUIRED = List.of("test_code", "tool", "target", "success");
+
+    // ── Normalized results (optional brain-state extension) ──
+    // Optional array; older files without it are treated as empty.
+    public static final String NORMALIZED_RESULTS_FIELD = "normalized_results";
+    private static final List<String> NORMALIZED_RESULT_REQUIRED =
+        List.of("device_id", "vendor", "test_id", "raw_output",
+                "normalized_result", "timestamp");
 
     /** Validate session JSON structure. Returns list of errors (empty = valid). */
     public static List<String> validateSession(String sessionName) {
@@ -337,6 +398,29 @@ public class TrinetraSession {
             }
         } else {
             errors.add("'counts' must be a JSON object");
+        }
+        // Optional normalized_results: absent on legacy files -> treated as
+        // empty, never a validation error.  Shape-checked only when present.
+        Object normalized = state.get(NORMALIZED_RESULTS_FIELD);
+        if (normalized != null) {
+            if (!(normalized instanceof List)) {
+                errors.add("'normalized_results' must be a list");
+            } else {
+                int i = 0;
+                for (Object item : (List<?>) normalized) {
+                    if (!(item instanceof Map)) {
+                        errors.add("normalized_results[" + i + "] must be a JSON object");
+                    } else {
+                        Map<?, ?> nm = (Map<?, ?>) item;
+                        for (String req : NORMALIZED_RESULT_REQUIRED) {
+                            if (!nm.containsKey(req)) {
+                                errors.add("normalized_results[" + i + "] missing field: " + req);
+                            }
+                        }
+                    }
+                    i++;
+                }
+            }
         }
         return errors;
     }
