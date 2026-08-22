@@ -66,6 +66,11 @@ public class Trinetra {
             return;
         }
 
+        // --user / -u <name>  (audit identity for this invocation)
+        // Falls back to the OS username rather than blocking execution;
+        // the chosen identity source is always logged.
+        String userId = extractUserId(argList);
+
         // -new <session> <target>
         int newIdx = argList.indexOf("-new");
         if (newIdx >= 0) {
@@ -75,6 +80,8 @@ public class Trinetra {
                 Map<String, Object> result = TrinetraSession.createSession(session, target);
                 if (result != null) {
                     System.out.println("Session created: " + session + " (target: " + target + ")");
+                    TrinetraAudit.sessionStart(userId,
+                        TrinetraCommon.sanitizeName(session), target);
                 } else {
                     System.err.println("Failed to create session: " + session);
                     System.exit(1);
@@ -88,13 +95,13 @@ public class Trinetra {
 
         // -pen -hex run <V-XXX> <session> <target>
         if (argList.contains("-pen")) {
-            handlePen(argList);
+            handlePen(argList, userId);
             return;
         }
 
         // -stat run <V-XXX> <session> <target> | run-all <session> <target> | status <session>
         if (argList.contains("-stat")) {
-            handleStat(argList);
+            handleStat(argList, userId);
             return;
         }
 
@@ -106,7 +113,7 @@ public class Trinetra {
 
         // -agr [cert] [session]
         if (argList.contains("-agr")) {
-            handleAgr(argList);
+            handleAgr(argList, userId);
             return;
         }
 
@@ -126,7 +133,32 @@ public class Trinetra {
         System.exit(1);
     }
 
-    private static void handlePen(List<String> args) {
+    /**
+     * Extract (and remove) the --user/-u <name> pair from the argument
+     * list.  Falls back to the OS username when absent; the identity
+     * source actually used is logged either way.
+     */
+    static String extractUserId(List<String> args) {
+        String explicit = null;
+        for (int i = 0; i < args.size(); i++) {
+            String a = args.get(i);
+            if ((a.equals("--user") || a.equals("-u")) && i + 1 < args.size()) {
+                explicit = args.get(i + 1);
+                args.remove(i);      // flag
+                args.remove(i);      // value
+                break;
+            }
+        }
+        if (explicit != null && !explicit.isBlank()) {
+            System.out.println("[audit] user: " + explicit + " (--user flag)");
+            return explicit;
+        }
+        String osUser = System.getProperty("user.name", "unknown");
+        System.out.println("[audit] user: " + osUser + " (OS username fallback)");
+        return osUser;
+    }
+
+    private static void handlePen(List<String> args, String userId) {
         int runIdx = args.indexOf("run");
         if (runIdx < 0) {
             System.err.println("Usage: trinetra -pen -hex run <V-XXX> <session> <target> [--dry-run]");
@@ -165,6 +197,8 @@ public class Trinetra {
             String status = TrinetraCommon.getString(finding, "status", "unknown");
             String summary = TrinetraCommon.getString(finding, "summary", null);
 
+            TrinetraAudit.testExecuted(userId, session, vCode, status);
+
             System.out.println("=== " + vCode + " Result ===");
             System.out.println("Status: " + status);
             System.out.println("Summary status: " + TrinetraCommon.getString(finding, "summary_status", "?"));
@@ -179,12 +213,13 @@ public class Trinetra {
             TrinetraBrain.updateBrain(sanitized);
             System.out.println("\nBrain updated.");
         } else {
+            TrinetraAudit.testExecuted(userId, session, vCode, "failed");
             System.err.println("Run failed — no finding record produced.");
             System.exit(1);
         }
     }
 
-    private static void handleStat(List<String> args) {
+    private static void handleStat(List<String> args, String userId) {
         if (args.contains("run")) {
             int runIdx = args.indexOf("run");
             if (runIdx + 3 >= args.size()) {
@@ -200,6 +235,7 @@ public class Trinetra {
             if (finding != null) {
                 String verdict = TrinetraCommon.getString(finding, "verdict", "unknown");
                 String detail = TrinetraCommon.getString(finding, "verdict_detail", "");
+                TrinetraAudit.testExecuted(userId, session, vCode, verdict);
                 System.out.println("=== " + vCode + " Stat Result ===");
                 System.out.println("Verdict: " + verdict.toUpperCase());
                 if (!detail.isEmpty()) System.out.println("Detail: " + detail);
@@ -220,6 +256,7 @@ public class Trinetra {
             String session = args.get(idx + 1);
             String target = args.get(idx + 2);
             TrinetraStat.statRunAll(session, target);
+            TrinetraAudit.testExecuted(userId, session, "run-all", "completed");
             return;
         }
 
@@ -338,7 +375,7 @@ public class Trinetra {
         System.exit(1);
     }
 
-    private static void handleAgr(List<String> args) {
+    private static void handleAgr(List<String> args, String userId) {
         int agrIdx = args.indexOf("-agr");
         String certMode = "default";
         String session = null;
@@ -366,6 +403,10 @@ public class Trinetra {
         // Generate both scorecard and detailed report
         String report = TrinetraAgr.generateReport(session, certMode);
         System.out.println(report);
+
+        // Session completion: final audit row linking to the brain-state chain
+        TrinetraAudit.sessionEnd(userId, session,
+            "report generated, cert=" + certMode);
 
         // Show where files were saved
         String sanitized = TrinetraCommon.sanitizeName(session);

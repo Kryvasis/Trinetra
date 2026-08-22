@@ -19,7 +19,8 @@ OUT_DIR       := out
 # Test classes with a main() entry point.  TrinetraChainStressWorker is
 # compiled but not listed here: it is a helper spawned by the concurrency
 # test, not a runnable suite.
-JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest
+JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest
+RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 
 # ================================================================
 # help -- show available targets
@@ -90,7 +91,7 @@ test-java: compile
 	for cls in $(JAVA_TEST_CLASSES); do \
 		root=$$(mktemp -d /tmp/trinetra_test_XXXXXX); \
 		echo "[$$cls]"; \
-		java -Dtrinetra.root="$$root" -cp $(OUT_DIR) $$cls || rc=1; \
+		java -Dtrinetra.root="$$root" -cp "$(RUNTIME_CP)" $$cls || rc=1; \
 		rm -rf "$$root"; \
 	done; \
 	if [ $$rc -eq 0 ]; then echo "[+] test-java: all suites passed"; \

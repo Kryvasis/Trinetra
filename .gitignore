@@ -14,6 +14,7 @@ Iskabon/iskabon_debug
 
 # Runtime scan/session output (regenerated per run)
 Iskabon/session/
+trinetra_audit.db*
 
 # Temp files
 *.tmp

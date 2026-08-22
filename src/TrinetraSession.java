@@ -605,6 +605,25 @@ public class TrinetraSession {
     }
 
     /**
+     * Latest known-good chain tip for a session (the hash a completed
+     * audit/report should reference), or null when the session has no
+     * normalized_results chain or the chain fails verification.
+     */
+    public static String getLatestChainHash(String sessionName) {
+        ChainVerifyResult v = verifyChain(sessionName);
+        if (!v.intact) return null;
+
+        Map<String, Object> state = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionBrainState(sessionName));
+        List<Map<String, Object>> entries =
+            TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);
+        if (entries.isEmpty()) return null;
+
+        Object tip = entries.get(entries.size() - 1).get(CHAIN_HASH_FIELD);
+        return tip instanceof String ? (String) tip : null;
+    }
+
+    /**
      * Verify the global brain-state snapshot chain: the stored chain_hash
      * must equal SHA256(stored previous_chain_hash + canonical snapshot).
      */
