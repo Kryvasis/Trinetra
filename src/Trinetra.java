@@ -66,6 +66,17 @@ public class Trinetra {
             return;
         }
 
+        // --list-tests: structured JSON catalog of runnable test ids
+        // (consumed by the future React UI via the Flask bridge).
+        if (argList.contains("--list-tests")) {
+            System.out.println(TrinetraStat.listTestsJson());
+            return;
+        }
+
+        // --tests <a,b,c> / --test-file <path> / --workers <N>
+        Set<String> testSelection = extractTestSelection(argList);
+        int workers = extractWorkers(argList);
+
         // --user / -u <name>  (audit identity for this invocation)
         // Falls back to the OS username rather than blocking execution;
         // the chosen identity source is always logged.
@@ -101,7 +112,7 @@ public class Trinetra {
 
         // -stat run <V-XXX> <session> <target> | run-all <session> <target> | status <session>
         if (argList.contains("-stat")) {
-            handleStat(argList, userId);
+            handleStat(argList, userId, testSelection, workers);
             return;
         }
 
@@ -131,6 +142,79 @@ public class Trinetra {
 
         System.err.println("Unknown command. Use 'trinetra -help' for usage.");
         System.exit(1);
+    }
+
+    /**
+     * Extract (and remove) --tests <id,id,...> from the argument list.
+     * Empty/absent -> null, meaning "no selection" (legacy run-everything).
+     */
+    static Set<String> extractTestSelection(List<String> args) {
+        return extractListArg(args, "--tests");
+    }
+
+    /**
+     * Extract (and remove) --test-file <path>; the file may hold one id
+     * per line or a comma-separated list; blank lines and #-comments are
+     * ignored.  Combined with any --tests ids into one ordered set.
+     */
+    static Set<String> extractTestSelectionWithFile(List<String> args) {
+        Set<String> out = new LinkedHashSet<>();
+        Set<String> inline = extractTestSelection(args);
+        if (inline != null) out.addAll(inline);
+
+        for (int i = 0; i < args.size(); i++) {
+            if (args.get(i).equals("--test-file") && i + 1 < args.size()) {
+                Path file = Path.of(args.get(i + 1));
+                args.remove(i);
+                args.remove(i);
+                try {
+                    for (String line : Files.readAllLines(file)) {
+                        String t = line.trim();
+                        if (t.isEmpty() || t.startsWith("#")) continue;
+                        for (String id : t.split(",")) {
+                            String idT = id.trim();
+                            if (!idT.isEmpty()) out.add(idT.toUpperCase());
+                        }
+                    }
+                } catch (IOException e) {
+                    System.err.println("Cannot read test file " + file + ": " + e.getMessage());
+                    System.exit(1);
+                }
+                break;
+            }
+        }
+        return out.isEmpty() ? null : out;
+    }
+
+    /** Extract (and remove) --workers <N>; default 4. */
+    static int extractWorkers(List<String> args) {
+        for (int i = 0; i < args.size(); i++) {
+            if (args.get(i).equals("--workers") && i + 1 < args.size()) {
+                int n;
+                try { n = Integer.parseInt(args.get(i + 1)); }
+                catch (NumberFormatException e) { n = 4; }
+                args.remove(i);
+                args.remove(i);
+                return Math.max(1, n);
+            }
+        }
+        return 4;
+    }
+
+    private static Set<String> extractListArg(List<String> args, String flag) {
+        for (int i = 0; i < args.size(); i++) {
+            if (args.get(i).equals(flag) && i + 1 < args.size()) {
+                Set<String> out = new LinkedHashSet<>();
+                for (String id : args.get(i + 1).split(",")) {
+                    String t = id.trim();
+                    if (!t.isEmpty()) out.add(t.toUpperCase());
+                }
+                args.remove(i);
+                args.remove(i);
+                return out;
+            }
+        }
+        return null;
     }
 
     /**
@@ -219,7 +303,8 @@ public class Trinetra {
         }
     }
 
-    private static void handleStat(List<String> args, String userId) {
+    private static void handleStat(List<String> args, String userId,
+                                   Set<String> testSelection, int workers) {
         if (args.contains("run")) {
             int runIdx = args.indexOf("run");
             if (runIdx + 3 >= args.size()) {
@@ -249,14 +334,17 @@ public class Trinetra {
         if (args.contains("run-all")) {
             int idx = args.indexOf("run-all");
             if (idx + 2 >= args.size()) {
-                System.err.println("Usage: trinetra -stat run-all <session> <target>");
+                System.err.println("Usage: trinetra -stat run-all <session> <target> [--tests <ids>] [--test-file <path>] [--workers <N>]");
                 System.exit(1);
                 return;
             }
             String session = args.get(idx + 1);
             String target = args.get(idx + 2);
-            TrinetraStat.statRunAll(session, target);
-            TrinetraAudit.testExecuted(userId, session, "run-all", "completed");
+
+            // Per-test audit rows are written inside the runner (Prompt 11
+            // path); selection comes from --tests/--test-file, parallelism
+            // from --workers (default 4).
+            TrinetraStat.statRunAll(session, target, testSelection, workers, userId);
             return;
         }
 

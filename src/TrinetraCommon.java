@@ -161,11 +161,17 @@ public class TrinetraCommon {
     }
 
     public static String[] execCommand(int timeoutSeconds, String... command) {
+        return execCommand(timeoutSeconds, null, command);
+    }
+
+    public static String[] execCommand(int timeoutSeconds, Map<String, String> extraEnv,
+                                       String... command) {
         Process proc = null;
         try {
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.redirectErrorStream(false);
             pb.environment().put("LC_ALL", "C");
+            if (extraEnv != null) pb.environment().putAll(extraEnv);
             proc = pb.start();
             final Process finalProc = proc;
 

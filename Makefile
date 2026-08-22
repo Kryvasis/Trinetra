@@ -19,7 +19,8 @@ OUT_DIR       := out
 # Test classes with a main() entry point.  TrinetraChainStressWorker is
 # compiled but not listed here: it is a helper spawned by the concurrency
 # test, not a runnable suite.
-JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest
+JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest \
+                     TrinetraTestSelectionTest TrinetraVendorConnectorTest
 RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 
 # ================================================================

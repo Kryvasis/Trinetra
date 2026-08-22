@@ -1,6 +1,7 @@
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.*;
 import java.util.regex.*;
 
 /**
@@ -397,6 +398,13 @@ public class TrinetraStat {
 
     // ── Execute a single stat test ──
     public static Map<String, Object> statRun(String code, String sessionName, String target) {
+        return statRun(code, sessionName, target, null);
+    }
+
+    /** statRun with optional extra environment (vendor connector vars). */
+    public static Map<String, Object> statRun(String code, String sessionName,
+                                              String target,
+                                              Map<String, String> extraEnv) {
         loadDefinitions();
 
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
@@ -432,8 +440,10 @@ public class TrinetraStat {
 
         // Execute the stat script
         // Script contract: bash stat_scripts/<code>.sh <target> <session_output_dir>
+        // Vendor connector context is injected via environment (Prompt 13).
         String sessionOutDir = TrinetraCommon.sessionDir(sanitized).toString();
-        String[] result = TrinetraCommon.execCommand(300, "bash", scriptPath.toString(), target, sessionOutDir);
+        String[] result = TrinetraCommon.execCommand(300, extraEnv,
+            "bash", scriptPath.toString(), target, sessionOutDir);
         String stdout = result[0];
         String stderr = result[1];
         int exitCode;
@@ -515,45 +525,203 @@ public class TrinetraStat {
 
     // ── Run all stat-owned tests ──
     public static List<Map<String, Object>> statRunAll(String sessionName, String target) {
+        return statRunAll(sessionName, target, null, 1, null);
+    }
+
+    /**
+     * Run a batch of tests with optional subset selection and optional
+     * parallelism.
+     *
+     * Selection semantics (Prompt 12):
+     *  - selection == null/empty  -> legacy behavior: every known test,
+     *    executed sequentially in code order (unchanged default).
+     *  - selection non-empty      -> ONLY those ids execute (never invoked
+     *    at all when unselected, so they cannot appear in findings,
+     *    already_run_v_codes, or any brain-state entry); runs proceed on a
+     *    thread pool of `workers` threads. Ids are routed to the stat
+     *    engine when defined there, otherwise to the hex (pen) engine when
+     *    a matching hex_scripts/V-*.sh exists; anything else is skipped
+     *    with a warning and leaves no trace.
+     *
+     * Each executed test produces one audit_log row via the Prompt 11
+     * SQLite path (when userId != null).
+     */
+    public static List<Map<String, Object>> statRunAll(String sessionName, String target,
+                                                       Set<String> selection, int workers,
+                                                       String userId) {
         loadDefinitions();
 
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
         List<Map<String, Object>> results = new ArrayList<>();
 
-        // Run tests in code order
-        List<String> sortedCodes = new ArrayList<>(testDefinitions.keySet());
-        Collections.sort(sortedCodes);
+        // ── Plan: decide which codes execute at all ──
+        List<String> allCodes = new ArrayList<>(testDefinitions.keySet());
+        Collections.sort(allCodes);
 
-        int total = sortedCodes.size();
-        int current = 0;
+        boolean selecting = selection != null && !selection.isEmpty();
 
-        for (String code : sortedCodes) {
-            current++;
-            TrinetraCommon.logInfo("[" + current + "/" + total + "] Running " + code + "...");
-            Map<String, Object> result = statRun(code, sanitized, target);
-            results.add(result);
-
-            String verdict = TrinetraCommon.getString(result, "verdict", "error");
-            System.out.println("  [" + current + "/" + total + "] " + code + " -> " + verdict.toUpperCase());
+        // ── Vendor connector resolution (Prompt 13) ──
+        // One resolution per batch: vendor is a per-session property.
+        // The resolved connector is propagated to test scripts via env
+        // vars (TRINETRA_VENDOR / TRINETRA_CONNECTOR) so bash-side device
+        // logic can branch without changing script positional contracts.
+        String finalVendor = TrinetraSession.getSessionFinalVendor(sanitized);
+        VendorConnector connector = VendorConnectorRegistry.resolve(finalVendor);
+        Map<String, String> vendorEnv = new HashMap<>();
+        vendorEnv.put("TRINETRA_VENDOR", connector.getVendorName());
+        vendorEnv.put("TRINETRA_VENDOR_REQUESTED", finalVendor);
+        vendorEnv.put("TRINETRA_CONNECTOR",
+            connector.getClass().getSimpleName());
+        try {
+            connector.connect(target, new HashMap<>());
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Connector connect failed ("
+                + connector.getVendorName() + "): " + e.getMessage());
         }
 
-        // Summary
+        List<String> plan = new ArrayList<>();
+        if (!selecting) {
+            plan.addAll(allCodes);
+        } else {
+            Set<String> wanted = new LinkedHashSet<>();
+            for (String s : selection) {
+                String c = s == null ? "" : s.trim().toUpperCase();
+                if (!c.isEmpty()) wanted.add(c);
+            }
+            for (String c : allCodes)
+                if (wanted.contains(c)) plan.add(c);
+
+            // Hex-family ids are runnable even without a stat definition.
+            for (String c : wanted)
+                if (!testDefinitions.containsKey(c) && TrinetraPen.isKnownVCode(c))
+                    plan.add(c);
+
+            for (String c : wanted)
+                if (!plan.contains(c))
+                    TrinetraCommon.logWarn("Skipping unknown test id: " + c);
+            Collections.sort(plan);
+        }
+
+        // ── Execute ──
+        boolean parallel = selecting && workers > 1 && plan.size() > 1;
+        if (!parallel) {
+            int total = plan.size(), current = 0;
+            for (String code : plan) {
+                current++;
+                TrinetraCommon.logInfo("[" + current + "/" + total + "] Running " + code + "...");
+                Map<String, Object> result = runOne(code, sanitized, target, vendorEnv);
+                results.add(result);
+                String verdict = resultVerdict(result);
+                System.out.println("  [" + current + "/" + total + "] "
+                    + code + " -> " + verdict.toUpperCase());
+            }
+        } else {
+            int nThreads = Math.min(workers, plan.size());
+            ExecutorService pool = Executors.newFixedThreadPool(nThreads);
+            TrinetraCommon.logInfo("Running " + plan.size() + " selected tests on "
+                + nThreads + " workers");
+            try {
+                List<Future<Map<String, Object>>> futures = new ArrayList<>();
+                for (String code : plan)
+                    futures.add(pool.submit(() ->
+                        runOne(code, sanitized, target, vendorEnv)));
+                for (Future<Map<String, Object>> f : futures)
+                    results.add(f.get());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                TrinetraCommon.logError("Parallel run interrupted: " + e.getMessage());
+            } catch (ExecutionException e) {
+                TrinetraCommon.logError("Parallel run failed: " + e.getCause());
+            } finally {
+                pool.shutdownNow();
+            }
+        }
+
+        // ── One audit row per executed test (Prompt 11 path) ──
+        if (userId != null) {
+            for (Map<String, Object> r : results) {
+                String code = TrinetraCommon.getString(r, "v_code",
+                    TrinetraCommon.getString(r, "test_code", "?"));
+                TrinetraAudit.testExecuted(userId, sanitized, code, resultVerdict(r));
+            }
+        }
+
+        try { connector.disconnect(); } catch (Exception ignored) {}
+
+        // ── Summary ──
         int pass = 0, fail = 0, review = 0, err = 0;
         for (Map<String, Object> r : results) {
-            String v = TrinetraCommon.getString(r, "verdict", "error");
-            switch (v) {
-                case "pass": pass++; break;
-                case "fail": fail++; break;
+            switch (resultVerdict(r)) {
+                case "pass": case "success": pass++; break;
+                case "fail": case "failed": fail++; break;
                 case "manual_review": review++; break;
                 default: err++; break;
             }
         }
 
         System.out.println("\n=== Stat Run Complete ===");
-        System.out.println("Total: " + total + " | Pass: " + pass + " | Fail: " + fail
+        System.out.println("Total: " + results.size() + " | Pass: " + pass + " | Fail: " + fail
             + " | Manual Review: " + review + " | Error: " + err);
 
         return results;
+    }
+
+    /** Route one test id to its engine and normalize the result map. */
+    private static Map<String, Object> runOne(String code, String sanitizedSession,
+                                              String target, Map<String, String> vendorEnv) {
+        if (testDefinitions.containsKey(code)) {
+            Map<String, Object> r = statRun(code, sanitizedSession, target, vendorEnv);
+            r.put("engine", "stat");
+            return r;
+        }
+        if (TrinetraPen.isKnownVCode(code)) {
+            Map<String, Object> r = TrinetraPen.run(code, sanitizedSession, target);
+            r.put("engine", "hex");
+            return r;
+        }
+        // Should not happen (planner filters), but stay safe and traceable.
+        Map<String, Object> skipped = TrinetraCommon.newMap();
+        skipped.put("v_code", code);
+        skipped.put("verdict", "skipped");
+        skipped.put("engine", "none");
+        return skipped;
+    }
+
+    private static String resultVerdict(Map<String, Object> result) {
+        String v = TrinetraCommon.getString(result, "verdict", "");
+        if (!v.isEmpty()) return v;
+        v = TrinetraCommon.getString(result, "status", "");
+        return v.isEmpty() ? "error" : v;
+    }
+
+    /**
+     * Structured catalog of every runnable test id, for --list-tests /
+     * future UI consumption: {id, description, category, engine} where
+     * engine is "stat" (defined in static_map/decision_engine) or "hex"
+     * (hex_scripts/V-*.sh only).
+     */
+    public static String listTestsJson() {
+        loadDefinitions();
+        List<Object> out = new ArrayList<>();
+        for (TestDefinition d : testDefinitions.values()) {
+            Map<String, Object> e = TrinetraCommon.newMap();
+            e.put("id", d.code);
+            e.put("description", d.name);
+            e.put("category", d.category);
+            e.put("engine", "stat");
+            out.add(e);
+        }
+        Set<String> seen = new HashSet<>(testDefinitions.keySet());
+        for (String v : TrinetraPen.listVCodes()) {
+            if (seen.contains(v)) continue;
+            Map<String, Object> e = TrinetraCommon.newMap();
+            e.put("id", v);
+            e.put("description", "");
+            e.put("category", "hex_script");
+            e.put("engine", "hex");
+            out.add(e);
+        }
+        return TrinetraJson.prettyJson(out);
     }
 
     // ── Status report ──

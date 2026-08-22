@@ -85,6 +85,16 @@ public class TrinetraSession {
     }
 
     public static boolean appendFinding(String sessionName, Map<String, Object> finding) {
+        // Same brain-state/session file family as appendNormalizedResult;
+        // the read-modify-write must hold the session lock or parallel
+        // test runs can lose findings (and their v_codes with them).
+        Boolean ok = withSessionStateLock(sessionName,
+            () -> doAppendFinding(sessionName, finding));
+        return Boolean.TRUE.equals(ok);
+    }
+
+    private static boolean doAppendFinding(String sessionName,
+                                           Map<String, Object> finding) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
         Path jsonPath = TrinetraCommon.sessionJson(sanitized);
         Map<String, Object> session = TrinetraCommon.readJsonFile(jsonPath);
@@ -101,7 +111,9 @@ public class TrinetraSession {
         session.put("status", "active");
 
         TrinetraCommon.writeJsonFile(jsonPath, session);
-        refreshBrainStateFromSession(sanitized);
+        // Already inside the session lock: use the unlocked variant so the
+        // FileChannel sidecar is not re-acquired/released mid-cycle.
+        doRefreshBrainStateFromSession(sanitized);
         refreshGlobalBrainState(sanitized, TrinetraCommon.getString(session, "target", ""), "finding_recorded");
         return true;
     }
@@ -602,6 +614,46 @@ public class TrinetraSession {
             }
         }
         return ChainVerifyResult.ok(entries.size());
+    }
+
+    /**
+     * Resolve the vendor_resolution.final_vendor recorded for a session.
+     * Lookup order: Trinetra session JSON first, then Iskabon's session
+     * output (Prompt 7 writer), falling back to "unknown" — which the
+     * connector registry maps to the generic connector.
+     */
+    public static String getSessionFinalVendor(String sessionName) {
+        String s = TrinetraCommon.sanitizeName(sessionName);
+
+        Map<String, Object> session = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionJson(s));
+        Object vr = session.get("vendor_resolution");
+        if (vr instanceof Map) {
+            String fv = TrinetraCommon.getString(vr, "final_vendor", "");
+            if (!fv.isBlank()) return fv;
+        }
+
+        Path iskabonDir = Path.of(TrinetraCommon.PROJECT_ROOT,
+                                  "Iskabon", "session", s);
+        if (Files.isDirectory(iskabonDir)) {
+            Path best = null;
+            try (var stream = Files.list(iskabonDir)) {
+                best = stream
+                    .filter(p -> p.getFileName().toString().endsWith(".json"))
+                    .max(java.util.Comparator.comparingLong(
+                        p -> p.toFile().lastModified()))
+                    .orElse(null);
+            } catch (IOException ignored) {}
+            if (best != null) {
+                Map<String, Object> doc = TrinetraCommon.readJsonFile(best);
+                Object vr2 = doc.get("vendor_resolution");
+                if (vr2 instanceof Map) {
+                    String fv2 = TrinetraCommon.getString(vr2, "final_vendor", "");
+                    if (!fv2.isBlank()) return fv2;
+                }
+            }
+        }
+        return "unknown";
     }
 
     /**

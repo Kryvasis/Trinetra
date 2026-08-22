@@ -54,7 +54,15 @@ public class TrinetraPen {
         TrinetraCommon.sessionLog(sanitizedSession, vCode, "START " + vCode + " against " + target);
 
         // Execute: bash V-XXX.sh <SESSION> <TARGET>
-        String[] result = TrinetraCommon.execCommand(120, "bash", scriptPath.toString(), sanitizedSession, target);
+        // Vendor connector context injected via environment (Prompt 13).
+        Map<String, String> vendorEnv = new HashMap<>();
+        String finalVendor = TrinetraSession.getSessionFinalVendor(sanitizedSession);
+        VendorConnector connector = VendorConnectorRegistry.resolve(finalVendor);
+        vendorEnv.put("TRINETRA_VENDOR", connector.getVendorName());
+        vendorEnv.put("TRINETRA_VENDOR_REQUESTED", finalVendor);
+        vendorEnv.put("TRINETRA_CONNECTOR", connector.getClass().getSimpleName());
+        String[] result = TrinetraCommon.execCommand(120, vendorEnv,
+            "bash", scriptPath.toString(), sanitizedSession, target);
         String stdout = result[0];
         String stderr = result[1];
         int exitCode;
