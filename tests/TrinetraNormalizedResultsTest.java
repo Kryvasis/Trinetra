@@ -162,6 +162,14 @@ public class TrinetraNormalizedResultsTest {
             "pre-score file reports only known latest_score error -> "
             + oldestErrors);
 
+        // ── (d) Hash chaining ───────────────────────────────────
+        System.out.println("\n(d) hash chain: genesis, 3-link chain, tamper detection");
+        testHashChaining(root);
+
+        // ── (e) Concurrent writers (threads + separate processes) ──
+        System.out.println("\n(e) concurrent writes: 8 threads + 4 JVM processes");
+        testConcurrentWrites(root);
+
         System.out.println();
         if (failures == 0) {
             System.out.println("[+] TrinetraNormalizedResultsTest: all tests passed");
@@ -169,6 +177,161 @@ public class TrinetraNormalizedResultsTest {
         }
         System.err.println("[-] TrinetraNormalizedResultsTest: " + failures + " failure(s)");
         System.exit(1);
+    }
+
+    /**
+     * Both concurrency models seen in this codebase:
+     *  - concurrent threads inside one JVM (in-process ReentrantLock),
+     *  - concurrent `java` processes (cross-process FileChannel lock).
+     * After all writers finish: no lost entries, verifyChain intact.
+     */
+    private static void testConcurrentWrites(Path root) throws Exception {
+        String name = "nrt_conc";
+        TrinetraSession.createSession(name, "10.0.1.1");
+        Map<String, Object> st = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionBrainState(name));
+        st.put("state", TrinetraSession.State.BRAIN_UPDATED.value);
+        st.put("latest_score", TrinetraCommon.mapOf("score", "50"));
+        TrinetraCommon.writeJsonFile(TrinetraCommon.sessionBrainState(name), st);
+
+        final int THREADS = 8, PER_THREAD = 5, PROCS = 4, PER_PROC = 5;
+        final int expectedTotal = THREADS * PER_THREAD + PROCS * PER_PROC;
+
+        // (i) threads within this JVM
+        java.util.concurrent.ExecutorService pool =
+            java.util.concurrent.Executors.newFixedThreadPool(THREADS);
+        java.util.concurrent.CountDownLatch go =
+            new java.util.concurrent.CountDownLatch(1);
+        List<java.util.concurrent.Future<Integer>> futures = new ArrayList<>();
+        for (int t = 0; t < THREADS; t++) {
+            final String tag = "t" + t;
+            futures.add(pool.submit(() -> {
+                go.await();
+                int ok = 0;
+                for (int i = 0; i < PER_THREAD; i++) {
+                    Map<String, Object> e = new LinkedHashMap<>();
+                    e.put("device_id", "dev-" + tag + "-" + i);
+                    e.put("vendor", "Cisco");
+                    e.put("test_id", "V-003");
+                    e.put("raw_output", "thread write " + tag + " " + i);
+                    e.put("normalized_result", "pass");
+                    e.put("timestamp", "2026-08-22T11:00:00Z");
+                    if (TrinetraSession.appendNormalizedResult(name, e)) ok++;
+                }
+                return ok;
+            }));
+        }
+        go.countDown();
+        int threadOk = 0;
+        for (var f : futures) threadOk += f.get();
+        pool.shutdown();
+        expect(pool.awaitTermination(60, java.util.concurrent.TimeUnit.SECONDS),
+            "thread pool drained");
+        expect(threadOk == THREADS * PER_THREAD,
+            "threads: all appends reported success (" + threadOk + "/"
+            + (THREADS * PER_THREAD) + ")");
+
+        // (ii) separate OS processes, each its own JVM
+        Path outCp = Paths.get(System.getProperty("java.class.path"))
+                          .toAbsolutePath();
+        String javaBin = ProcessHandle.current()
+                                      .info()
+                                      .command()
+                                      .orElse("java");
+        List<Process> procs = new ArrayList<>();
+        for (int w = 0; w < PROCS; w++) {
+            String tag = "p" + w;
+            ProcessBuilder pb = new ProcessBuilder(
+                javaBin, "-Dtrinetra.root=" + root.toAbsolutePath(),
+                "-cp", outCp.toString(),
+                "TrinetraChainStressWorker", name, tag,
+                String.valueOf(PER_PROC));
+            pb.inheritIO();
+            procs.add(pb.start());
+        }
+        int procOk = 0;
+        for (Process p : procs) {
+            expect(p.waitFor() == 0, "stress worker process exited 0");
+            procOk += PER_PROC;
+        }
+        expect(procOk == PROCS * PER_PROC,
+            "processes: all appends reported success (" + procOk
+            + "/" + (PROCS * PER_PROC) + ")");
+
+        // Verify: nothing lost, chain unbroken.
+        int actual = TrinetraSession.getNormalizedResults(name).size();
+        expect(actual == expectedTotal,
+            "no entries lost: expected " + expectedTotal
+            + ", found " + actual);
+
+        TrinetraSession.ChainVerifyResult v = TrinetraSession.verifyChain(name);
+        expect(v.intact && v.brokenAtIndex == -1,
+            "verifyChain intact after concurrent writes -> " + v);
+    }
+
+    /** Genesis handling, multi-link integrity, and break-point detection. */
+    private static void testHashChaining(Path root) throws Exception {
+        String genesis = TrinetraSession.sha256Hex("TRINETRA_GENESIS");
+
+        // Brand-new session: first entry must chain from the genesis hash.
+        String name = "nrt_chain";
+        TrinetraSession.createSession(name, "10.0.0.99");
+        Map<String, Object> st = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionBrainState(name));
+        st.put("state", TrinetraSession.State.BRAIN_UPDATED.value);
+        st.put("latest_score", TrinetraCommon.mapOf("score", "50"));
+        TrinetraCommon.writeJsonFile(TrinetraCommon.sessionBrainState(name), st);
+
+        Map<String, Object> first = sampleEntry("dev-c1");
+        first.put("timestamp", "2026-08-22T10:00:00Z");   // fixed for determinism
+        expect(TrinetraSession.appendNormalizedResult(name, first),
+            "chain session append #1");
+
+        String expectedFirst =
+            TrinetraSession.sha256Hex(genesis + TrinetraSession.canonicalJson(first));
+        Map<String, Object> reloaded = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionBrainState(name));
+        List<Map<String, Object>> links = TrinetraCommon.getList(
+            reloaded, TrinetraSession.NORMALIZED_RESULTS_FIELD);
+        expect(links.size() == 1, "one link present after genesis append");
+        expect(expectedFirst.equals(links.get(0).get("chain_hash")),
+            "first entry hash = SHA256(genesis + canonical(entry))");
+
+        // Two more appends build a 3-link chain.
+        Map<String, Object> second = sampleEntry("dev-c2");
+        second.put("timestamp", "2026-08-22T10:01:00Z");
+        Map<String, Object> third = sampleEntry("dev-c3");
+        third.put("timestamp", "2026-08-22T10:02:00Z");
+        expect(TrinetraSession.appendNormalizedResult(name, second), "append #2");
+        expect(TrinetraSession.appendNormalizedResult(name, third), "append #3");
+
+        reloaded = TrinetraCommon.readJsonFile(TrinetraCommon.sessionBrainState(name));
+        links = TrinetraCommon.getList(reloaded, TrinetraSession.NORMALIZED_RESULTS_FIELD);
+        expect(links.size() == 3, "three links persisted");
+
+        // Running tracker references the tip without a full re-walk.
+        String tip = (String) links.get(2).get("chain_hash");
+        expect(tip.equals(reloaded.get(TrinetraSession.PREVIOUS_CHAIN_HASH_FIELD)),
+            "previous_chain_hash tracker equals last entry's hash");
+
+        TrinetraSession.ChainVerifyResult v = TrinetraSession.verifyChain(name);
+        expect(v.intact && v.brokenAtIndex == -1,
+            "verifyChain intact on 3-link chain -> " + v);
+
+        // Global snapshot chain: created via refreshGlobalBrainState during
+        // createSession; must verify intact.
+        TrinetraSession.ChainVerifyResult g = TrinetraSession.verifyGlobalChain();
+        expect(g.intact, "verifyGlobalChain intact -> " + g);
+
+        // Tamper: rewrite entry [1]'s content WITHOUT updating any hash.
+        links.get(1).put("normalized_result", "TAMPERED");
+        reloaded.put(TrinetraSession.NORMALIZED_RESULTS_FIELD, links);
+        TrinetraCommon.writeJsonFile(TrinetraCommon.sessionBrainState(name), reloaded);
+
+        TrinetraSession.ChainVerifyResult broken = TrinetraSession.verifyChain(name);
+        expect(!broken.intact, "verifyChain detects tampering");
+        expect(broken.brokenAtIndex == 1,
+            "break point is exactly entry index 1 -> " + broken);
     }
 
     /** Old-format file: 13 fields, no latest_score, no normalized_results. */

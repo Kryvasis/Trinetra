@@ -13,7 +13,13 @@ SRC_DIR       := src
 OUT_DIR       := out
 
 # -- Phony targets ------------------------------------------------
-.PHONY: compile clean rebuild install uninstall run stop status logs test-api doctor test-gemini help
+.PHONY: compile clean rebuild install uninstall run stop status logs test-api doctor test-gemini help test-java test-cpp test
+
+# -- Java unit tests ----------------------------------------------
+# Test classes with a main() entry point.  TrinetraChainStressWorker is
+# compiled but not listed here: it is a helper spawned by the concurrency
+# test, not a runnable suite.
+JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest
 
 # ================================================================
 # help -- show available targets
@@ -72,6 +78,35 @@ clean:
 # rebuild -- clean + compile
 # ================================================================
 rebuild: clean compile
+
+# ================================================================
+# test-java -- compile tests/*.java against out/ and run each suite
+# Each suite runs against a throwaway -Dtrinetra.root temp dir so
+# real sessions/ are never touched.  Fails if any suite exits != 0.
+# ================================================================
+test-java: compile
+	javac -cp $(OUT_DIR) -d $(OUT_DIR) tests/*.java
+	@rc=0; \
+	for cls in $(JAVA_TEST_CLASSES); do \
+		root=$$(mktemp -d /tmp/trinetra_test_XXXXXX); \
+		echo "[$$cls]"; \
+		java -Dtrinetra.root="$$root" -cp $(OUT_DIR) $$cls || rc=1; \
+		rm -rf "$$root"; \
+	done; \
+	if [ $$rc -eq 0 ]; then echo "[+] test-java: all suites passed"; \
+	else echo "[-] test-java: FAILURE(S)"; fi; \
+	exit $$rc
+
+# ================================================================
+# test-cpp -- run Iskabon's C++ unit suites (own Makefile)
+# ================================================================
+test-cpp:
+	@$(MAKE) --no-print-directory -C Iskabon test
+
+# ================================================================
+# test -- combined: Java + C++ suites
+# ================================================================
+test: test-java test-cpp
 
 # ================================================================
 # doctor -- run system diagnostics via Trinetra

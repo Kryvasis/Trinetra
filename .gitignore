@@ -17,4 +17,5 @@ Iskabon/session/
 
 # Temp files
 *.tmp
+*.lock
 .DS_Store

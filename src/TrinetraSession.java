@@ -1,6 +1,13 @@
 import java.io.*;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.*;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 
 /**
  * Session lifecycle manager.
@@ -158,6 +165,17 @@ public class TrinetraSession {
 
     @SuppressWarnings("unchecked")
     public static void refreshBrainStateFromSession(String sessionName) {
+        // Same brain_state_<name>.json as appendNormalizedResult: every
+        // writer of that file must share the lock or stale reads can
+        // overwrite freshly appended chain links.
+        withSessionStateLock(sessionName, () -> {
+            doRefreshBrainStateFromSession(sessionName);
+            return null;
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void doRefreshBrainStateFromSession(String sessionName) {
         Path statePath = TrinetraCommon.sessionBrainState(sessionName);
         Map<String, Object> state = TrinetraCommon.readJsonFile(statePath);
         if (state.isEmpty()) return;
@@ -222,6 +240,14 @@ public class TrinetraSession {
 
     @SuppressWarnings("unchecked")
     public static void refreshGlobalBrainState(String sessionName, String target, String event) {
+        withGlobalStateLock(() -> {
+            doRefreshGlobalBrainState(sessionName, target, event);
+            return null;
+        });
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void doRefreshGlobalBrainState(String sessionName, String target, String event) {
         Map<String, Object> global = TrinetraCommon.readJsonFile(TrinetraCommon.GLOBAL_BRAIN_STATE);
         if (global.isEmpty()) {
             global = TrinetraCommon.newMap();
@@ -258,10 +284,92 @@ public class TrinetraSession {
         }
 
         global.put("last_updated", TrinetraCommon.nowIso());
+
+        // Chain-hash this snapshot: SHA256(previous_chain_hash + canonical
+        // snapshot). The payload excludes only the new chain_hash itself;
+        // previous_chain_hash is part of the hashed content.
+        String prevHash =
+            TrinetraCommon.getString(global, CHAIN_HASH_FIELD, GENESIS_HASH);
+        global.put(PREVIOUS_CHAIN_HASH_FIELD, prevHash);
+        global.remove(CHAIN_HASH_FIELD);
+        global.put(CHAIN_HASH_FIELD, sha256Hex(prevHash + canonicalJson(global)));
+
         TrinetraCommon.writeJsonFile(TrinetraCommon.GLOBAL_BRAIN_STATE, global);
     }
 
     // ── Normalized Results ──
+
+    // ── Write Concurrency ──
+    // Two layers, because both concurrency models occur in this codebase:
+    //  1. In-process: each `trinetra` test/CLI run may drive concurrent
+    //     threads in one JVM. FileChannel locks do NOT arbitrate threads
+    //     within a JVM (OverlappingFileLockException), so a per-scope
+    //     ReentrantLock serializes threads first.
+    //  2. Cross-process: every `trinetra` invocation is a separate OS
+    //     process (`exec java ... Trinetra`), so a dedicated <file>.lock
+    //     sidecar is locked via FileChannel.lock() for the whole
+    //     read-modify-write cycle. A stable sidecar inode is used because
+    //     atomic rename (atomicWriteFile) would silently drop a lock held
+    //     on the data file itself.
+    private static final ConcurrentHashMap<String, ReentrantLock> STATE_LOCKS =
+        new ConcurrentHashMap<>();
+
+    /** Serialize one full brain-state read-modify-write cycle for a session. */
+    public static <T> T withSessionStateLock(String sessionName,
+                                             Supplier<T> action) {
+        String key = TrinetraCommon.sanitizeName(
+            sessionName == null ? "" : sessionName);
+        ReentrantLock inProcess =
+            STATE_LOCKS.computeIfAbsent(key, k -> new ReentrantLock());
+        inProcess.lock();
+        try {
+            Path statePath = TrinetraCommon.sessionBrainState(sessionName);
+            Path lockPath =
+                statePath.resolveSibling(statePath.getFileName() + ".lock");
+            return withCrossProcessLock(lockPath, action);
+        } finally {
+            inProcess.unlock();
+        }
+    }
+
+    /** Serialize one full global brain-state read-modify-write cycle. */
+    public static <T> T withGlobalStateLock(Supplier<T> action) {
+        ReentrantLock inProcess = STATE_LOCKS.computeIfAbsent(
+            "__global__", k -> new ReentrantLock());
+        inProcess.lock();
+        try {
+            Path globalPath = TrinetraCommon.GLOBAL_BRAIN_STATE;
+            Path lockPath =
+                globalPath.resolveSibling(globalPath.getFileName() + ".lock");
+            return withCrossProcessLock(lockPath, action);
+        } finally {
+            inProcess.unlock();
+        }
+    }
+
+    /** Blocking OS-level lock on a stable sidecar file; never rewritten. */
+    private static <T> T withCrossProcessLock(Path lockPath, Supplier<T> action) {
+        FileChannel ch = null;
+        FileLock fl = null;
+        try {
+            Files.createDirectories(lockPath.getParent());
+            ch = FileChannel.open(lockPath, StandardOpenOption.CREATE,
+                                  StandardOpenOption.WRITE,
+                                  StandardOpenOption.READ);
+            fl = ch.lock();   // blocks until granted
+        } catch (IOException e) {
+            TrinetraCommon.logWarn("Cross-process lock unavailable for "
+                + lockPath + ": " + e.getMessage()
+                + " — proceeding under in-process lock only");
+        }
+        try {
+            return action.get();
+        } finally {
+            try { if (fl != null) fl.release(); } catch (IOException ignored) {}
+            try { if (ch != null) ch.close(); } catch (IOException ignored) {}
+        }
+    }
+
 
     /**
      * Read the normalized_results array from a session's brain state.
@@ -289,6 +397,16 @@ public class TrinetraSession {
     public static boolean appendNormalizedResult(String sessionName,
                                                  Map<String, Object> entry) {
         if (entry == null) return false;
+        // The whole read -> previous_chain_hash -> hash -> append -> write
+        // cycle must be atomic, or two writers can chain off the same stale
+        // previous_chain_hash and fork the chain.
+        Boolean ok = withSessionStateLock(sessionName,
+            () -> doAppendNormalizedResult(sessionName, entry));
+        return Boolean.TRUE.equals(ok);
+    }
+
+    private static boolean doAppendNormalizedResult(String sessionName,
+                                                    Map<String, Object> entry) {
         Path statePath = TrinetraCommon.sessionBrainState(sessionName);
         Map<String, Object> state = TrinetraCommon.readJsonFile(statePath);
         if (state.isEmpty()) {
@@ -307,12 +425,213 @@ public class TrinetraSession {
 
         List<Map<String, Object>> results =
             TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);
+
+        // Previous link: tracked hash first (no re-walk of the array);
+        // fall back to the last entry's hash for legacy/hand-edited files;
+        // genesis when this is the session's first entry.
+        Object tracked = state.get(PREVIOUS_CHAIN_HASH_FIELD);
+        String prevHash = tracked instanceof String && !((String) tracked).isBlank()
+            ? (String) tracked : null;
+        if (prevHash == null) {
+            prevHash = results.isEmpty()
+                ? GENESIS_HASH
+                : TrinetraCommon.getString(results.get(results.size() - 1),
+                                           CHAIN_HASH_FIELD, GENESIS_HASH);
+        }
+
+        // chain_hash = SHA256(previous_chain_hash + canonical(entry));
+        // hashed payload excludes the entry's own chain_hash.
+        record.put(CHAIN_HASH_FIELD, sha256Hex(prevHash + canonicalJson(record)));
+
         results.add(record);
         state.put(NORMALIZED_RESULTS_FIELD, results);
+        state.put(PREVIOUS_CHAIN_HASH_FIELD, record.get(CHAIN_HASH_FIELD));
 
         state.put("last_updated", TrinetraCommon.nowIso());
         TrinetraCommon.writeJsonFile(statePath, state);   // atomic write
         return true;
+    }
+
+    // ── Hash Chaining ──
+
+    /** Outcome of verifyChain / verifyGlobalChain. */
+    public static class ChainVerifyResult {
+        public final boolean intact;
+        public final int brokenAtIndex;   // -1 when intact
+        public final String detail;
+
+        private ChainVerifyResult(boolean intact, int brokenAtIndex, String detail) {
+            this.intact = intact;
+            this.brokenAtIndex = brokenAtIndex;
+            this.detail = detail;
+        }
+
+        static ChainVerifyResult ok(int entries) {
+            return new ChainVerifyResult(true, -1,
+                "chain intact (" + entries + " link" + (entries == 1 ? "" : "s") + ")");
+        }
+
+        static ChainVerifyResult broken(int index, String detail) {
+            return new ChainVerifyResult(false, index, detail);
+        }
+
+        @Override
+        public String toString() {
+            return (intact ? "INTACT: " : "BROKEN at index " + brokenAtIndex + ": ")
+                + detail;
+        }
+    }
+
+    /** Lowercase hex SHA-256 of the UTF-8 input. */
+    public static String sha256Hex(String input) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest =
+                md.digest(input.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JVM is missing SHA-256", e);
+        }
+    }
+
+    /**
+     * Canonical JSON: object keys sorted alphabetically at every level,
+     * no whitespace — same content always produces the same string.
+     */
+    public static String canonicalJson(Object val) {
+        StringBuilder sb = new StringBuilder();
+        appendCanonical(sb, val);
+        return sb.toString();
+    }
+
+    private static void appendCanonical(StringBuilder sb, Object val) {
+        if (val == null) {                       sb.append("null"); }
+        else if (val instanceof Map<?, ?> m) {
+            TreeMap<String, Object> sorted = new TreeMap<>();
+            for (Map.Entry<?, ?> e : m.entrySet())
+                sorted.put(String.valueOf(e.getKey()), e.getValue());
+            sb.append('{');
+            boolean first = true;
+            for (Map.Entry<String, Object> e : sorted.entrySet()) {
+                if (!first) sb.append(',');
+                first = false;
+                appendCanonical(sb, e.getKey());
+                sb.append(':');
+                appendCanonical(sb, e.getValue());
+            }
+            sb.append('}');
+        }
+        else if (val instanceof List<?> l) {
+            sb.append('[');
+            boolean first = true;
+            for (Object o : l) {
+                if (!first) sb.append(',');
+                first = false;
+                appendCanonical(sb, o);
+            }
+            sb.append(']');
+        }
+        else if (val instanceof String s)        { appendJsonString(sb, s); }
+        else if (val instanceof Boolean b)       { sb.append(b); }
+        else if (val instanceof Number n)        { sb.append(n); }
+        else                                     { appendJsonString(sb, val.toString()); }
+    }
+
+    private static void appendJsonString(StringBuilder sb, String s) {
+        sb.append('"');
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+            case '"':  sb.append("\\\""); break;
+            case '\\': sb.append("\\\\"); break;
+            case '\n': sb.append("\\n"); break;
+            case '\r': sb.append("\\r"); break;
+            case '\t': sb.append("\\t"); break;
+            default:
+                if (c < 0x20) sb.append(String.format("\\u%04x", (int) c));
+                else sb.append(c);
+            }
+        }
+        sb.append('"');
+    }
+
+    private static Map<String, Object> withoutField(Map<String, Object> entry) {
+        Map<String, Object> copy = new LinkedHashMap<>(entry);
+        copy.remove(CHAIN_HASH_FIELD);
+        return copy;
+    }
+
+    /**
+     * Walk the session's normalized_results entries in order, recomputing
+     * each chain_hash from its predecessor's stored hash (genesis for the
+     * first). Returns the first break point, or intact.
+     */
+    public static ChainVerifyResult verifyChain(String sessionName) {
+        Map<String, Object> state = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionBrainState(sessionName));
+        if (state.isEmpty()) {
+            return ChainVerifyResult.broken(-1,
+                "brain state not found or unreadable");
+        }
+
+        List<Map<String, Object>> entries =
+            TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);
+
+        String prevHash = GENESIS_HASH;
+        for (int i = 0; i < entries.size(); i++) {
+            Map<String, Object> e = entries.get(i);
+            String stored = TrinetraCommon.getString(e, CHAIN_HASH_FIELD, "");
+            String expected = sha256Hex(prevHash + canonicalJson(withoutField(e)));
+            if (!expected.equals(stored)) {
+                return ChainVerifyResult.broken(i,
+                    "entry hash mismatch (expected " + expected
+                    + ", stored " + stored + ")");
+            }
+            prevHash = stored;
+        }
+
+        // Tracker must reference the current tip of the chain.
+        if (!entries.isEmpty()) {
+            String tracker = state.get(PREVIOUS_CHAIN_HASH_FIELD) instanceof String
+                ? (String) state.get(PREVIOUS_CHAIN_HASH_FIELD) : null;
+            if (tracker != null && !tracker.equals(prevHash)) {
+                return ChainVerifyResult.broken(entries.size() - 1,
+                    "previous_chain_hash tracker mismatch");
+            }
+        }
+        return ChainVerifyResult.ok(entries.size());
+    }
+
+    /**
+     * Verify the global brain-state snapshot chain: the stored chain_hash
+     * must equal SHA256(stored previous_chain_hash + canonical snapshot).
+     */
+    public static ChainVerifyResult verifyGlobalChain() {
+        Map<String, Object> global =
+            TrinetraCommon.readJsonFile(TrinetraCommon.GLOBAL_BRAIN_STATE);
+        if (global.isEmpty()) {
+            return ChainVerifyResult.ok(0);   // nothing written yet
+        }
+        Object storedObj = global.get(CHAIN_HASH_FIELD);
+        Object prevObj = global.get(PREVIOUS_CHAIN_HASH_FIELD);
+        if (!(storedObj instanceof String)) {
+            return ChainVerifyResult.ok(0);   // legacy file, chain not yet established
+        }
+        if (!(prevObj instanceof String)) {
+            return ChainVerifyResult.broken(0, "missing previous_chain_hash");
+        }
+
+        Map<String, Object> payload = new LinkedHashMap<>(global);
+        payload.remove(CHAIN_HASH_FIELD);
+        String expected = sha256Hex((String) prevObj + canonicalJson(payload));
+        if (!expected.equals(storedObj)) {
+            return ChainVerifyResult.broken(0,
+                "snapshot hash mismatch (expected " + expected
+                + ", stored " + storedObj + ")");
+        }
+        return ChainVerifyResult.ok(1);
     }
 
     // ── Schema Validation ──
@@ -329,6 +648,12 @@ public class TrinetraSession {
     private static final List<String> NORMALIZED_RESULT_REQUIRED =
         List.of("device_id", "vendor", "test_id", "raw_output",
                 "normalized_result", "timestamp");
+
+    // ── Hash chain (tamper-evident write log) ──
+    // Optional fields; older files without them simply have no chain yet.
+    public static final String CHAIN_HASH_FIELD = "chain_hash";
+    public static final String PREVIOUS_CHAIN_HASH_FIELD = "previous_chain_hash";
+    public static final String GENESIS_HASH = sha256Hex("TRINETRA_GENESIS");
 
     /** Validate session JSON structure. Returns list of errors (empty = valid). */
     public static List<String> validateSession(String sessionName) {
