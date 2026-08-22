@@ -1,0 +1,39 @@
+=== V-010 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-010: Missing HSTS header ===
+Target: app.indiapost.gov.in
+[+] Resolved via 8.8.8.8: 45.127.75.252
+
+--- HTTPS (original target) ---
+HTTP/1.1 302 Moved Temporarily
+Date: Wed, 29 Jul 2026 15:36:53 GMT
+Connection: keep-alive
+Location: https://app.indiapost.gov.in/employeeportal
+Content-Length: 14
+
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Connection: keep-alive
+Vary: rsc, next-router-state-tree, next-router-prefetch, next-router-segment-prefetch, Accept-Encoding
+link: </employeeportal/_next/static/media/1755441e3a2fa970-s.p.woff2>; rel=preload; as="font"; crossorigin=""; type="font/woff2", </employeeportal/_next/static/css/1efea4b1e748e6bb.css>; rel=preload; as="style", </employeeportal/_next/static/css/565f4925fe90494c.css>; rel=preload; as="style", </employeeportal/_next/static/css/fde4ba03326c9096.css>; rel=preload; as="style"
+X-Powered-By: Next.js
+Cache-Control: private, no-cache, no-store, max-age=0, must-revalidate
+Date: Wed, 29 Jul 2026 15:36:53 GMT
+
+[FAIL] No Strict-Transport-Security header in any response
+
+--- HTTPS port 8443 ---
+
+[FAIL] No Strict-Transport-Security header in any response
+
+--- HTTP (checking redirect response for HSTS) ---
+
+[FAIL] No Strict-Transport-Security header in any response
+
+=== RESULT: HSTS NOT configured (missing from all responses) ===
+
+=== Scan Complete ===
+=== STDERR ===
+

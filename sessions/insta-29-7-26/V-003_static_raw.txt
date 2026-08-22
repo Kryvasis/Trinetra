@@ -1,0 +1,86 @@
+=== V-003 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-003: Open port scan ===
+Target: app.indiapost.gov.in
+=== DNS Resolution ===
+[+] Resolved via 8.8.8.8: 45.127.75.252
+
+=== Phase 1: TCP quick scan (top 100 ports) ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:42 -0400
+Nmap scan report for 45.127.75.252
+Host is up, received user-set (0.0049s latency).
+Not shown: 99 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE REASON
+53/tcp open  domain  syn-ack ttl 64
+
+Nmap done: 1 IP address (1 host up) scanned in 2.36 seconds
+
+=== Phase 2: TCP well-known ports (1-1024) ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:42 -0400
+Nmap scan report for 45.127.75.252
+Host is up (0.0054s latency).
+Not shown: 1023 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE VERSION
+53/tcp open  domain  ISC BIND 9.18.36
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 13.80 seconds
+
+=== Phase 3: TCP registered ports (1025-10000) ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:42 -0400
+Nmap scan report for 45.127.75.252
+Host is up.
+Skipping host 45.127.75.252 due to host timeout
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 120.70 seconds
+
+=== Phase 4: Default scripts on open ports ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:44 -0400
+Nmap scan report for 45.127.75.252
+Host is up (0.0086s latency).
+Not shown: 999 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE VERSION
+53/tcp open  domain  ISC BIND 9.18.36
+| dns-nsid: 
+|_  bind.version: 9.18.36
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 21.99 seconds
+
+=== Phase 5: UDP top 20 ports ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:45 -0400
+Nmap scan report for 45.127.75.252
+Host is up (0.0045s latency).
+
+PORT      STATE         SERVICE
+53/udp    open          domain
+67/udp    open|filtered dhcps
+68/udp    open|filtered dhcpc
+69/udp    open|filtered tftp
+123/udp   open|filtered ntp
+135/udp   open|filtered msrpc
+137/udp   open|filtered netbios-ns
+138/udp   open|filtered netbios-dgm
+139/udp   open|filtered netbios-ssn
+161/udp   open|filtered snmp
+162/udp   open|filtered snmptrap
+445/udp   open|filtered microsoft-ds
+500/udp   open|filtered isakmp
+514/udp   open|filtered syslog
+520/udp   open|filtered route
+631/udp   open|filtered ipp
+1434/udp  open|filtered ms-sql-m
+1900/udp  open|filtered upnp
+4500/udp  open|filtered nat-t-ike
+49152/udp open|filtered unknown
+
+Nmap done: 1 IP address (1 host up) scanned in 34.11 seconds
+
+=== Scan Complete ===
+=== STDERR ===
+

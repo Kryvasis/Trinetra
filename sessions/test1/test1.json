@@ -1,0 +1,26 @@
+{
+  "session_name": "test1",
+  "target": "example.com",
+  "created_at": "2026-07-25T06:07:37.896046967Z",
+  "updated_at": "2026-07-25T06:08:15.995617705Z",
+  "findings": [],
+  "status": "active",
+  "scorecard": {
+    "session_name": "test1",
+    "target": "example.com",
+    "score": 100,
+    "total_tests": 0,
+    "passed": 0,
+    "failed": 0,
+    "manual_review": 0,
+    "errors": 0,
+    "critical_count": 0,
+    "high_count": 0,
+    "medium_count": 0,
+    "low_count": 0,
+    "cve_matches": [],
+    "cert_issues": [],
+    "failed_tests": [],
+    "scored_at": "2026-07-25T06:08:15.987864676Z"
+  }
+}

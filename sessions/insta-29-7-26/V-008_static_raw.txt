@@ -1,0 +1,61 @@
+=== V-008 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+Connecting to 45.127.75.252
+depth=2 C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign Root CA - G1
+verify return:1
+depth=1 C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign SSL CA - G1
+verify return:1
+depth=0 C=IN, ST=Karnataka, L=Bengaluru, O=DEPARTMENT OF POSTS, CN=*.indiapost.gov.in
+verify return:1
+CONNECTED(00000003)
+---
+Certificate chain
+ 0 s:C=IN, ST=Karnataka, L=Bengaluru, O=DEPARTMENT OF POSTS, CN=*.indiapost.gov.in
+   i:C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign SSL CA - G1
+   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption
+   v:NotBefore: Sep 16 08:04:11 2025 GMT; NotAfter: Oct 11 08:04:11 2026 GMT
+ 1 s:C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign SSL CA - G1
+   i:C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign Root CA - G1
+   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption
+   v:NotBefore: Feb 18 18:30:00 2018 GMT; NotAfter: Feb 18 18:30:00 2033 GMT
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIIGljCCBX6gAwIBAgIPK1GShqWtD56QYLufRD/TMA0GCSqGSIb3DQEBCwUAMGYx
+CzAJBgNVBAYTAklOMRMwEQYDVQQLEwplbVNpZ24gUEtJMSUwIwYDVQQKExxlTXVk
+aHJhIFRlY2hub2xvZ2llcyBMaW1pdGVkMRswGQYDVQQDExJlbVNpZ24gU1NMIENB
+IC0gRzEwHhcNMjUwOTE2MDgwNDExWhcNMjYxMDExMDgwNDExWjBwMQswCQYDVQQG
+EwJJTjESMBAGA1UECAwJS2FybmF0YWthMRIwEAYDVQQHDAlCZW5nYWx1cnUxHDAa
+BgNVBAoME0RFUEFSVE1FTlQgT0YgUE9TVFMxGzAZBgNVBAMMEiouaW5kaWFwb3N0
+Lmdvdi5pbjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBALF4Pn7oIMS+
++wrmt53/unKPWls5QiUzSzhvMp7K1DR8JpmugP3eGdytkQzEg4MvCW4VzZXE0a2u
+I5WMSMegbbuuZQx7hRQ5v4Y9KzIIoFBg4RqvcQIl0iGjKyn7pYZfb/cEtToifILE
+H8F4E2ZM1KvKhpD0eOlQA5jAfIhW0j9zFDR/IXLy6i6UYqrPRmH2MiPYwC2j7Hlm
+F69mLAZMH6KTrGZdH5suZm7605JBYC/Wun/7n3m4uSiPqMok8eKTtTxgceU603Dp
+q45b+buhNHuwXulY1bUbL9wOuNuR6bLIt7YRDuNLic+2W5cn6bzQtBoLgBD01yia
+Mq9W3+tzFU0CAwEAAaOCAzUwggMxMB8GA1UdIwQYMBaAFDTR9zkyRUBKmSt9iWpX
+aa2Vr+M3MB0GA1UdDgQWBBS92oISdXjvy+wDx8c3Bvc4TduDojAvBgNVHREEKDAm
+ghBpbmRpYXBvc3QuZ292LmlughIqLmluZGlhcG9zdC5nb3YuaW4wDgYDVR0PAQH/
+BAQDAgWgMB0GA1UdJQQWMBQGCCsGAQUFBwMBBggrBgEFBQcDAjA4BgNVHR8EMTAv
+MC2gK6AphidodHRwOi8vY3JsLmVtc2lnbi5jb20/ZW1TaWduU1NMQ0FHMS5jcmww
+TgYDVR0gBEcwRTA5BgsrBgEEAYOOIQEAATAqMCgGCCsGAQUFBwIBFhxodHRwOi8v
+cmVwb3NpdG9yeS5lbVNpZ24uY29tMAgGBmeBDAECAjB0BggrBgEFBQcBAQRoMGYw
+IgYIKwYBBQUHMAGGFmh0dHA6Ly9vY3NwLmVtU2lnbi5jb20wQAYIKwYBBQUHMAKG
+NGh0dHA6Ly9yZXBvc2l0b3J5LmVtc2lnbi5jb20vY2VydHMvZW1TaWduU1NMQ0FH
+MS5jcnQwDAYDVR0TAQH/BAIwADCCAX8GCisGAQQB1nkCBAIEggFvBIIBawFpAHYA
+2AlVO5RPev/IFhlvlE+Fq7D4/F6HVSYPFdEucrtFSxQAAAGZUY2WJAAABAMARzBF
+AiEAxsCLhAIarbfCEOWTqVxIsMLBG/n3c/+ujUk4b25y++kCIC2v6Km7mBnbMUXl
+uAie3g574clFteGblV57YXdxEQCyAHYAyzj3FYl8hKFEX1vB3fvJbvKaWc1HCmkF
+hbDLFMMUWOcAAAGZUY2ZAwAABAMARzBFAiEAtqIcFKffL/4o3ygKYyPHZs2DfjF7
+Myml8TxOikVJRNgCIFqmbuM/Z7apEvdB9aKb0RbeDeohu45K/DA18DzVlbefAHcA
+rKswcGzr7IQx9BPS9JFfER5CJEOx8qaMTzwrO6ceAsMAAAGZUY2jYAAABAMASDBG
+AiEAsGyc23Lrp9Yw7MVRoVvq4Ghby4sFypXz9CcyBVeSV2QCIQDQukXodpPj1IBI
+--- cert details ---
+notBefore=Sep 16 08:04:11 2025 GMT
+notAfter=Oct 11 08:04:11 2026 GMT
+subject=C=IN, ST=Karnataka, L=Bengaluru, O=DEPARTMENT OF POSTS, CN=*.indiapost.gov.in
+issuer=C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign SSL CA - G1
+=== STDERR ===
+

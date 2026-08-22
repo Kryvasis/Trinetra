@@ -1,0 +1,9 @@
+this is the output of v-009.sh from stat_script: === V-017 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-017: Insecure password reset flow ===
+Tool: token_entropy_probe
+Target: https://app.indiapost.gov.in/
+Tool not found
+=== STDERR === is it desirable? if not then update the code else say perfect. is it the most robust version? I need a robust output. keep the original scripts intact run the script commands you can add new tools to give me the most robust output. use hydra and breach_list

@@ -1,0 +1,139 @@
+{
+  "session": "insta-29-7-26",
+  "target": "https://app.indiapost.gov.in/",
+  "generated_at": "2026-07-29T16:05:45.655901637Z",
+  "tool": "Kalki Beta",
+  "score": 64,
+  "total_tests": 10,
+  "passed": 5,
+  "failed": 0,
+  "manual_review": 5,
+  "errors": 0,
+  "critical": 1,
+  "high": 3,
+  "medium": 2,
+  "low": 4,
+  "cve_matches": [
+    "CVE-2015-4000",
+    "CVE-2013-0169",
+    "CVE-2013-2566",
+    "CVE-2015-2808"
+  ],
+  "findings": [
+    {
+      "v_code": "V-001",
+      "v_name": "Sensitive data via OSINT",
+      "verdict": "pass",
+      "severity": "low",
+      "owasp": "A01:2021 – Broken Access Control",
+      "tool": "theHarvester",
+      "evidence": "...07-29 09:25:03,501 - theHarvester.discovery.hudsonrocksearch - INFO - Hudson Rock search completed. Found 0 hosts, 0 IPs, 0 emails\n2026-07-29 09:25:03,502 - theHarvester.discovery.hudsonrocksearch - INFO - Hudson Rock processing completed successfully: 0 hosts, 0 IPs, 0 emails, 0 stealers\nRead proxies.yaml from /etc/theHarvester/proxies.yaml\n*******************************************************************\n*  _   _                                            _             *\n* | |_| |__   ___    /\\  /\\__ _ _ ____   _____  ___| |_ ___ _ __  *\n* | __|  _ \\ / _ \\  / /_/ / _` | '__\\ \\ / / _ \\/ __|...",
+      "cves": [],
+      "remediation": ""
+    },
+    {
+      "v_code": "V-002",
+      "v_name": "Sub-domain enumeration",
+      "verdict": "pass",
+      "severity": "low",
+      "owasp": "A05:2021 – Security Misconfiguration",
+      "tool": "subfinder",
+      "evidence": "images.app.indiapost.gov.in\nm.app.indiapost.gov.in\nns1.app.indiapost.gov.in\nportal.app.indiapost.gov.in\npreview.app.indiapost.gov.in\nbeta.app.indiapost.gov.in\nchat.app.indiapost.gov.in\ngo.app.indiapost.gov.in",
+      "cves": [],
+      "remediation": ""
+    },
+    {
+      "v_code": "V-003",
+      "v_name": "Open port/unnecessary service",
+      "verdict": "manual_review",
+      "severity": "medium",
+      "owasp": "A05:2021 – Security Misconfiguration",
+      "tool": "rustscan+nmap",
+      "evidence": "=== V-003: Open port scan ===\nTarget: app.indiapost.gov.in\n=== DNS Resolution ===\n[+] Resolved via 8.8.8.8: 45.127.75.252\n\n=== Phase 1: TCP quick scan (top 100 ports) ===\nStarting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:42 -0400\nNmap scan report for 45.127.75.252\nHost is up, received user-set (0.0049s latency).\nNot shown: 99 filtered tcp ports (no-response)\nSome closed ports may be reported as filtered due to --defeat-rst-ratelimit\nPORT   STATE SERVICE REASON\n53/tcp open  domain  syn-ack",
+      "cves": [],
+      "remediation": "Close or firewall unnecessary ports. Restrict services to least-privilege. Implement network segmentation."
+    },
+    {
+      "v_code": "V-004",
+      "v_name": "DNS spoofing",
+      "verdict": "pass",
+      "severity": "high",
+      "owasp": "A07:2021 – Identification and Authentication Failures",
+      "tool": "dig+spoof_probe",
+      "evidence": "...===\nTool: dig+spoof_probe\nTarget: https://app.indiapost.gov.in/\nHost: app.indiapost.gov.in\n[+] dig found: /usr/bin/dig\n\n=== Test 1: DNSSEC Validation ===\n[WARN] No DNSSEC validation detected - spoofing possible\n\n=== Test 2: Response Consistency (Multi-Resolver) ===\n  8.8.8.8 -> 45.127.75.252\n  1.1.1.1 -> 45.127.75.252\n  9.9.9.9 -> 45.127.75.252\n  208.67.222.222 -> 45.127.75.252\n[PASS] All resolvers returned consistent IP: 45.127.75.252\n\n=== Test 3: TTL Anomaly Detection ===\n  8.8.8.8 TTL: 252s\n  1.1.1.1 TTL: 252s\n  9.9.9.9 TTL: 252s\n  208.67.222.222 TTL: 252s\n[PASS] TTL values consistent (dif...",
+      "cves": [],
+      "remediation": ""
+    },
+    {
+      "v_code": "V-005",
+      "v_name": "Banner grabbing/fingerprinting",
+      "verdict": "pass",
+      "severity": "low",
+      "owasp": "A05:2021 – Security Misconfiguration",
+      "tool": "nmap -sV",
+      "evidence": "=== V-005: Banner grabbing / fingerprinting ===\nTarget: app.indiapost.gov.in\n[+] Resolved via 8.8.8.8: 45.127.75.252\n\n=== Phase 1: TCP service version scan (top 1000 ports) ===\nStarting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:54 -0400\nNmap scan report for 45.127.75.252\nHost is up, received user-set (0.014s latency).\nNot shown: 999 filtered tcp ports (no-response)\nSome closed ports may be reported as filtered due to --defeat-rst-ratelimit\nPORT   STATE SERVICE REASON         VERSION\n53/tcp",
+      "cves": [],
+      "remediation": "Suppress version banners in server configuration. Disable server signature and expose HTTP header version info."
+    },
+    {
+      "v_code": "V-006",
+      "v_name": "Weak TLS/SSL version",
+      "verdict": "manual_review",
+      "severity": "high",
+      "owasp": "A02:2021 – Cryptographic Failures",
+      "tool": "testssl.sh",
+      "evidence": "=== V-006: Weak TLS/SSL version ===\nTarget: app.indiapost.gov.in\n[+] Resolved via 8.8.8.8: 45.127.75.252\n\n=== Method 1: testssl.sh ===\n[0;35m\n'--fast' can have some undesired side effects thus it is not recommended to use anymore\n[m\n[7m Start 2026-07-29 11:04:41        -->> 45.127.75.252:443 (app.indiapost.gov.in) <<--[m\n\n rDNS (45.127.75.252):   --/usr/local/bin/testssl.sh: connect: Interrupted system call\n/usr/local/bin/testssl.sh: line 12076: /dev/tcp/45.127.75.252/443: Interrupted system",
+      "cves": [],
+      "remediation": "Disable SSLv3, TLS 1.0, and TLS 1.1. Enforce TLS 1.2+ minimum. Update server configuration."
+    },
+    {
+      "v_code": "V-007",
+      "v_name": "Weak cipher suite",
+      "verdict": "manual_review",
+      "severity": "high",
+      "owasp": "A02:2021 – Cryptographic Failures",
+      "tool": "testssl.sh",
+      "evidence": "...s it is not recommended to use anymore\n[1m LOGJAM[m (CVE-2015-4000), experimental      [0;32mnot vulnerable (OK):[m no DH EXPORT ciphers, no common prime detected\n[1m LUCKY13[m (CVE-2013-0169), experimental     potentially [1;33mVULNERABLE[m, uses obsolete cipher block chaining ciphers with TLS, see server prefs.\n[1m RC4[m (CVE-2013-2566, CVE-2015-2808)        [0;35mLocal problem: No RC4 Ciphers configured in /usr/bin/openssl[m\n\n=== Method 2: openssl weak cipher probes ===\n\n--- Port 443 ---\n[FAIL] NULL: ACCEPTED (connection succeeded)\n[PASS] EXPORT: rejected\n[FAIL] aNULL: ACCEPTED...",
+      "cves": [
+        "CVE-2015-4000",
+        "CVE-2013-0169",
+        "CVE-2013-2566",
+        "CVE-2015-2808"
+      ],
+      "remediation": "Remove support for NULL, EXPORT, RC4, DES, and 3DES cipher suites. Prefer AEAD ciphers (AES-GCM, ChaCha20)."
+    },
+    {
+      "v_code": "V-008",
+      "v_name": "Expired/self-signed certificate",
+      "verdict": "manual_review",
+      "severity": "low",
+      "owasp": "A02:2021 – Cryptographic Failures",
+      "tool": "openssl s_client",
+      "evidence": "Connecting to 45.127.75.252\ndepth=2 C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign Root CA - G1\nverify return:1\ndepth=1 C=IN, OU=emSign PKI, O=eMudhra Technologies Limited, CN=emSign SSL CA - G1\nverify return:1\ndepth=0 C=IN, ST=Karnataka, L=Bengaluru, O=DEPARTMENT OF POSTS, CN=*.indiapost.gov.in\nverify return:1\nCONNECTED(00000003)\n---\nCertificate chain\n 0 s:C=IN, ST=Karnataka, L=Bengaluru, O=DEPARTMENT OF POSTS, CN=*.indiapost.gov.in\n   i:C=IN, OU=emSign PKI, O=eMudhra Technologi",
+      "cves": [],
+      "remediation": "Replace self-signed certificates with CA-signed certificates. Renew expiring certificates promptly."
+    },
+    {
+      "v_code": "V-010",
+      "v_name": "Missing HSTS header",
+      "verdict": "manual_review",
+      "severity": "medium",
+      "owasp": "A05:2021 – Security Misconfiguration",
+      "tool": "curl -I",
+      "evidence": "...ntrol: private, no-cache, no-store, max-age=0, must-revalidate\nDate: Wed, 29 Jul 2026 15:36:53 GMT\n\n[FAIL] No Strict-Transport-Security header in any response\n\n--- HTTPS port 8443 ---\n\n[FAIL] No Strict-Transport-Security header in any response\n\n--- HTTP (checking redirect response for HSTS) ---\n\n[FAIL] No Strict-Transport-Security header in any response\n\n=== RESULT: HSTS NOT configured (missing from all responses) ===\n\n=== Scan Complete ===",
+      "cves": [],
+      "remediation": "Add Strict-Transport-Security header with appropriate max-age (e.g., 31536000). Include includeSubDomains and preload."
+    },
+    {
+      "v_code": "V-012",
+      "v_name": "Default credentials",
+      "verdict": "pass",
+      "severity": "critical",
+      "owasp": "A07:2021 – Identification and Authentication Failures",
+      "tool": "hydra",
+      "evidence": "...302\n\n=== Phase 6: HTTP login pages ===\n\n--- https port 443 ---\n\n=== RESULT: No default credentials found ===\n\n=== Scan Complete ===",
+      "cves": [],
+      "remediation": "Change all default credentials immediately. Implement unique passwords per service. Disable unused accounts."
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+#!/bin/bash
+# Trinetra Beta — global wrapper script
+# Installed to ~/.local/bin/trinetra via `make install`
+TRINETRA_ROOT="/home/kali/Desktop/Trinetra"
+exec java -Dtrinetra.root="$TRINETRA_ROOT" -cp "$TRINETRA_ROOT/out" Trinetra "$@"

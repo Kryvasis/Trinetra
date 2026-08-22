@@ -1,0 +1,113 @@
+{
+  "last_updated": "2026-07-30T15:03:05.885567846Z",
+  "active_sessions": [
+    "test1",
+    "demo",
+    "ses27_07_26",
+    "insta-29-7-26"
+  ],
+  "session_count": 4,
+  "high_risk_sessions": [],
+  "recent_activity": [
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-29T15:55:36.142692594Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:18:50.495109413Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:24:20.236903150Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:31:30.605185212Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:31:42.419551701Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:38:06.301722532Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:40:18.096658581Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:42:08.777775914Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:44:45.898281225Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T13:53:15.653535074Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:01:19.150830303Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:02:44.608866647Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:10:51.174749252Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:17:40.690597542Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:22:22.605849525Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:51:36.928521482Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:54:58.161568038Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:55:42.475630746Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T14:59:26.566826142Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "insta-29-7-26",
+      "timestamp": "2026-07-30T15:03:05.885441359Z",
+      "event": "finding_recorded"
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+=== V-005 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-005: Banner grabbing / fingerprinting ===
+Target: app.indiapost.gov.in
+[+] Resolved via 8.8.8.8: 45.127.75.252
+
+=== Phase 1: TCP service version scan (top 1000 ports) ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:54 -0400
+Nmap scan report for 45.127.75.252
+Host is up, received user-set (0.014s latency).
+Not shown: 999 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE REASON         VERSION
+53/tcp open  domain  syn-ack ttl 64 ISC BIND 9.18.36
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 16.82 seconds
+
+=== Phase 2: Aggressive version probe (-sV --version-all) ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:54 -0400
+Nmap scan report for 45.127.75.252
+Host is up (0.040s latency).
+Not shown: 999 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE VERSION
+53/tcp open  domain  ISC BIND 9.18.36
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 18.11 seconds
+
+=== Phase 3: Banner-grabbing NSE scripts ===
+Starting Nmap 7.99 ( https://nmap.org ) at 2026-07-29 10:55 -0400
+Nmap scan report for 45.127.75.252
+Host is up (0.0096s latency).
+Not shown: 999 filtered tcp ports (no-response)
+Some closed ports may be reported as filtered due to --defeat-rst-ratelimit
+PORT   STATE SERVICE VERSION
+53/tcp open  domain  ISC BIND 9.18.36
+
+Service detection performed. Please report any incorrect results at https://nmap.org/submit/ .
+Nmap done: 1 IP address (1 host up) scanned in 31.98 seconds
+
+=== Phase 4: HTTP/HTTPS header fingerprinting ===
+
+=== Phase 5: Raw banner grab (netcat) ===
+
+=== Phase 6: SSL certificate info ===
+
+=== Scan Complete ===
+=== STDERR ===
+

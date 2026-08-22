@@ -1,0 +1,43 @@
+=== V-018 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-018: Session fixation ===
+Target: app.indiapost.gov.in
+
+=== Test 1: Login Endpoint Discovery ===
+[+] Login endpoint found: https://app.indiapost.gov.in/employeeportal/login
+
+=== Test 2: Pre-Auth Session Capture ===
+[INFO] Pre-auth cookies: 
+[INFO] No session cookie captured pre-auth
+
+=== Test 3: Session Fixation Test ===
+[INFO] Session from fresh request: 
+[INFO] Could not determine form fields
+
+=== Test 4: Session Rotation Analysis ===
+[WARN] SameSite attribute missing
+
+=== Test 5: Session Consistency Test ===
+
+=== Test 6: Session Token in URL ===
+[PASS] No session token in URL
+
+=== Test 7: Session Cookie Scope ===
+
+=== Test 8: Session Configuration ===
+[WARN] Secure flag may be missing
+[WARN] HttpOnly flag may be missing
+
+=== Test 9: Hydra Session Test ===
+
+=== Test 10: Cookie Injection Test ===
+[INFO] No session cookie in response
+
+=== Summary ===
+Login endpoint: https://app.indiapost.gov.in/employeeportal/login
+Pre-auth session: none
+[PASS] Session management appears secure
+=== STDERR ===
+

@@ -1,0 +1,20 @@
+# Compiled Java output
+out/
+
+# C++ build artifacts
+Iskabon/build/
+Iskabon/iskabon
+Iskabon/iskabon_debug
+
+# Object files / binaries
+*.o
+*.class
+*.so
+*.a
+
+# Runtime scan/session output (regenerated per run)
+Iskabon/session/
+
+# Temp files
+*.tmp
+.DS_Store

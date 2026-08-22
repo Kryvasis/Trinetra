@@ -1,0 +1,23 @@
+=== V-012 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-012: Default credentials ===
+Target: app.indiapost.gov.in
+[+] Resolved via 8.8.8.8: 45.127.75.252
+
+=== Phase 1: Service detection ===
+(nmap: no open services detected)
+
+=== Phase 1b: curl-based service detection ===
+[+] https://app.indiapost.gov.in:443/ -> HTTP 302
+
+=== Phase 6: HTTP login pages ===
+
+--- https port 443 ---
+
+=== RESULT: No default credentials found ===
+
+=== Scan Complete ===
+=== STDERR ===
+

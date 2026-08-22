@@ -1,0 +1,12 @@
+=== V-013 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-013: Weak password policy ===
+Target: app.indiapost.gov.in
+
+=== Test 1: Registration Page Discovery ===
+[-] No registration page found (password policy test skipped)
+[INFO] PASS - no registration endpoint to test
+=== STDERR ===
+

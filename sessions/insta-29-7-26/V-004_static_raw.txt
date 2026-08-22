@@ -1,0 +1,41 @@
+=== V-004 ===
+Target: https://app.indiapost.gov.in/
+Exit code: 0
+=== STDOUT ===
+=== V-004: DNS spoofing ===
+Tool: dig+spoof_probe
+Target: https://app.indiapost.gov.in/
+Host: app.indiapost.gov.in
+[+] dig found: /usr/bin/dig
+
+=== Test 1: DNSSEC Validation ===
+[WARN] No DNSSEC validation detected - spoofing possible
+
+=== Test 2: Response Consistency (Multi-Resolver) ===
+  8.8.8.8 -> 45.127.75.252
+  1.1.1.1 -> 45.127.75.252
+  9.9.9.9 -> 45.127.75.252
+  208.67.222.222 -> 45.127.75.252
+[PASS] All resolvers returned consistent IP: 45.127.75.252
+
+=== Test 3: TTL Anomaly Detection ===
+  8.8.8.8 TTL: 252s
+  1.1.1.1 TTL: 252s
+  9.9.9.9 TTL: 252s
+  208.67.222.222 TTL: 252s
+[PASS] TTL values consistent (diff: 0s)
+
+=== Test 4: Bogus Response Rejection ===
+[PASS] Response received normally
+
+=== Test 5: Open Resolver Check ===
+  8.8.8.8 allows recursive queries (normal for public DNS)
+  1.1.1.1 allows recursive queries (normal for public DNS)
+
+=== Test 6: Cache Poisoning Indicators ===
+[PASS] No wildcard DNS response detected
+
+=== Summary ===
+[PASS] DNS appears resistant to spoofing
+=== STDERR ===
+
