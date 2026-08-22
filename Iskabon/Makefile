@@ -58,14 +58,26 @@ clean:
 	@echo "[+] Cleaned"
 
 # ── Tests ─────────────────────────────────────────────────
-TEST_SRCS := tests/banner_probe_test.cpp
-TEST_BINS := $(BUILD)/banner_probe_test
+TEST_SRCS := tests/banner_probe_test.cpp tests/snmp_probe_test.cpp \
+             tests/vendor_resolver_test.cpp
+TEST_BINS := $(BUILD)/banner_probe_test $(BUILD)/snmp_probe_test \
+             $(BUILD)/vendor_resolver_test
 
-$(BUILD)/banner_probe_test: $(TEST_SRCS) $(BUILD)/probes/banner_probe.o
+$(BUILD)/banner_probe_test: tests/banner_probe_test.cpp $(BUILD)/probes/banner_probe.o
+	@mkdir -p $(dir $@)
+	$(CXX) $(STD) $(WARN) -I./include $^ -o $@ -lpthread
+
+$(BUILD)/snmp_probe_test: tests/snmp_probe_test.cpp $(BUILD)/probes/snmp_probe.o
+	@mkdir -p $(dir $@)
+	$(CXX) $(STD) $(WARN) -I./include $^ -o $@ -lpthread
+
+$(BUILD)/vendor_resolver_test: tests/vendor_resolver_test.cpp $(BUILD)/vendor_resolver/vendor_resolver.o
 	@mkdir -p $(dir $@)
 	$(CXX) $(STD) $(WARN) -I./include $^ -o $@ -lpthread
 
 test: $(TARGET) $(TEST_BINS)
 	@./$(BUILD)/banner_probe_test
+	@./$(BUILD)/snmp_probe_test
+	@./$(BUILD)/vendor_resolver_test
 
 .PHONY: all debug install uninstall clean test
