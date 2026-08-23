@@ -513,6 +513,20 @@ public class TrinetraStat {
         if (appended) {
             TrinetraCommon.logInfo(code + " -> " + verdict.name() + " (appended to session)");
             TrinetraCommon.sessionLog(sanitized, code, "STAT_DONE verdict=" + verdict.name());
+
+            // Append to normalized_results (tamper-evident chain, Prompt 8-10).
+            // This is additive — findings are already written above; this
+            // populates the second field so chain_hash / verifyChain()
+            // are maintained during real CLI runs, not just unit tests.
+            String vendor = TrinetraSession.getSessionFinalVendor(sanitized);
+            Map<String, Object> normalizedEntry = TrinetraCommon.newMap();
+            normalizedEntry.put("device_id", target);
+            normalizedEntry.put("vendor", vendor);
+            normalizedEntry.put("test_id", code);
+            normalizedEntry.put("raw_output", stdout);
+            normalizedEntry.put("normalized_result", verdict.name().toLowerCase());
+            // timestamp auto-filled by appendNormalizedResult
+            TrinetraSession.appendNormalizedResult(sanitized, normalizedEntry);
         } else {
             TrinetraCommon.logError(code + " -> Failed to append finding to session JSON");
         }

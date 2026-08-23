@@ -21,7 +21,7 @@ OUT_DIR       := out
 # test, not a runnable suite.
 JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest \
                      TrinetraTestSelectionTest TrinetraVendorConnectorTest \
-                     TrinetraComplianceTest
+                     TrinetraComplianceTest TrinetraStatNormalizedResultsTest
 RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 
 # ================================================================

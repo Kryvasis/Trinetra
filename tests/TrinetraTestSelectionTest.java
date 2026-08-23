@@ -122,8 +122,9 @@ public class TrinetraTestSelectionTest {
         expect(pool.awaitTermination(120, TimeUnit.SECONDS), "pool drained");
 
         expect(appended == 9, "no concurrent appends lost (" + appended + "/9)");
-        expect(TrinetraSession.getNormalizedResults("tsel_c").size() == 9,
-            "normalized_results count intact");
+        // 9 from appender threads + 4 from statRun (one per test executed)
+        expect(TrinetraSession.getNormalizedResults("tsel_c").size() == 13,
+            "normalized_results count intact (9 thread appends + 4 from statRun)");
         expect(ranCodes("tsel_c").equals(CODES),
             "all four selected tests ran under parallelism");
         TrinetraSession.ChainVerifyResult v = TrinetraSession.verifyChain("tsel_c");
