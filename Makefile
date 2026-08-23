@@ -20,7 +20,8 @@ OUT_DIR       := out
 # compiled but not listed here: it is a helper spawned by the concurrency
 # test, not a runnable suite.
 JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest \
-                     TrinetraTestSelectionTest TrinetraVendorConnectorTest
+                     TrinetraTestSelectionTest TrinetraVendorConnectorTest \
+                     TrinetraComplianceTest
 RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 
 # ================================================================

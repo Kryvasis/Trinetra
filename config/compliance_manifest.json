@@ -1,0 +1,164 @@
+{
+  "V-003": {
+    "description": "Open port/unnecessary service detection",
+    "frameworks": {
+      "ISO27001": ["A.13.1.1", "A.9.4.1"],
+      "NIST_800-53": ["AC-4", "CM-7"],
+      "PCI-DSS": ["1.2.1"],
+      "SOC2": ["CC6.1", "CC6.6"]
+    }
+  },
+  "V-006": {
+    "description": "Weak TLS/SSL version (SSLv3, TLS 1.0, TLS 1.1)",
+    "frameworks": {
+      "ISO27001": ["A.10.1.1", "A.14.1.2"],
+      "NIST_800-53": ["SC-8", "SC-13"],
+      "PCI-DSS": ["4.1"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-007": {
+    "description": "Weak cipher suite (NULL, EXPORT, RC4, DES, MD5)",
+    "frameworks": {
+      "ISO27001": ["A.10.1.1"],
+      "NIST_800-53": ["SC-13", "SC-12"],
+      "PCI-DSS": ["4.1"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-008": {
+    "description": "Expired or self-signed TLS certificate",
+    "frameworks": {
+      "ISO27001": ["A.10.1.2"],
+      "NIST_800-53": ["SC-17"],
+      "PCI-DSS": ["4.1"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-012": {
+    "description": "Default credentials on network services",
+    "frameworks": {
+      "ISO27001": ["A.9.4.1", "A.9.2.1"],
+      "NIST_800-53": ["IA-2", "IA-5"],
+      "PCI-DSS": ["2.2.1", "8.2.1"],
+      "SOC2": ["CC6.1", "CC6.2"]
+    }
+  },
+  "V-029": {
+    "description": "SQL injection vulnerability",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5", "A.14.2.1"],
+      "NIST_800-53": ["SI-10", "SA-11"],
+      "PCI-DSS": ["6.5.1"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-033": {
+    "description": "Command/OS injection vulnerability",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5"],
+      "NIST_800-53": ["SI-10", "SA-11"],
+      "PCI-DSS": ["6.5.2"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-034": {
+    "description": "Reflected cross-site scripting (XSS)",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5"],
+      "NIST_800-53": ["SI-10"],
+      "PCI-DSS": ["6.5.7"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-035": {
+    "description": "Stored cross-site scripting (XSS)",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5"],
+      "NIST_800-53": ["SI-10"],
+      "PCI-DSS": ["6.5.7"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-047": {
+    "description": "Server-side request forgery (SSRF)",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5", "A.13.1.1"],
+      "NIST_800-53": ["AC-4", "SI-10"],
+      "PCI-DSS": ["6.5.4"],
+      "SOC2": ["CC6.1", "CC6.6"]
+    }
+  },
+  "V-057": {
+    "description": "Hardcoded secrets in source or binary",
+    "frameworks": {
+      "ISO27001": ["A.10.1.1", "A.9.2.4"],
+      "NIST_800-53": ["AC-6", "IA-5"],
+      "PCI-DSS": ["6.5.3"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-062": {
+    "description": "Local file inclusion (LFI)",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5"],
+      "NIST_800-53": ["SI-10", "AC-3"],
+      "PCI-DSS": ["6.5.4"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-065": {
+    "description": "Insecure deserialization vulnerability",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5"],
+      "NIST_800-53": ["SI-10"],
+      "PCI-DSS": ["6.5.9"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-067": {
+    "description": "Path/directory traversal vulnerability",
+    "frameworks": {
+      "ISO27001": ["A.14.2.5", "A.9.4.1"],
+      "NIST_800-53": ["AC-3", "SI-10"],
+      "PCI-DSS": ["6.5.5"],
+      "SOC2": ["CC6.1"]
+    }
+  },
+  "V-070": {
+    "description": "Unpatched OS / missing security patches",
+    "frameworks": {
+      "ISO27001": ["A.12.6.1", "A.14.2.3"],
+      "NIST_800-53": ["SI-2"],
+      "PCI-DSS": ["6.1", "6.2"],
+      "SOC2": ["CC7.1"]
+    }
+  },
+  "V-087": {
+    "description": "Vulnerable third-party dependencies (SCA)",
+    "frameworks": {
+      "ISO27001": ["A.14.2.3", "A.12.6.1"],
+      "NIST_800-53": ["SA-11", "SI-2"],
+      "PCI-DSS": ["6.3.1", "6.2"],
+      "SOC2": ["CC7.1", "CC8.1"]
+    }
+  },
+  "V-089": {
+    "description": "ARP spoofing / local network MITM",
+    "frameworks": {
+      "ISO27001": ["A.13.1.1", "A.13.2.1"],
+      "NIST_800-53": ["AC-4", "SC-7"],
+      "PCI-DSS": ["1.3.4"],
+      "SOC2": ["CC6.1", "CC6.6"]
+    }
+  },
+  "V-106": {
+    "description": "Public cloud storage exposure (S3/GCS/Azure Blob)",
+    "frameworks": {
+      "ISO27001": ["A.13.2.1", "A.9.4.1"],
+      "NIST_800-53": ["AC-3", "SC-7"],
+      "PCI-DSS": ["3.4", "7.1.1"],
+      "SOC2": ["CC6.1", "CC6.3"]
+    }
+  }
+}
