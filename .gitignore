@@ -14,7 +14,11 @@ Iskabon/iskabon_debug
 
 # Runtime scan/session output (regenerated per run)
 Iskabon/session/
+session/
 trinetra_audit.db*
+
+# Derived compliance score reports (per-session artifacts)
+sessions/*/compliance_score_*.json
 
 # Temp files
 *.tmp

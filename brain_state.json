@@ -1,54 +1,16 @@
 {
-  "last_updated": "2026-07-30T15:03:05.885567846Z",
+  "last_updated": "2026-08-23T08:03:15.334488682Z",
   "active_sessions": [
     "test1",
     "demo",
     "ses27_07_26",
-    "insta-29-7-26"
+    "insta-29-7-26",
+    "e2e_smoke2",
+    "e2e_wire"
   ],
-  "session_count": 4,
+  "session_count": 6,
   "high_risk_sessions": [],
   "recent_activity": [
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-29T15:55:36.142692594Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:18:50.495109413Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:24:20.236903150Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:31:30.605185212Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:31:42.419551701Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:38:06.301722532Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:40:18.096658581Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:42:08.777775914Z",
-      "event": "finding_recorded"
-    },
     {
       "session": "insta-29-7-26",
       "timestamp": "2026-07-30T13:44:45.898281225Z",
@@ -108,6 +70,48 @@
       "session": "insta-29-7-26",
       "timestamp": "2026-07-30T15:03:05.885441359Z",
       "event": "finding_recorded"
+    },
+    {
+      "session": "e2e_smoke2",
+      "timestamp": "2026-08-23T07:55:45.252997646Z",
+      "event": "session_created"
+    },
+    {
+      "session": "e2e_smoke2",
+      "timestamp": "2026-08-23T07:56:02.744688024Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "e2e_smoke2",
+      "timestamp": "2026-08-23T07:57:43.053032896Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "e2e_smoke2",
+      "timestamp": "2026-08-23T07:57:59.918241618Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "e2e_smoke2",
+      "timestamp": "2026-08-23T07:58:00.110824582Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "e2e_wire",
+      "timestamp": "2026-08-23T07:59:39.810395245Z",
+      "event": "session_created"
+    },
+    {
+      "session": "e2e_wire",
+      "timestamp": "2026-08-23T08:02:29.313442312Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "e2e_wire",
+      "timestamp": "2026-08-23T08:03:15.334426916Z",
+      "event": "finding_recorded"
     }
-  ]
+  ],
+  "previous_chain_hash": "7f09f463ffc76bc56a38d26c9c3a7bb96214e54a09c4a64fc9a8d67829a94ce4",
+  "chain_hash": "bf6d2e07135af5b413ed7eade9854d516c1b138e98a5496550f00bb56d9b9d4e"
 }

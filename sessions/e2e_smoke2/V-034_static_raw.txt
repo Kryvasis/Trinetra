@@ -1,0 +1,15 @@
+=== V-034 ===
+Target: 127.0.0.1
+Exit code: 0
+=== STDOUT ===
+usage: xsstrike [-h] [-u TARGET] [--data PARAMDATA] [-e ENCODE] [--fuzzer]
+                [--update] [--timeout TIMEOUT] [--proxy] [--crawl] [--json]
+                [--path] [--seeds ARGS_SEEDS] [-f ARGS_FILE] [-l LEVEL]
+                [--headers [ADD_HEADERS]] [-t THREADCOUNT] [-d DELAY] [--skip]
+                [--skip-dom] [--blind]
+                [--console-log-level {DEBUG,INFO,RUN,GOOD,WARNING,ERROR,CRITICAL,VULN}]
+                [--file-log-level {DEBUG,INFO,RUN,GOOD,WARNING,ERROR,CRITICAL,VULN}]
+                [--log-file LOG_FILE] [-n PAYLOAD_COUNT]
+xsstrike: error: unrecognized arguments: --batch
+=== STDERR ===
+

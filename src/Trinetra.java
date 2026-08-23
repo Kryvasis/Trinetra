@@ -134,6 +134,12 @@ public class Trinetra {
             return;
         }
 
+        // -compliance-score <session>
+        if (argList.contains("-compliance-score")) {
+            handleComplianceScore(argList);
+            return;
+        }
+
         // -doctor
         if (argList.contains("-doctor")) {
             handleDoctor();
@@ -646,6 +652,19 @@ public class Trinetra {
         System.exit(exitCode);
     }
 
+    private static void handleComplianceScore(List<String> args) {
+        int idx = args.indexOf("-compliance-score");
+        if (idx < 0 || idx + 1 >= args.size()) {
+            System.err.println("Usage: trinetra -compliance-score <session>");
+            System.exit(1);
+        }
+        String session = args.get(idx + 1);
+        Map<String, Object> result = TrinetraComplianceScorer.score(session);
+        Path outPath = TrinetraComplianceScorer.scoreAndWrite(session);
+        System.out.println(TrinetraJson.prettyJson(result));
+        System.out.println("\nCompliance score written to: " + outPath);
+    }
+
     private static void printUsage() {
         System.out.println("Trinetra Beta — Modular Pentesting Framework\n");
         System.out.println("Usage:\n");
@@ -664,6 +683,7 @@ public class Trinetra {
         System.out.println("  trinetra -mind -overall \"query\"         Query global activity");
         System.out.println("  trinetra -mind -score <sess>            CVE/certificate scoring");
         System.out.println("  trinetra -agr [cert] <sess>             Generate scorecard");
+        System.out.println("  trinetra -compliance-score <sess>       Score session compliance (deterministic)");
         System.out.println("  trinetra -ide -r <script> [args...]     Run a script");
         System.out.println("  trinetra -ide -cp <src> <sess>          Copy file to session artifacts");
         System.out.println("  trinetra -doctor                        Run diagnostics");
