@@ -10,11 +10,9 @@ import java.util.regex.*;
  */
 public class TrinetraAgr {
 
-    // ── OWASP Top 10 2021 mapping ──
+    // ── OWASP Top 10 2021 mapping (IN-SCOPE test_ids only) ──
     private static final Map<String, String> OWASP_MAP = new LinkedHashMap<>();
     static {
-        OWASP_MAP.put("V-001", "A01:2021 – Broken Access Control");
-        OWASP_MAP.put("V-002", "A05:2021 – Security Misconfiguration");
         OWASP_MAP.put("V-003", "A05:2021 – Security Misconfiguration");
         OWASP_MAP.put("V-004", "A07:2021 – Identification and Authentication Failures");
         OWASP_MAP.put("V-005", "A05:2021 – Security Misconfiguration");
@@ -22,58 +20,16 @@ public class TrinetraAgr {
         OWASP_MAP.put("V-007", "A02:2021 – Cryptographic Failures");
         OWASP_MAP.put("V-008", "A02:2021 – Cryptographic Failures");
         OWASP_MAP.put("V-010", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-012", "A07:2021 – Identification and Authentication Failures");
         OWASP_MAP.put("V-013", "A07:2021 – Identification and Authentication Failures");
-        OWASP_MAP.put("V-016", "A07:2021 – Identification and Authentication Failures");
-        OWASP_MAP.put("V-017", "A07:2021 – Identification and Authentication Failures");
-        OWASP_MAP.put("V-018", "A07:2021 – Identification and Authentication Failures");
-        OWASP_MAP.put("V-019", "A02:2021 – Cryptographic Failures");
-        OWASP_MAP.put("V-021", "A07:2021 – Identification and Authentication Failures");
-        OWASP_MAP.put("V-023", "A01:2021 – Broken Access Control");
-        OWASP_MAP.put("V-029", "A03:2021 – Injection");
-        OWASP_MAP.put("V-030", "A03:2021 – Injection");
-        OWASP_MAP.put("V-031", "A03:2021 – Injection");
-        OWASP_MAP.put("V-032", "A03:2021 – Injection");
-        OWASP_MAP.put("V-033", "A03:2021 – Injection");
-        OWASP_MAP.put("V-034", "A03:2021 – Injection");
-        OWASP_MAP.put("V-035", "A03:2021 – Injection");
-        OWASP_MAP.put("V-036", "A03:2021 – Injection");
-        OWASP_MAP.put("V-037", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-038", "A03:2021 – Injection");
-        OWASP_MAP.put("V-039", "A03:2021 – Injection");
-        OWASP_MAP.put("V-040", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-041", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-042", "A03:2021 – Injection");
-        OWASP_MAP.put("V-043", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-044", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-045", "A03:2021 – Injection");
-        OWASP_MAP.put("V-046", "A01:2021 – Broken Access Control");
-        OWASP_MAP.put("V-047", "A10:2021 – Server-Side Request Forgery");
-        OWASP_MAP.put("V-048", "A01:2021 – Broken Access Control");
-        OWASP_MAP.put("V-049", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-050", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-051", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-054", "A04:2021 – Insecure Design");
-        OWASP_MAP.put("V-055", "A05:2021 – Security Misconfiguration");
         OWASP_MAP.put("V-056", "A07:2021 – Identification and Authentication Failures");
         OWASP_MAP.put("V-057", "A02:2021 – Cryptographic Failures");
-        OWASP_MAP.put("V-058", "A04:2021 – Insecure Design");
-        OWASP_MAP.put("V-062", "A01:2021 – Broken Access Control");
-        OWASP_MAP.put("V-063", "A08:2021 – Software and Data Integrity Failures");
-        OWASP_MAP.put("V-064", "A04:2021 – Insecure Design");
-        OWASP_MAP.put("V-065", "A08:2021 – Software and Data Integrity Failures");
-        OWASP_MAP.put("V-066", "A08:2021 – Software and Data Integrity Failures");
-        OWASP_MAP.put("V-067", "A01:2021 – Broken Access Control");
         OWASP_MAP.put("V-071", "A05:2021 – Security Misconfiguration");
         OWASP_MAP.put("V-087", "A06:2021 – Vulnerable and Outdated Components");
         OWASP_MAP.put("V-106", "A05:2021 – Security Misconfiguration");
         OWASP_MAP.put("V-107", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-108", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-109", "A05:2021 – Security Misconfiguration");
-        OWASP_MAP.put("V-127", "A07:2021 – Identification and Authentication Failures");
     }
 
-    // ── Remediation hints per V-code ──
+    // ── Remediation hints per V-code (IN-SCOPE test_ids only) ──
     private static final Map<String, String> REMEDIATION = new LinkedHashMap<>();
     static {
         REMEDIATION.put("V-003", "Close or firewall unnecessary ports. Restrict services to least-privilege. Implement network segmentation.");
@@ -82,27 +38,9 @@ public class TrinetraAgr {
         REMEDIATION.put("V-007", "Remove support for NULL, EXPORT, RC4, DES, and 3DES cipher suites. Prefer AEAD ciphers (AES-GCM, ChaCha20).");
         REMEDIATION.put("V-008", "Replace self-signed certificates with CA-signed certificates. Renew expiring certificates promptly.");
         REMEDIATION.put("V-010", "Add Strict-Transport-Security header with appropriate max-age (e.g., 31536000). Include includeSubDomains and preload.");
-        REMEDIATION.put("V-012", "Change all default credentials immediately. Implement unique passwords per service. Disable unused accounts.");
         REMEDIATION.put("V-013", "Enforce strong password policy: minimum 12 characters, complexity requirements, password history.");
-        REMEDIATION.put("V-016", "Implement account lockout after failed attempts. Use CAPTCHA. Deploy breached password detection (HaveIBeenPwned API).");
-        REMEDIATION.put("V-019", "Validate JWT signatures server-side. Reject alg:none. Enforce strong signing keys. Use RS256/ES256.");
-        REMEDIATION.put("V-029", "Use parameterized queries/prepared statements. Implement input validation. Deploy WAF with SQLi rules.");
-        REMEDIATION.put("V-033", "Validate and sanitize all user inputs. Avoid shell execution. Use language-native APIs instead of OS commands.");
-        REMEDIATION.put("V-034", "Implement context-aware output encoding. Use Content Security Policy. Validate and sanitize all input.");
-        REMEDIATION.put("V-035", "Sanitize all user input before storage. Implement output encoding. Use CSP headers.");
-        REMEDIATION.put("V-036", "Audit DOM manipulation code. Use textContent instead of innerHTML. Implement CSP with strict-dynamic.");
-        REMEDIATION.put("V-037", "Disable external entity processing in XML parsers. Use JSON instead of XML where possible.");
-        REMEDIATION.put("V-038", "Sandbox template execution. Avoid user input in templates. Use auto-escaping engines.");
-        REMEDIATION.put("V-046", "Implement anti-CSRF tokens in all state-changing requests. Use SameSite cookie attribute.");
-        REMEDIATION.put("V-047", "Validate and sanitize all URL inputs. Implement allowlists for outbound requests. Disable unnecessary URL schemes.");
-        REMEDIATION.put("V-048", "Validate redirect targets against an allowlist. Reject open redirects to external domains.");
-        REMEDIATION.put("V-050", "Restrict ACAO header to trusted origins. Never reflect arbitrary origins with credentials.");
         REMEDIATION.put("V-057", "Remove hardcoded secrets from source code. Use environment variables or secret managers.");
-        REMEDIATION.put("V-062", "Validate file paths. Prevent directory traversal. Use chroot or containerization.");
-        REMEDIATION.put("V-065", "Avoid native deserialization of untrusted data. Use safe serialization formats (JSON).");
-        REMEDIATION.put("V-067", "Validate and normalize file paths. Restrict file access to designated directories.");
         REMEDIATION.put("V-087", "Update vulnerable dependencies. Implement automated SCA in CI/CD. Monitor CVE databases.");
-        REMEDIATION.put("V-127", "Implement rate limiting, account lockout, and progressive delays. Deploy CAPTCHA after N failed attempts.");
     }
 
     /**

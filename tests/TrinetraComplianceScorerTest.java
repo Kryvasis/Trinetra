@@ -59,19 +59,19 @@ public class TrinetraComplianceScorerTest {
         Files.createDirectories(dir);
 
         // Create a brain state with 3 normalized_results:
-        //   V-003 → PASS, V-012 → FAIL, V-029 → PASS
+        //   V-003 → PASS, V-004 → FAIL, V-006 → PASS
         Map<String, Object> state = new LinkedHashMap<>();
         state.put("session_name", session);
         state.put("target", "10.5.0.1");
         state.put("findings", new ArrayList<>());
-        state.put("already_run_v_codes", new ArrayList<>(List.of("V-003", "V-012", "V-029")));
+        state.put("already_run_v_codes", new ArrayList<>(List.of("V-003", "V-004", "V-006")));
         state.put("confirmed_findings", new ArrayList<>());
         state.put("suspected_findings", new ArrayList<>());
 
         List<Map<String, Object>> nr = new ArrayList<>();
         nr.add(makeEntry("V-003", "pass"));
-        nr.add(makeEntry("V-012", "fail"));
-        nr.add(makeEntry("V-029", "pass"));
+        nr.add(makeEntry("V-004", "fail"));
+        nr.add(makeEntry("V-006", "pass"));
         state.put("normalized_results", nr);
         state.put("last_updated", TrinetraCommon.nowIso());
 
@@ -85,14 +85,14 @@ public class TrinetraComplianceScorerTest {
         Map<String, Object> frameworks = (Map<String, Object>) result.get("frameworks");
         expect(frameworks.size() > 0, "at least one framework scored (got " + frameworks.size() + ")");
 
-        // V-003 + V-012 + V-029 all map to ISO27001
+        // V-003 + V-004 + V-006 all map to ISO27001
         Map<String, Object> iso = (Map<String, Object>) frameworks.get("ISO27001");
         expect(iso != null, "ISO27001 framework present");
         if (iso != null) {
             expect((int) iso.get("tests_passed") == 2,
-                "ISO27001 tests_passed == 2 (V-003 + V-029)");
+                "ISO27001 tests_passed == 2 (V-003 + V-006)");
             expect((int) iso.get("tests_failed") == 1,
-                "ISO27001 tests_failed == 1 (V-012)");
+                "ISO27001 tests_failed == 1 (V-004)");
             expect((int) iso.get("total_tests_mapped") == 3,
                 "ISO27001 total_tests_mapped == 3");
             double pct = (double) iso.get("compliance_percentage");
@@ -100,7 +100,7 @@ public class TrinetraComplianceScorerTest {
                 "ISO27001 compliance_percentage == 66.7 (got " + pct + ")");
         }
 
-        // V-003 + V-012 + V-029 all map to PCI-DSS too
+        // V-003 + V-004 + V-006 all map to PCI-DSS too
         Map<String, Object> pci = (Map<String, Object>) frameworks.get("PCI-DSS");
         expect(pci != null, "PCI-DSS framework present");
         if (pci != null) {
@@ -120,7 +120,7 @@ public class TrinetraComplianceScorerTest {
         if (iso != null) {
             List<String> gaps = (List<String>) iso.get("coverage_gaps");
             expect(gaps != null, "ISO27001 coverage_gaps list present");
-            // V-003+V-012+V-029 cover some controls, but not all 18 tests' worth
+            // V-003+V-004+V-006 cover some controls, but not all 8 tests' worth
             expect(gaps.size() > 0,
                 "ISO27001 has coverage gaps (got " + gaps.size() + " uncovered controls)");
         }
@@ -301,6 +301,15 @@ public class TrinetraComplianceScorerTest {
                   "SOC2": ["CC6.1", "CC6.6"]
                 }
               },
+              "V-004": {
+                "description": "DNS spoofing resilience",
+                "frameworks": {
+                  "ISO27001": ["A.13.1.1", "A.9.4.1"],
+                  "NIST_800-53": ["AC-4", "SC-7"],
+                  "PCI-DSS": ["1.3.4"],
+                  "SOC2": ["CC6.1", "CC6.6"]
+                }
+              },
               "V-006": {
                 "description": "Weak TLS/SSL version",
                 "frameworks": {
@@ -316,24 +325,6 @@ public class TrinetraComplianceScorerTest {
                   "ISO27001": ["A.10.1.2"],
                   "NIST_800-53": ["SC-17"],
                   "PCI-DSS": ["4.1"],
-                  "SOC2": ["CC6.1"]
-                }
-              },
-              "V-012": {
-                "description": "Default credentials on network services",
-                "frameworks": {
-                  "ISO27001": ["A.9.4.1", "A.9.2.1"],
-                  "NIST_800-53": ["IA-2", "IA-5"],
-                  "PCI-DSS": ["2.2.1", "8.2.1"],
-                  "SOC2": ["CC6.1", "CC6.2"]
-                }
-              },
-              "V-029": {
-                "description": "SQL injection vulnerability",
-                "frameworks": {
-                  "ISO27001": ["A.14.2.5", "A.14.2.1"],
-                  "NIST_800-53": ["SI-10", "SA-11"],
-                  "PCI-DSS": ["6.5.1"],
                   "SOC2": ["CC6.1"]
                 }
               }

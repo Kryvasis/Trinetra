@@ -20,6 +20,10 @@ trinetra_audit.db*
 # Derived compliance score reports (per-session artifacts)
 sessions/*/compliance_score_*.json
 
+# Local backups (not version-controlled)
+*.bak_*
+stat_scripts_backup_*/
+
 # Temp files
 *.tmp
 *.lock
