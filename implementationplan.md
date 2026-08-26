@@ -2,7 +2,7 @@
 
 ## Phase 1: repository and structure
 - Create Java module/file layout.
-- Create `sessions/`, `hex_scripts/`, `output/`, and config layout.
+- Create `sessions/`, `stat_scripts/`, `output/`, and config layout. (hex_scripts/ later removed with HexStrike)
 - Define shared utilities for file IO, JSON IO, shell execution, timestamps, and logging.
 
 ## Phase 2: session core
@@ -12,7 +12,7 @@
 - Implement per-session state JSON bootstrap.
 - Implement global `brain_state.json` bootstrap.
 
-## Phase 3: trinetra_pen.java beta path
+## Phase 3: trinetra_pen.java beta path (superseded — TrinetraPen and HexStrike removed; see trinetra_stat.java)
 - Hardcode beta V-code to shell-script mapping.
 - Implement `-pen -hex run` dispatcher.
 - Capture stdout/stderr, exit code, timestamps, target, script path.

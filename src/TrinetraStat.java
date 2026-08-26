@@ -552,10 +552,8 @@ public class TrinetraStat {
      *  - selection non-empty      -> ONLY those ids execute (never invoked
      *    at all when unselected, so they cannot appear in findings,
      *    already_run_v_codes, or any brain-state entry); runs proceed on a
-     *    thread pool of `workers` threads. Ids are routed to the stat
-     *    engine when defined there, otherwise to the hex (pen) engine when
-     *    a matching hex_scripts/V-*.sh exists; anything else is skipped
-     *    with a warning and leaves no trace.
+     *    thread pool of `workers` threads. Ids not defined in the stat
+     *    engine are skipped with a warning and leave no trace.
      *
      * Each executed test produces one audit_log row via the Prompt 11
      * SQLite path (when userId != null).
@@ -604,11 +602,6 @@ public class TrinetraStat {
             }
             for (String c : allCodes)
                 if (wanted.contains(c)) plan.add(c);
-
-            // Hex-family ids are runnable even without a stat definition.
-            for (String c : wanted)
-                if (!testDefinitions.containsKey(c) && TrinetraPen.isKnownVCode(c))
-                    plan.add(c);
 
             for (String c : wanted)
                 if (!plan.contains(c))
@@ -682,15 +675,10 @@ public class TrinetraStat {
 
     /** Route one test id to its engine and normalize the result map. */
     private static Map<String, Object> runOne(String code, String sanitizedSession,
-                                              String target, Map<String, String> vendorEnv) {
+                                               String target, Map<String, String> vendorEnv) {
         if (testDefinitions.containsKey(code)) {
             Map<String, Object> r = statRun(code, sanitizedSession, target, vendorEnv);
             r.put("engine", "stat");
-            return r;
-        }
-        if (TrinetraPen.isKnownVCode(code)) {
-            Map<String, Object> r = TrinetraPen.run(code, sanitizedSession, target);
-            r.put("engine", "hex");
             return r;
         }
         // Should not happen (planner filters), but stay safe and traceable.
@@ -711,8 +699,7 @@ public class TrinetraStat {
     /**
      * Structured catalog of every runnable test id, for --list-tests /
      * future UI consumption: {id, description, category, engine} where
-     * engine is "stat" (defined in static_map/decision_engine) or "hex"
-     * (hex_scripts/V-*.sh only).
+     * engine is "stat" (defined in static_map/decision_engine).
      */
     public static String listTestsJson() {
         loadDefinitions();
@@ -723,16 +710,6 @@ public class TrinetraStat {
             e.put("description", d.name);
             e.put("category", d.category);
             e.put("engine", "stat");
-            out.add(e);
-        }
-        Set<String> seen = new HashSet<>(testDefinitions.keySet());
-        for (String v : TrinetraPen.listVCodes()) {
-            if (seen.contains(v)) continue;
-            Map<String, Object> e = TrinetraCommon.newMap();
-            e.put("id", v);
-            e.put("description", "");
-            e.put("category", "hex_script");
-            e.put("engine", "hex");
             out.add(e);
         }
         return TrinetraJson.prettyJson(out);

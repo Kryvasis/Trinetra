@@ -17,8 +17,8 @@ import java.util.Map;
  *      (or at runtime from any plugin loader:
  *          VendorConnectorRegistry.register("Juniper", JuniperConnector::new);)
  *   3. Done. Resolution, fallback to the generic connector, and test
- *      dispatch pick it up automatically — no edits to Trinetra,
- *      TrinetraStat, or TrinetraPen are needed.
+ *      dispatch pick it up automatically — no edits to Trinetra or
+ *      TrinetraStat are needed.
  *
  * Lifecycle: connect() -> runCommand()* -> disconnect().
  */

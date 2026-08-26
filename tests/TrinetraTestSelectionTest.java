@@ -245,11 +245,5 @@ public class TrinetraTestSelectionTest {
                 + "[ -f \"$2/.block_" + c + "\" ] && exit 1\n"
                 + "exit 0\n");
         }
-
-        // One hex-family script to exercise the hex catalog branch.
-        Path hex = root.resolve("hex_scripts");
-        Files.createDirectories(hex);
-        Files.writeString(hex.resolve("TZ-900.sh"),
-            "#!/bin/bash\necho tz-900\nexit 0\n");
     }
 }

@@ -49,9 +49,9 @@ public class TrinetraAuditTest {
         expect("alice".equals(alice), "--user long form -> alice");
         expect(!argv.contains("alice") && !argv.contains("--user"),
             "flag pair stripped from argv");
-        argv = new ArrayList<>(List.of("-u", "bob", "-pen"));
+        argv = new ArrayList<>(List.of("-u", "bob", "-stat"));
         expect("bob".equals(Trinetra.extractUserId(argv)), "-u short form -> bob");
-        expect(argv.size() == 1 && argv.get(0).equals("-pen"), "only -pen remains");
+        expect(argv.size() == 1 && argv.get(0).equals("-stat"), "only -stat remains");
 
         // ── (c) one run -> one uuid across multiple rows ────────
         System.out.println("\n(c) multiple actions share one audit_uuid");

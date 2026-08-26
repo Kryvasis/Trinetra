@@ -13,10 +13,11 @@ public class TrinetraCommon {
 
     public static final String PROJECT_ROOT = System.getProperty("trinetra.root", resolveProjectRoot());
     public static final Path SESSIONS_DIR = Path.of(PROJECT_ROOT, "sessions");
-    public static final Path HEX_SCRIPTS_DIR = Path.of(PROJECT_ROOT, "hex_scripts");
+    public static final Path STAT_SCRIPTS_DIR = Path.of(PROJECT_ROOT, "stat_scripts");
     public static final Path OUTPUT_DIR = Path.of(PROJECT_ROOT, "output");
     public static final Path GLOBAL_BRAIN_STATE = Path.of(PROJECT_ROOT, "brain_state.json");
-    public static final Path HEXSTRIKE_DIR = Path.of(System.getProperty("user.home"), ".hexsrtike");
+    /** Neutral per-user config dir for LLM provider keys. */
+    public static final Path TRI_CONFIG_DIR = Path.of(System.getProperty("user.home"), ".trinetra");
 
     public static final String BRAIN_COMPRESS_BYTE_THRESHOLD_KEY = "trinetra.brain.compress.bytes";
     public static final long BRAIN_COMPRESS_BYTE_DEFAULT = 50000;
@@ -409,8 +410,7 @@ public class TrinetraCommon {
     }
 
     private static String readFallbackKey() {
-        // Check hexsrtike API key file
-        Path hexKeyFile = HEXSTRIKE_DIR.resolve("openrouter_api_key");
+        Path hexKeyFile = TRI_CONFIG_DIR.resolve("openrouter_api_key");
         if (Files.exists(hexKeyFile)) {
             try {
                 String key = Files.readString(hexKeyFile).strip();
@@ -418,12 +418,12 @@ public class TrinetraCommon {
             } catch (IOException ignored) {}
         }
         // Check fallback key
-        Path keyFile = HEXSTRIKE_DIR.resolve("fallback_key");
+        Path keyFile = TRI_CONFIG_DIR.resolve("fallback_key");
         if (Files.exists(keyFile)) {
             try { return Files.readString(keyFile).strip(); } catch (IOException ignored) {}
         }
         // Check .env
-        Path envFile = HEXSTRIKE_DIR.resolve(".env");
+        Path envFile = TRI_CONFIG_DIR.resolve(".env");
         if (Files.exists(envFile)) {
             try {
                 for (String line : Files.readAllLines(envFile)) {
@@ -457,12 +457,6 @@ public class TrinetraCommon {
                     }
                 }
             } catch (IOException ignored) {}
-        }
-
-        // Check ~/.hexsrtike/gemini_api_key
-        Path hexKeyFile = HEXSTRIKE_DIR.resolve("gemini_api_key");
-        if (Files.exists(hexKeyFile)) {
-            try { return Files.readString(hexKeyFile).strip(); } catch (IOException ignored) {}
         }
 
         return null;

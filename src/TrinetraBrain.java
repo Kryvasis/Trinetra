@@ -282,7 +282,7 @@ public class TrinetraBrain {
         Map<String, Object> counts = TrinetraCommon.getMap(state, "counts");
         String target = TrinetraCommon.getString(state, "target", "unknown");
 
-        List<String> allVCodes = TrinetraPen.listVCodes();
+        List<String> allVCodes = TrinetraStat.listStatCodes();
 
         List<String> availableCodes = new ArrayList<>();
         for (String code : allVCodes) {

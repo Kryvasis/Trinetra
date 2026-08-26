@@ -24,6 +24,7 @@ sessions/*/compliance_narrative_*.md
 
 # Local backups (not version-controlled)
 *.bak_*
+backup_*/
 stat_scripts_backup_*/
 
 # Temp files

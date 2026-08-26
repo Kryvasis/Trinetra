@@ -14,11 +14,8 @@ sessions/
 ## Global layout
 ```text
 brain_state.json
-hex_scripts/
-trinetra.java
-trinetra_ide.java
-trinetra_pen.java
-trinetra_agr.java
+stat_scripts/
+src/
 ```
 
 ## Session JSON
@@ -34,7 +31,7 @@ trinetra_agr.java
       "v_code": "V-029",
       "v_name": "SQLi",
       "target": "example.com",
-      "script": "hex_scripts/V-029.sh",
+      "script": "stat_scripts/V-029.sh",
       "started_at": "ISO-8601",
       "ended_at": "ISO-8601",
       "exit_code": 0,

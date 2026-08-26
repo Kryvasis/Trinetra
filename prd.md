@@ -17,7 +17,12 @@ The product goal is not just to run checks, but to preserve audit intelligence o
 - Multi-cert aggregation in a single run.
 - Autonomous exploitation or self-directed attack chaining.
 - Live browser UI as a core beta requirement.
-- Dynamic parsing of `hexstrike_map.json` at runtime.
+
+## Removed scope
+- HexStrike (MCP server / REST tool orchestration) was removed from the
+  product entirely. Trinetra is an AI-driven multi-vendor network security
+  compliance auditor; offensive tool orchestration is out of scope. The
+  former `hex_scripts/` engine and its server lifecycle targets no longer exist.
 
 ## Target users
 - Pentesters and red team learners.
@@ -51,7 +56,7 @@ The beta must deliver a complete vertical slice:
 
 ## Constraints
 - Base OS is Kali Linux 2026.2.[cite:4]
-- HexStrike execution remains shell-script based.
-- OpenRouter free tier is used for HexStrike-side summarization, which is rate-limited.[cite:78]
+- Compliance tests execute as standalone shell scripts (stat_scripts/); no external orchestration server.
+- OpenRouter free tier is used for tool-output summarization, which is rate-limited.[cite:78]
 - Gemini CLI is used for brain update and query behavior.
-- `hexstrike_map.json` remains a human reference file and is not used as a runtime dependency.
+

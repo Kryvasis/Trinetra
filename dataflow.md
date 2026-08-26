@@ -1,14 +1,14 @@
 # Trinetra Data Flow
 
-## Vulnerability run flow
-1. User runs `trinetra -pen -hex run <V-XXX> <session> <target>`.
-2. `trinetra_pen.java` resolves the hardcoded V-code mapping.
-3. Shell script executes.
-4. Raw result is captured.
-5. OpenRouter summarization is attempted.
+## Compliance run flow
+1. User runs `trinetra -stat run <V-XXX> <session> <target>`.
+2. `trinetra_stat.java` resolves the test definition from 2_static_map.json / 3_decision_engine.csv.
+3. Stat script executes (tool invoked directly; no orchestration server).
+4. Raw result is captured and saved to the session directory.
+5. Decision engine applies pass/fail criteria to produce a verdict.
 6. Finding object is appended to session JSON.
-7. `trinetra.java` updates `brain_<session>.md`.
-8. `brain_state_<session>.json` is recalculated.
+7. `brain_<session>.md` is updated.
+8. `brain_state_<session>.json` is recalculated (with hash-chained normalized_results).
 9. Global `brain_state.json` is refreshed.
 
 ## Brain update flow

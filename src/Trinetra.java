@@ -8,10 +8,6 @@ import java.util.*;
  * and stat engine dispatch.
  *
  * Usage:
- *   trinetra -run                          Start HexStrike (make run)
- *   trinetra -stop                         Stop HexStrike (make stop)
- *   trinetra -status                       Check HexStrike status (make status)
- *   trinetra -pen -hex run <V-XXX> <session> <target>
  *   trinetra -stat run <V-XXX> <session> <target>
  *   trinetra -stat run-all <session> <target>
  *   trinetra -stat status <session>
@@ -39,24 +35,6 @@ public class Trinetra {
         // -help
         if (argList.contains("-help") || argList.contains("--help")) {
             printUsage();
-            return;
-        }
-
-        // -run → make run
-        if (argList.contains("-run")) {
-            runMake("run");
-            return;
-        }
-
-        // -stop → make stop
-        if (argList.contains("-stop")) {
-            runMake("stop");
-            return;
-        }
-
-        // -status → make status
-        if (argList.contains("-status")) {
-            runMake("status");
             return;
         }
 
@@ -101,12 +79,6 @@ public class Trinetra {
                 System.err.println("Usage: trinetra -new <session> <target>");
                 System.exit(1);
             }
-            return;
-        }
-
-        // -pen -hex run <V-XXX> <session> <target>
-        if (argList.contains("-pen")) {
-            handlePen(argList, userId);
             return;
         }
 
@@ -252,67 +224,6 @@ public class Trinetra {
         String osUser = System.getProperty("user.name", "unknown");
         System.out.println("[audit] user: " + osUser + " (OS username fallback)");
         return osUser;
-    }
-
-    private static void handlePen(List<String> args, String userId) {
-        int runIdx = args.indexOf("run");
-        if (runIdx < 0) {
-            System.err.println("Usage: trinetra -pen -hex run <V-XXX> <session> <target> [--dry-run]");
-            System.exit(1);
-            return;
-        }
-
-        if (runIdx + 3 >= args.size()) {
-            System.err.println("Usage: trinetra -pen -hex run <V-XXX> <session> <target> [--dry-run]");
-            System.exit(1);
-            return;
-        }
-
-        String vCode = args.get(runIdx + 1);
-        String session = args.get(runIdx + 2);
-        String target = args.get(runIdx + 3);
-        boolean dryRun = args.contains("--dry-run");
-
-        if (dryRun) {
-            Map<String, Object> result = TrinetraPen.dryRun(vCode, session, target);
-            System.out.println("=== Dry Run: " + vCode + " ===");
-            System.out.println("Script exists: " + result.get("script_exists"));
-            System.out.println("Script path: " + result.get("script_path"));
-            System.out.println("Session exists: " + result.get("session_exists"));
-            System.out.println("Already run: " + result.get("already_run"));
-            System.out.println("Existing findings: " + result.get("existing_findings_count"));
-            if ((Boolean) result.get("script_exists")) {
-                System.out.println("Script size: " + result.get("script_size_bytes") + " bytes");
-            }
-            return;
-        }
-
-        Map<String, Object> finding = TrinetraPen.run(vCode, session, target);
-
-        if (finding != null) {
-            String status = TrinetraCommon.getString(finding, "status", "unknown");
-            String summary = TrinetraCommon.getString(finding, "summary", null);
-
-            TrinetraAudit.testExecuted(userId, session, vCode, status);
-
-            System.out.println("=== " + vCode + " Result ===");
-            System.out.println("Status: " + status);
-            System.out.println("Summary status: " + TrinetraCommon.getString(finding, "summary_status", "?"));
-            if (summary != null && !summary.isEmpty()) {
-                System.out.println("Summary: " + summary);
-            } else {
-                System.out.println("Summary: (not available)");
-            }
-
-            // Auto-trigger brain update
-            String sanitized = TrinetraCommon.sanitizeName(session);
-            TrinetraBrain.updateBrain(sanitized);
-            System.out.println("\nBrain updated.");
-        } else {
-            TrinetraAudit.testExecuted(userId, session, vCode, "failed");
-            System.err.println("Run failed — no finding record produced.");
-            System.exit(1);
-        }
     }
 
     private static void handleStat(List<String> args, String userId,
@@ -568,8 +479,6 @@ public class Trinetra {
         System.out.println("  Root: " + root.getAbsolutePath() + " — " + (root.exists() ? "OK" : "MISSING"));
         File srcDir = new File(root, "src");
         System.out.println("  src/: " + (srcDir.exists() ? "OK" : "MISSING"));
-        File hexDir = new File(root, "hex_scripts");
-        System.out.println("  hex_scripts/: " + (hexDir.exists() ? "OK" : "MISSING"));
         File statDir = new File(root, "stat_scripts");
         System.out.println("  stat_scripts/: " + (statDir.exists() ? "OK" : "MISSING"));
         File outDir = new File(root, "out");
@@ -582,24 +491,8 @@ public class Trinetra {
         File trinetraClass = new File(outDir, "Trinetra.class");
         System.out.println("  Compiled classes: " + (trinetraClass.exists() ? "OK" : "MISSING (run 'make compile')"));
 
-        // 3. Check HexStrike config
-        System.out.println("\n[3] HexStrike Configuration");
-        File hexStrikeDir = new File(System.getProperty("user.home"), ".hexsrtike");
-        System.out.println("  Config dir: " + hexStrikeDir.getAbsolutePath() + " — " + (hexStrikeDir.exists() ? "OK" : "MISSING"));
-        File apiKeyFile = new File(hexStrikeDir, "openrouter_api_key");
-        if (apiKeyFile.exists()) {
-            System.out.println("  API key: EXISTS (" + apiKeyFile.length() + " bytes)");
-        } else {
-            System.out.println("  API key: MISSING");
-        }
-
-        // 4. Check V-code scripts
-        System.out.println("\n[4] V-Code Scripts");
-        List<String> vCodes = TrinetraPen.listVCodes();
-        System.out.println("  Hex scripts: " + vCodes.size() + " scripts");
-        if (vCodes.isEmpty()) {
-            System.out.println("  WARNING: No V-code scripts found in hex_scripts/");
-        }
+        // 3. Check test definitions
+        System.out.println("\n[3] Test Definitions");
         TrinetraStat.loadDefinitions();
         List<String> statCodes = TrinetraStat.listStatCodes();
         System.out.println("  Stat scripts: " + statCodes.size() + " definitions");
@@ -607,8 +500,8 @@ public class Trinetra {
             System.out.println("  WARNING: No stat definitions loaded");
         }
 
-        // 5. Validate sessions
-        System.out.println("\n[5] Session Validation");
+        // 4. Validate sessions
+        System.out.println("\n[4] Session Validation");
         Map<String, List<String>> validationErrors = TrinetraSession.validateAllSessions();
         if (validationErrors.isEmpty()) {
             System.out.println("  All sessions valid");
@@ -621,8 +514,8 @@ public class Trinetra {
             }
         }
 
-        // 6. Check Gemini CLI
-        System.out.println("\n[6] AI Integration");
+        // 5. Check AI integration
+        System.out.println("\n[5] AI Integration");
         String geminiPath = System.getProperty("user.home") + "/.npm-global/bin/gemini";
         File geminiCli = new File(geminiPath);
         System.out.println("  Gemini CLI: " + (geminiCli.exists() ? "INSTALLED" : "NOT FOUND (OpenRouter fallback available)"));
@@ -638,24 +531,14 @@ public class Trinetra {
         } else {
             System.out.println("  GEMINI_API_KEY: SET (via environment)");
         }
-
-        // 7. Check HexStrike server
-        System.out.println("\n[7] HexStrike Server");
-        String[] statusResult = TrinetraCommon.execCommand(5, "pgrep", "-f", "hexstrike_server");
-        boolean running = !statusResult[0].strip().isEmpty();
-        System.out.println("  Server: " + (running ? "RUNNING (PID " + statusResult[0].strip() + ")" : "NOT RUNNING"));
+        Path orKey = TrinetraCommon.TRI_CONFIG_DIR.resolve("openrouter_api_key");
+        if (Files.exists(orKey)) {
+            System.out.println("  OpenRouter key: SET (via ~/.trinetra/openrouter_api_key)");
+        } else {
+            System.out.println("  OpenRouter key: NOT SET (Gemini-only mode)");
+        }
 
         System.out.println("\n=== Doctor Complete ===");
-    }
-
-    private static void runMake(String target) {
-        String projectRoot = TrinetraCommon.PROJECT_ROOT;
-        String[] result = TrinetraCommon.execCommand(30, "make", "-C", projectRoot, target);
-        if (!result[0].isEmpty()) System.out.print(result[0]);
-        if (!result[1].isEmpty()) System.err.print(result[1]);
-        int exitCode;
-        try { exitCode = Integer.parseInt(result[2]); } catch (Exception e) { exitCode = -1; }
-        System.exit(exitCode);
     }
 
     private static void handleComplianceScore(List<String> args) {
@@ -725,14 +608,10 @@ public class Trinetra {
     }
 
     private static void printUsage() {
-        System.out.println("Trinetra Beta — Modular Pentesting Framework\n");
+        System.out.println("Trinetra Beta — AI-Driven Multi-Vendor Network Security Compliance Auditor\n");
         System.out.println("Usage:\n");
-        System.out.println("  trinetra -run                           Start HexStrike server");
-        System.out.println("  trinetra -stop                          Stop HexStrike server");
-        System.out.println("  trinetra -status                        Check HexStrike status");
         System.out.println("  trinetra -new <session> <target>        Create a new session");
         System.out.println("  trinetra -sessions                      List all sessions");
-        System.out.println("  trinetra -pen -hex run <V> <sess> <tgt> Run a pen V-code against target");
         System.out.println("  trinetra -stat run <V> <sess> <tgt>     Run a stat V-code against target");
         System.out.println("  trinetra -stat run-all <sess> <tgt>     Run all stat tests sequentially");
         System.out.println("  trinetra -stat status <sess>            Print stat pass/fail tally");
@@ -750,7 +629,7 @@ public class Trinetra {
         System.out.println("  trinetra -help                          Show this help\n");
         System.out.println("Options:");
         System.out.println("  --dry-run                            Preview V-code execution without running\n");
-        System.out.println("V-codes: V-001 through V-158 (see hex_scripts/ and stat_scripts/)");
+        System.out.println("V-codes: compliance-relevant set defined in 2_static_map.json / 3_decision_engine.csv (stat_scripts/)");
         System.out.println("Cert modes: default, stig (beta)");
     }
 }

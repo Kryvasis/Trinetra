@@ -4,12 +4,14 @@
 The beta architecture contains four Java entry components:
 - `trinetra.java`: primary orchestrator, session manager, state machine owner, brain update owner, and `-mind` dispatcher.
 - `trinetra_ide.java`: IDE utilities, OpenCode-oriented parsing, build/run helpers, and optional session-aware file copy behavior.
-- `trinetra_pen.java`: V-code dispatcher that triggers a shell script, captures output, appends findings into session JSON, and returns execution status.
+- `trinetra_stat.java`: compliance test engine — triggers a stat script, applies decision rules, appends verdicts into session JSON, and maintains the tamper-evident normalized_results chain.
 - `trinetra_agr.java`: reads session JSON only, applies cert-specific scoring logic, and writes session-local scorecards.
 
+Note: the former HexStrike-backed pen engine (`trinetra_pen.java`, `hex_scripts/`) was removed along with the HexStrike integration; compliance testing runs entirely through the stat engine.
+
 ## Execution model
-A vulnerability run uses:
-`trinetra -pen -hex run <V-XXX> <session> <target>`
+A compliance run uses:
+`trinetra -stat run <V-XXX> <session> <target>`
 
 The flow is:
 1. Validate session and target.
@@ -23,7 +25,7 @@ The flow is:
 
 ## AI model usage
 Two distinct AI paths are used:
-- HexStrike-side summarization: OpenRouter free tier with Nemotron 3 Ultra, paced centrally because OpenRouter free usage is rate-limited.[cite:78]
+- Tool-output summarization: OpenRouter free tier with Nemotron 3 Ultra, paced centrally because OpenRouter free usage is rate-limited.[cite:78]
 - Brain and memory reasoning: Gemini CLI using Gemini 2.5 Flash-Lite as the cheapest stable long-context option.[cite:191][cite:205]
 
 ## Brain pipeline
