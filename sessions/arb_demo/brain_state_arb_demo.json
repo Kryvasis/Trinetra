@@ -1,0 +1,71 @@
+{
+  "session_name": "arb_demo",
+  "target": "192.168.10.5",
+  "state": "initialized",
+  "last_updated": "2026-08-26T12:17:02.065046795Z",
+  "brain_md_path": "/home/kali/Desktop/Trinetra/sessions/arb_demo/brain_arb_demo.md",
+  "brain_backup_path": "/home/kali/Desktop/Trinetra/sessions/arb_demo/brain_arb_demo.bak.md",
+  "byte_size": 0,
+  "estimated_tokens": 0,
+  "compression_count": 0,
+  "already_run_v_codes": [],
+  "confirmed_findings": [],
+  "suspected_findings": [],
+  "counts": {
+    "total_runs": "0",
+    "success_runs": "0",
+    "failed_runs": "0",
+    "unsummarized": "0"
+  },
+  "latest_suggestion": null,
+  "suggestion_history": [],
+  "normalized_results": [
+    {
+      "device_id": "fw-edge-01",
+      "vendor": "Cisco",
+      "test_id": "V-003",
+      "raw_output": "seeded raw output for V-003",
+      "normalized_result": "pass",
+      "timestamp": "2026-08-26T12:17:02.053064852Z",
+      "chain_hash": "67b8ae8bdfc2874aabce94e324b726ab50c91236f1adcf1480d35d7eb95bcd5c"
+    },
+    {
+      "device_id": "fw-edge-01",
+      "vendor": "Cisco",
+      "test_id": "V-004",
+      "raw_output": "seeded raw output for V-004",
+      "normalized_result": "fail",
+      "timestamp": "2026-08-26T12:17:02.057634230Z",
+      "chain_hash": "9995d2f9593d641b5bdd40ba990d245753bc495bec2f60fe19a798350ff32766"
+    },
+    {
+      "device_id": "fw-edge-01",
+      "vendor": "Cisco",
+      "test_id": "V-006",
+      "raw_output": "seeded raw output for V-006",
+      "normalized_result": "pass",
+      "timestamp": "2026-08-26T12:17:02.059768053Z",
+      "chain_hash": "b7818a49b6a4e8f3da95ae0196591ebc7cac6bc74d9387fb7357dbe9b59234f7"
+    },
+    {
+      "device_id": "fw-edge-01",
+      "vendor": "Cisco",
+      "test_id": "V-010",
+      "raw_output": "seeded raw output for V-010",
+      "normalized_result": "pass",
+      "timestamp": "2026-08-26T12:17:02.061557147Z",
+      "chain_hash": "8285aa3c3466663783caea109d84b49dfd43b1274b0898c8cb772357c942e959"
+    },
+    {
+      "device_id": "fw-edge-01",
+      "vendor": "Cisco",
+      "test_id": "T-CUSTOM-7",
+      "raw_output": "seeded raw output for T-CUSTOM-7",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-08-26T12:17:02.063580065Z",
+      "chain_hash": "10e0cd7eee6aaa8ee8f785ac66d8251f85631a98629043821e3106e51ae1a2a4"
+    }
+  ],
+  "previous_chain_hash": "10e0cd7eee6aaa8ee8f785ac66d8251f85631a98629043821e3106e51ae1a2a4",
+  "latest_score": null
+}

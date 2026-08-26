@@ -1,26 +1,18 @@
 {
-  "last_updated": "2026-08-23T08:03:15.334488682Z",
+  "last_updated": "2026-08-26T12:27:53.148879434Z",
   "active_sessions": [
     "test1",
     "demo",
     "ses27_07_26",
     "insta-29-7-26",
     "e2e_smoke2",
-    "e2e_wire"
+    "e2e_wire",
+    "arb_demo",
+    "arb_tmpl"
   ],
-  "session_count": 6,
+  "session_count": 8,
   "high_risk_sessions": [],
   "recent_activity": [
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:44:45.898281225Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T13:53:15.653535074Z",
-      "event": "finding_recorded"
-    },
     {
       "session": "insta-29-7-26",
       "timestamp": "2026-07-30T14:01:19.150830303Z",
@@ -110,8 +102,18 @@
       "session": "e2e_wire",
       "timestamp": "2026-08-23T08:03:15.334426916Z",
       "event": "finding_recorded"
+    },
+    {
+      "session": "arb_demo",
+      "timestamp": "2026-08-26T12:17:02.043518666Z",
+      "event": "session_created"
+    },
+    {
+      "session": "arb_tmpl",
+      "timestamp": "2026-08-26T12:27:53.148780038Z",
+      "event": "session_created"
     }
   ],
-  "previous_chain_hash": "7f09f463ffc76bc56a38d26c9c3a7bb96214e54a09c4a64fc9a8d67829a94ce4",
-  "chain_hash": "bf6d2e07135af5b413ed7eade9854d516c1b138e98a5496550f00bb56d9b9d4e"
+  "previous_chain_hash": "b15af770bae0bdad9febb6de5aa04438c071b98ea393a5da0be487da1e77cd0c",
+  "chain_hash": "544b3f427bc72ae2d0b7e2ea91a9da58397af1fb214f1dcb7186a4e06b6e5e85"
 }

@@ -21,6 +21,9 @@ trinetra_audit.db*
 sessions/*/compliance_score_*.json
 # Derived LLM narrative reports (per-session artifacts)
 sessions/*/compliance_narrative_*.md
+# Derived final audit reports (per-session artifacts, Prompt 17)
+sessions/*/report_*.md
+sessions/*/audit_report_*.md
 
 # Local backups (not version-controlled)
 *.bak_*

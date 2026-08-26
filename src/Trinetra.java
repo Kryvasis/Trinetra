@@ -118,6 +118,13 @@ public class Trinetra {
             return;
         }
 
+        // -audit-report <session>  (final deliverable: per-framework reports
+        // + combined appended audit report; runs scorer -> narrative -> build)
+        if (argList.contains("-audit-report")) {
+            handleAuditReport(argList, userId);
+            return;
+        }
+
         // -doctor
         if (argList.contains("-doctor")) {
             handleDoctor();
@@ -607,6 +614,55 @@ public class Trinetra {
         System.out.println("Narrative:  " + reportPath);
     }
 
+    /**
+     * -audit-report <session>
+     * Assembles the final deliverable audit report set (Prompt 17):
+     * ensures scorer + narrative artifacts exist for the session, then
+     * writes one per-framework report plus the combined appended audit
+     * report with executive summary, unmapped-tests section, and a
+     * tamper-evidence appendix. Derived artifacts only — never touches
+     * brain state or the hash chain.
+     */
+    private static void handleAuditReport(List<String> args, String userId) {
+        int idx = args.indexOf("-audit-report");
+        if (idx < 0 || idx + 1 >= args.size()) {
+            System.err.println("Usage: trinetra -audit-report <session>");
+            System.exit(1);
+            return;
+        }
+        String session = args.get(idx + 1);
+
+        System.out.println("[1/3] Ensuring deterministic compliance score exists...");
+        Map<String, Object> result = TrinetraAuditReportBuilder.buildAuditReport(session);
+        if (result == null) {
+            System.err.println("Failed: no readable brain-state record for session '"
+                + session + "'. Run tests first (trinetra -stat ...).");
+            System.exit(1);
+            return;
+        }
+
+        // Session completion row links this generation run into audit_log.
+        TrinetraAudit.sessionEnd(userId, session,
+            "audit_report generated, frameworks="
+                + TrinetraCommon.getInt(result, "frameworks", 0));
+
+        System.out.println("\n=== Audit Report Generated ===");
+        System.out.println("Session:           " + TrinetraCommon.getString(result, "session_name", session));
+        System.out.println("Combined report:   " + TrinetraCommon.getString(result, "combined_path", "?"));
+        System.out.println("Derived aggregate: "
+            + TrinetraCommon.getString(result, "derived_aggregate_pct", "?") + "% (report-builder computed)");
+        System.out.println("Narrative source:  " + TrinetraCommon.getString(result, "narrative_source", "?"));
+        System.out.println("Chain status:      " + TrinetraCommon.getString(result, "chain_status", "?"));
+        System.out.println("\nPer-framework reports:");
+        for (String p : TrinetraCommon.getStringList(result, "framework_paths")) {
+            System.out.println("  - " + p);
+        }
+        List<String> skipped = TrinetraCommon.getStringList(result, "skipped_frameworks");
+        if (!skipped.isEmpty()) {
+            System.out.println("Skipped (no mapped tests): " + String.join(", ", skipped));
+        }
+    }
+
     private static void printUsage() {
         System.out.println("Trinetra Beta — AI-Driven Multi-Vendor Network Security Compliance Auditor\n");
         System.out.println("Usage:\n");
@@ -623,6 +679,7 @@ public class Trinetra {
         System.out.println("  trinetra -agr [cert] <sess>             Generate scorecard");
         System.out.println("  trinetra -compliance-score <sess>       Score session compliance (deterministic)");
         System.out.println("  trinetra -compliance-report <sess>      Scorer + AI narrative report (validated)");
+        System.out.println("  trinetra -audit-report <sess>           Final deliverable: per-framework + combined audit report");
         System.out.println("  trinetra -ide -r <script> [args...]     Run a script");
         System.out.println("  trinetra -ide -cp <src> <sess>          Copy file to session artifacts");
         System.out.println("  trinetra -doctor                        Run diagnostics");

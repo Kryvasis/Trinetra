@@ -132,6 +132,32 @@ public class TrinetraAudit {
         schemaReady = true;
     }
 
+    /**
+     * Distinct audit_uuids recorded for a session, oldest first
+     * (read-only SELECT; never mutates the log).  Empty list when the
+     * session has no rows or the log is unavailable.
+     */
+    public static java.util.List<String> listAuditUuids(String sessionName) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        WRITE_LOCK.lock();
+        try (Connection c = connect()) {
+            if (!schemaReady) ensureSchema(c);
+            try (PreparedStatement ps = c.prepareStatement(
+                "SELECT DISTINCT audit_uuid FROM audit_log "
+                + "WHERE session_name = ? ORDER BY id")) {
+                ps.setString(1, sessionName);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) out.add(rs.getString(1));
+                }
+            }
+        } catch (SQLException e) {
+            TrinetraCommon.logWarn("Audit uuid lookup failed: " + e.getMessage());
+        } finally {
+            WRITE_LOCK.unlock();
+        }
+        return out;
+    }
+
     /** Row count for an audit run (read-back used by tests/diagnostics). */
     public static int countRows(String auditUuid) {
         WRITE_LOCK.lock();
