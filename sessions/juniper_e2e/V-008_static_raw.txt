@@ -1,0 +1,12 @@
+=== V-008 ===
+Target: 127.0.0.1
+Exit code: 1
+=== STDOUT ===
+404704DAB57F0000:error:8000006F:system library:BIO_connect:Connection refused:../crypto/bio/bio_sock2.c:183:calling connect()
+404704DAB57F0000:error:10000067:BIO routines:BIO_connect:connect error:../crypto/bio/bio_sock2.c:185:
+connect:errno=111
+--- cert details ---
+Could not find certificate from <stdin>
+40172692CB7F0000:error:1608010C:STORE routines:ossl_store_handle_load_result:unsupported:../crypto/store/store_result.c:160:provider=default
+=== STDERR ===
+

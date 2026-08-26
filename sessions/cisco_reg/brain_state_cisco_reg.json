@@ -1,0 +1,37 @@
+{
+  "session_name": "cisco_reg",
+  "target": "127.0.0.1",
+  "state": "brain_updated",
+  "last_updated": "2026-08-26T13:16:57.991617155Z",
+  "brain_md_path": "/home/kali/Desktop/Trinetra/sessions/cisco_reg/brain_cisco_reg.md",
+  "brain_backup_path": "/home/kali/Desktop/Trinetra/sessions/cisco_reg/brain_cisco_reg.bak.md",
+  "byte_size": 285,
+  "estimated_tokens": 71,
+  "compression_count": 0,
+  "already_run_v_codes": [
+    "V-008"
+  ],
+  "confirmed_findings": [],
+  "suspected_findings": [],
+  "counts": {
+    "total_runs": "1",
+    "success_runs": "0",
+    "failed_runs": "1",
+    "unsummarized": "1"
+  },
+  "latest_suggestion": null,
+  "suggestion_history": [],
+  "normalized_results": [
+    {
+      "device_id": "127.0.0.1",
+      "vendor": "Cisco",
+      "test_id": "V-008",
+      "raw_output": "4067AC76D47F0000:error:8000006F:system library:BIO_connect:Connection refused:../crypto/bio/bio_sock2.c:183:calling connect()\n4067AC76D47F0000:error:10000067:BIO routines:BIO_connect:connect error:../crypto/bio/bio_sock2.c:185:\nconnect:errno=111\n--- cert details ---\nCould not find certificate from <stdin>\n4017ECE8877F0000:error:1608010C:STORE routines:ossl_store_handle_load_result:unsupported:../crypto/store/store_result.c:160:provider=default",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-08-26T13:16:57.985938246Z",
+      "chain_hash": "45aa0186ef13e33f9d4a5c39cda60d74dfc0a6ebbc26abbde01628988f30bf1d"
+    }
+  ],
+  "previous_chain_hash": "45aa0186ef13e33f9d4a5c39cda60d74dfc0a6ebbc26abbde01628988f30bf1d",
+  "latest_score": null
+}

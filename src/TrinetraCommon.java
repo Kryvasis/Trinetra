@@ -18,6 +18,12 @@ public class TrinetraCommon {
     public static final Path GLOBAL_BRAIN_STATE = Path.of(PROJECT_ROOT, "brain_state.json");
     /** Neutral per-user config dir for LLM provider keys. */
     public static final Path TRI_CONFIG_DIR = Path.of(System.getProperty("user.home"), ".trinetra");
+    /**
+     * Optional project-root configuration file (gitignored; carries local
+     * API keys).  Checked before environment variables and per-user key
+     * files so a checkout-local config always wins.
+     */
+    public static final Path CONFIG_JSON = Path.of(PROJECT_ROOT, "config.json");
 
     public static final String BRAIN_COMPRESS_BYTE_THRESHOLD_KEY = "trinetra.brain.compress.bytes";
     public static final long BRAIN_COMPRESS_BYTE_DEFAULT = 50000;
@@ -409,7 +415,24 @@ public class TrinetraCommon {
         return null;
     }
 
+    /**
+     * Read a top-level string value from the project-root config.json.
+     * Returns null when the file or value is missing/blank/null-valued.
+     */
+    static String configJsonValue(String key) {
+        Map<String, Object> cfg = readJsonFile(CONFIG_JSON);
+        if (cfg.isEmpty()) return null;
+        Object v = cfg.get(key);
+        if (v == null) return null;
+        String s = String.valueOf(v).strip();
+        return (s.isEmpty() || "null".equalsIgnoreCase(s)) ? null : s;
+    }
+
     private static String readFallbackKey() {
+        // Project-root config.json first, then ~/.trinetra/ files.
+        String cfgKey = configJsonValue("openrouter_api_key");
+        if (cfgKey != null) return cfgKey;
+
         Path hexKeyFile = TRI_CONFIG_DIR.resolve("openrouter_api_key");
         if (Files.exists(hexKeyFile)) {
             try {
@@ -436,8 +459,18 @@ public class TrinetraCommon {
         return null;
     }
 
-    private static String readGeminiApiKey() {
-        // Check environment variable first
+    /**
+     * Gemini API key resolution order:
+     * 1. project-root config.json ("gemini_api_key")
+     * 2. GEMINI_API_KEY environment variable
+     * 3. ~/.gemini/settings.json ("apiKey")
+     */
+    public static String readGeminiApiKey() {
+        // Project-root config.json first (explicit, checkout-local config).
+        String cfgKey = configJsonValue("gemini_api_key");
+        if (cfgKey != null) return cfgKey;
+
+        // Check environment variable second
         String envKey = System.getenv("GEMINI_API_KEY");
         if (envKey != null && !envKey.strip().isEmpty()) return envKey.strip();
 

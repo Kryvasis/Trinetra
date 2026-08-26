@@ -18,10 +18,11 @@ public final class VendorConnectorRegistry {
         new ConcurrentHashMap<>();
 
     static {
-        // Built-in proof-of-concept plugin.
+        // Built-in plugins (three-step recipe: implement + register here).
         FACTORIES.put("cisco", CiscoConnector::new);
+        FACTORIES.put("juniper", JuniperConnector::new);
         // Register additional vendors here, e.g.:
-        //   FACTORIES.put("juniper", JuniperConnector::new);
+        //   FACTORIES.put("fortinet", FortinetConnector::new);
     }
 
     private VendorConnectorRegistry() {}

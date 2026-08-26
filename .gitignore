@@ -34,3 +34,6 @@ stat_scripts_backup_*/
 *.tmp
 *.lock
 .DS_Store
+
+# Local API keys (never commit)
+config.json

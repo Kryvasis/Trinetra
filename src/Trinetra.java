@@ -544,6 +544,11 @@ public class Trinetra {
         } else {
             System.out.println("  OpenRouter key: NOT SET (Gemini-only mode)");
         }
+        boolean cfgJson = Files.exists(TrinetraCommon.CONFIG_JSON);
+        System.out.println("  Project config.json: " + (cfgJson ? "FOUND (" + TrinetraCommon.CONFIG_JSON + ")" : "not found"));
+        if (cfgJson && TrinetraCommon.configJsonValue("gemini_api_key") != null) {
+            System.out.println("  Gemini API key source: project-root config.json (highest priority)");
+        }
 
         System.out.println("\n=== Doctor Complete ===");
     }

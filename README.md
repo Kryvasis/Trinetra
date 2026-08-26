@@ -37,6 +37,9 @@ so testing can be continued, queried, summarized, and reported across sessions.
 - Optional (for full AI behavior):
   - **Gemini CLI** configured at `~/.gemini/settings.json` (brain queries, suggestions, compression)
   - **OpenRouter API key** in `~/.trinetra/` (tool-output summarization; rate-limited free tier)
+- API keys may alternatively be supplied in a gitignored `config.json` at the project root
+  (`{"gemini_api_key": "...", "openrouter_api_key": "..."}`); it takes priority over env
+  vars and per-user files.
 - Bundled dependency: `lib/sqlite-jdbc-3.41.2.2.jar`
 
 ## Build & Install

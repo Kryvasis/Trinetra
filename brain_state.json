@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-26T12:27:53.148879434Z",
+  "last_updated": "2026-08-26T13:16:58.272519567Z",
   "active_sessions": [
     "test1",
     "demo",
@@ -8,96 +8,16 @@
     "e2e_smoke2",
     "e2e_wire",
     "arb_demo",
-    "arb_tmpl"
+    "arb_tmpl",
+    "juniper_e2e",
+    "jun_v",
+    "jun_v2",
+    "cisco_reg",
+    "unknown_reg"
   ],
-  "session_count": 8,
+  "session_count": 13,
   "high_risk_sessions": [],
   "recent_activity": [
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:01:19.150830303Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:02:44.608866647Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:10:51.174749252Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:17:40.690597542Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:22:22.605849525Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:51:36.928521482Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:54:58.161568038Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:55:42.475630746Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T14:59:26.566826142Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "insta-29-7-26",
-      "timestamp": "2026-07-30T15:03:05.885441359Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "e2e_smoke2",
-      "timestamp": "2026-08-23T07:55:45.252997646Z",
-      "event": "session_created"
-    },
-    {
-      "session": "e2e_smoke2",
-      "timestamp": "2026-08-23T07:56:02.744688024Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "e2e_smoke2",
-      "timestamp": "2026-08-23T07:57:43.053032896Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "e2e_smoke2",
-      "timestamp": "2026-08-23T07:57:59.918241618Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "e2e_smoke2",
-      "timestamp": "2026-08-23T07:58:00.110824582Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "e2e_wire",
-      "timestamp": "2026-08-23T07:59:39.810395245Z",
-      "event": "session_created"
-    },
-    {
-      "session": "e2e_wire",
-      "timestamp": "2026-08-23T08:02:29.313442312Z",
-      "event": "finding_recorded"
-    },
     {
       "session": "e2e_wire",
       "timestamp": "2026-08-23T08:03:15.334426916Z",
@@ -112,8 +32,93 @@
       "session": "arb_tmpl",
       "timestamp": "2026-08-26T12:27:53.148780038Z",
       "event": "session_created"
+    },
+    {
+      "session": "juniper_e2e",
+      "timestamp": "2026-08-26T13:03:59.559685729Z",
+      "event": "session_created"
+    },
+    {
+      "session": "juniper_e2e",
+      "timestamp": "2026-08-26T13:04:22.665480605Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "juniper_e2e",
+      "timestamp": "2026-08-26T13:06:12.128355413Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "juniper_e2e",
+      "timestamp": "2026-08-26T13:06:58.435151627Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:13:01.092775204Z",
+      "event": "session_created"
+    },
+    {
+      "session": "jun_v2",
+      "timestamp": "2026-08-26T13:13:16.333307424Z",
+      "event": "session_created"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:14:14.553956737Z",
+      "event": "session_created"
+    },
+    {
+      "session": "cisco_reg",
+      "timestamp": "2026-08-26T13:14:14.809842028Z",
+      "event": "session_created"
+    },
+    {
+      "session": "unknown_reg",
+      "timestamp": "2026-08-26T13:14:15.055981596Z",
+      "event": "session_created"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:14:22.206466219Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:14:22.319320313Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:15:08.027601009Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:15:18.568908854Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:15:18.692462236Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "jun_v",
+      "timestamp": "2026-08-26T13:16:04.378616366Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cisco_reg",
+      "timestamp": "2026-08-26T13:16:57.981405695Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "unknown_reg",
+      "timestamp": "2026-08-26T13:16:58.272434257Z",
+      "event": "finding_recorded"
     }
   ],
-  "previous_chain_hash": "b15af770bae0bdad9febb6de5aa04438c071b98ea393a5da0be487da1e77cd0c",
-  "chain_hash": "544b3f427bc72ae2d0b7e2ea91a9da58397af1fb214f1dcb7186a4e06b6e5e85"
+  "previous_chain_hash": "9c0629cbde6a1d85f327a7102bd87c537f92743ea98147ea59638c4d908dc735",
+  "chain_hash": "dd3a268702a6a1162800a525ba4d3f73aa211c16800bf8845367c9714f38483c"
 }
