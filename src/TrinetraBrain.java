@@ -23,6 +23,17 @@ public class TrinetraBrain {
     @SuppressWarnings("unchecked")
     public static boolean updateBrain(String sessionName) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        // Entire brain-state read-modify-write cycle runs under the session
+        // lock: patch/compress rewrite the whole brain_state_<s>.json file,
+        // so an unlocked run can clobber normalized_results appended by a
+        // concurrent writer (lost-update race caught by test matrices).
+        Boolean ok = TrinetraSession.withSessionStateLock(sanitized,
+            () -> doUpdateBrain(sanitized));
+        return Boolean.TRUE.equals(ok);
+    }
+
+    /** Unlocked internal: caller must hold the session state lock. */
+    private static Boolean doUpdateBrain(String sanitized) {
         Path statePath = TrinetraCommon.sessionBrainState(sanitized);
 
         Map<String, Object> session = TrinetraSession.loadSession(sanitized);
@@ -34,7 +45,9 @@ public class TrinetraBrain {
         Map<String, Object> state = TrinetraCommon.readJsonFile(statePath);
         List<Map<String, Object>> findings = TrinetraSession.getFindings(sanitized);
 
-        TrinetraSession.refreshBrainStateFromSession(sanitized);
+        // Already inside the session lock: use the unlocked variant so the
+        // FileChannel sidecar is not re-acquired mid-cycle.
+        TrinetraSession.doRefreshBrainStateFromSession(sanitized);
         state = TrinetraCommon.readJsonFile(statePath);
 
         long byteSize = getLongVal(state, "byte_size", 0);
@@ -254,6 +267,14 @@ public class TrinetraBrain {
     @SuppressWarnings("unchecked")
     public static String suggestNext(String sessionName) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        // Suggestion persistence rewrites the whole brain-state file; hold
+        // the session lock for the full read-modify-write cycle.
+        return TrinetraSession.withSessionStateLock(sanitized,
+            () -> doSuggestNext(sanitized));
+    }
+
+    /** Unlocked internal: caller must hold the session state lock. */
+    private static String doSuggestNext(String sanitized) {
         Map<String, Object> state = TrinetraCommon.readJsonFile(TrinetraCommon.sessionBrainState(sanitized));
         if (state.isEmpty()) return "No brain state found for session: " + sanitized;
 
@@ -330,6 +351,13 @@ public class TrinetraBrain {
     @SuppressWarnings("unchecked")
     public static Map<String, Object> brainScore(String sessionName) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        // latest_score is persisted into brain-state; serialize the cycle.
+        return TrinetraSession.withSessionStateLock(sanitized,
+            () -> doBrainScore(sanitized));
+    }
+
+    /** Unlocked internal: caller must hold the session state lock. */
+    private static Map<String, Object> doBrainScore(String sanitized) {
         Map<String, Object> session = TrinetraSession.loadSession(sanitized);
         if (session == null) {
             TrinetraCommon.logError("Cannot score brain: session not found: " + sanitized);

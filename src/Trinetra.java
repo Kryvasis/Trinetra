@@ -140,6 +140,12 @@ public class Trinetra {
             return;
         }
 
+        // -compliance-report <session>  (scorer + validated LLM narrative)
+        if (argList.contains("-compliance-report")) {
+            handleComplianceReport(argList);
+            return;
+        }
+
         // -doctor
         if (argList.contains("-doctor")) {
             handleDoctor();
@@ -665,6 +671,59 @@ public class Trinetra {
         System.out.println("\nCompliance score written to: " + outPath);
     }
 
+    /**
+     * -compliance-report <session>
+     * Runs the deterministic compliance scorer (Prompt 15) and then the
+     * validated LLM narrative layer (Prompt 16). The narrative never alters
+     * scorer numbers; on LLM rejection/unavailability a template fallback
+     * built from the same data is used and clearly labeled.
+     */
+    private static void handleComplianceReport(List<String> args) {
+        int idx = args.indexOf("-compliance-report");
+        if (idx < 0 || idx + 1 >= args.size()) {
+            System.err.println("Usage: trinetra -compliance-report <session>");
+            System.exit(1);
+        }
+        String session = args.get(idx + 1);
+
+        System.out.println("[1/2] Running deterministic compliance scorer...");
+        Path scorePath = TrinetraComplianceScorer.scoreAndWrite(session);
+        Map<String, Object> score = TrinetraComplianceScorer.score(session);
+
+        System.out.println("[2/2] Generating narrative layer (LLM with strict number validation)...");
+        Map<String, Object> meta =
+            TrinetraNarrativeGenerator.generateReport(session, score);
+
+        String source = TrinetraCommon.getString(meta, "source", "?");
+        String fallbackReason = TrinetraCommon.getString(meta, "fallback_reason", "");
+        List<String> rejected = TrinetraCommon.getStringList(meta, "rejected_numbers_first_attempt");
+
+        System.out.println("\n=== Compliance Narrative Report ===");
+        System.out.println("Session: " + session);
+        System.out.println("Narrative source: "
+            + (TrinetraNarrativeGenerator.SOURCE_LLM.equals(source)
+                ? "Gemini LLM (number-validated)"
+                : fallbackReason));
+        if (TrinetraNarrativeGenerator.SOURCE_LLM.equals(source)) {
+            System.out.println("Validation: PASS (attempts: "
+                + TrinetraCommon.getInt(meta, "attempts", 0) + ")");
+        }
+        if (!rejected.isEmpty()) {
+            System.out.println("Rejected numbers (first attempt): " + rejected);
+        }
+
+        Path reportPath = Path.of(TrinetraCommon.getString(meta, "path", ""));
+        String content = TrinetraCommon.readFileIfExists(reportPath);
+        if (content != null) {
+            System.out.println();
+            System.out.println(content);
+        }
+
+        System.out.println("--- Files saved ---");
+        System.out.println("Score JSON: " + scorePath);
+        System.out.println("Narrative:  " + reportPath);
+    }
+
     private static void printUsage() {
         System.out.println("Trinetra Beta — Modular Pentesting Framework\n");
         System.out.println("Usage:\n");
@@ -684,6 +743,7 @@ public class Trinetra {
         System.out.println("  trinetra -mind -score <sess>            CVE/certificate scoring");
         System.out.println("  trinetra -agr [cert] <sess>             Generate scorecard");
         System.out.println("  trinetra -compliance-score <sess>       Score session compliance (deterministic)");
+        System.out.println("  trinetra -compliance-report <sess>      Scorer + AI narrative report (validated)");
         System.out.println("  trinetra -ide -r <script> [args...]     Run a script");
         System.out.println("  trinetra -ide -cp <src> <sess>          Copy file to session artifacts");
         System.out.println("  trinetra -doctor                        Run diagnostics");

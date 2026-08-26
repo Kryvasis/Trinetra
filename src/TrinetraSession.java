@@ -186,8 +186,8 @@ public class TrinetraSession {
         });
     }
 
-    @SuppressWarnings("unchecked")
-    private static void doRefreshBrainStateFromSession(String sessionName) {
+    /** Package-visible unlocked variant: caller must hold the session lock. */
+    static void doRefreshBrainStateFromSession(String sessionName) {
         Path statePath = TrinetraCommon.sessionBrainState(sessionName);
         Map<String, Object> state = TrinetraCommon.readJsonFile(statePath);
         if (state.isEmpty()) return;

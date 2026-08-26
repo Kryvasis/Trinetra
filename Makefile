@@ -22,7 +22,7 @@ OUT_DIR       := out
 JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest \
                      TrinetraTestSelectionTest TrinetraVendorConnectorTest \
                      TrinetraComplianceTest TrinetraStatNormalizedResultsTest \
-                     TrinetraComplianceScorerTest
+                     TrinetraComplianceScorerTest TrinetraNarrativeGeneratorTest
 RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 
 # ================================================================
