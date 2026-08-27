@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-08-26T13:16:58.272519567Z",
+  "last_updated": "2026-08-27T15:46:56.595738692Z",
   "active_sessions": [
     "test1",
     "demo",
@@ -13,36 +13,12 @@
     "jun_v",
     "jun_v2",
     "cisco_reg",
-    "unknown_reg"
+    "unknown_reg",
+    "multi_vendor_e2e"
   ],
-  "session_count": 13,
+  "session_count": 14,
   "high_risk_sessions": [],
   "recent_activity": [
-    {
-      "session": "e2e_wire",
-      "timestamp": "2026-08-23T08:03:15.334426916Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "arb_demo",
-      "timestamp": "2026-08-26T12:17:02.043518666Z",
-      "event": "session_created"
-    },
-    {
-      "session": "arb_tmpl",
-      "timestamp": "2026-08-26T12:27:53.148780038Z",
-      "event": "session_created"
-    },
-    {
-      "session": "juniper_e2e",
-      "timestamp": "2026-08-26T13:03:59.559685729Z",
-      "event": "session_created"
-    },
-    {
-      "session": "juniper_e2e",
-      "timestamp": "2026-08-26T13:04:22.665480605Z",
-      "event": "finding_recorded"
-    },
     {
       "session": "juniper_e2e",
       "timestamp": "2026-08-26T13:06:12.128355413Z",
@@ -117,8 +93,33 @@
       "session": "unknown_reg",
       "timestamp": "2026-08-26T13:16:58.272434257Z",
       "event": "finding_recorded"
+    },
+    {
+      "session": "multi_vendor_e2e",
+      "timestamp": "2026-08-27T15:46:56.179826588Z",
+      "event": "session_created"
+    },
+    {
+      "session": "multi_vendor_e2e",
+      "timestamp": "2026-08-27T15:46:56.292954858Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "multi_vendor_e2e",
+      "timestamp": "2026-08-27T15:46:56.325227281Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "multi_vendor_e2e",
+      "timestamp": "2026-08-27T15:46:56.573023160Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "multi_vendor_e2e",
+      "timestamp": "2026-08-27T15:46:56.595688087Z",
+      "event": "finding_recorded"
     }
   ],
-  "previous_chain_hash": "9c0629cbde6a1d85f327a7102bd87c537f92743ea98147ea59638c4d908dc735",
-  "chain_hash": "dd3a268702a6a1162800a525ba4d3f73aa211c16800bf8845367c9714f38483c"
+  "previous_chain_hash": "b22033fac023a309612c0ec1b62e0a285a6dd32eab864b24aedfc032fd5ce92e",
+  "chain_hash": "2ba18d75665ea25d74f7a01cb116b7ce727c6b354a744221c377350c31c22fc2"
 }

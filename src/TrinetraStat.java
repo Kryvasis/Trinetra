@@ -441,8 +441,42 @@ public class TrinetraStat {
         // Execute the stat script
         // Script contract: bash stat_scripts/<code>.sh <target> <session_output_dir>
         // Vendor connector context is injected via environment (Prompt 13).
+        // Multi-vendor: resolve effective vendor per device (device_vendors map
+        // takes precedence over session-level vendor_resolution) and stamp
+        // both the executed script env and the persisted normalized_results
+        // with that device's vendor, preventing cross-vendor leakage.
+        String effectiveVendorRaw = null;
+        if (extraEnv != null && extraEnv.containsKey("TRINETRA_VENDOR")) {
+            effectiveVendorRaw = extraEnv.get("TRINETRA_VENDOR");
+        }
+        if (effectiveVendorRaw == null || effectiveVendorRaw.isBlank()) {
+            effectiveVendorRaw = TrinetraSession.getEffectiveVendorForDevice(sanitized, target);
+        }
+        if (effectiveVendorRaw == null || effectiveVendorRaw.isBlank()) {
+            effectiveVendorRaw = TrinetraSession.getSessionFinalVendor(sanitized);
+        }
+        VendorConnector effectiveConnector = VendorConnectorRegistry.resolve(effectiveVendorRaw);
+        String effectiveVendorCanon = effectiveConnector.getVendorName();
+        // Decide which env to actually exec with: merge caller-provided env
+        // but guarantee correct per-device vendor is what the script sees.
+        Map<String, String> execEnv = extraEnv;
+        if (execEnv == null) {
+            execEnv = new HashMap<>();
+        } else {
+            // copy to avoid mutating caller's map when we enforce canonical
+            execEnv = new HashMap<>(execEnv);
+        }
+        // Canonical vendor is what the script should see; raw requested kept for audit.
+        execEnv.put("TRINETRA_VENDOR", effectiveVendorCanon);
+        execEnv.put("TRINETRA_VENDOR_REQUESTED", effectiveVendorRaw);
+        execEnv.putIfAbsent("TRINETRA_CONNECTOR", effectiveConnector.getClass().getSimpleName());
+        // For per-device auto-connect tracking (single statRun, no batch lifecycle)
+        boolean autoConnected = false;
+        if (extraEnv == null) {
+            try { effectiveConnector.connect(target, new HashMap<>()); autoConnected = true; } catch (Exception ignored) {}
+        }
         String sessionOutDir = TrinetraCommon.sessionDir(sanitized).toString();
-        String[] result = TrinetraCommon.execCommand(300, extraEnv,
+        String[] result = TrinetraCommon.execCommand(300, execEnv,
             "bash", scriptPath.toString(), target, sessionOutDir);
         String stdout = result[0];
         String stderr = result[1];
@@ -518,7 +552,13 @@ public class TrinetraStat {
             // This is additive — findings are already written above; this
             // populates the second field so chain_hash / verifyChain()
             // are maintained during real CLI runs, not just unit tests.
-            String vendor = TrinetraSession.getSessionFinalVendor(sanitized);
+            // Use the same per-device effective vendor that was injected
+            // into the script env, to prevent cross-vendor leakage.
+            String vendor = effectiveVendorRaw;
+            // Fallback if somehow not set (should not happen)
+            if (vendor == null || vendor.isBlank()) {
+                vendor = TrinetraSession.getEffectiveVendorForDevice(sanitized, target);
+            }
             Map<String, Object> normalizedEntry = TrinetraCommon.newMap();
             normalizedEntry.put("device_id", target);
             normalizedEntry.put("vendor", vendor);
@@ -533,6 +573,9 @@ public class TrinetraStat {
 
         // Update brain state via trinetra_brain
         TrinetraBrain.updateBrain(sanitized);
+        if (autoConnected) {
+            try { effectiveConnector.disconnect(); } catch (Exception ignored) {}
+        }
 
         return finding;
     }
@@ -573,15 +616,20 @@ public class TrinetraStat {
         boolean selecting = selection != null && !selection.isEmpty();
 
         // ── Vendor connector resolution (Prompt 13) ──
-        // One resolution per batch: vendor is a per-session property.
-        // The resolved connector is propagated to test scripts via env
-        // vars (TRINETRA_VENDOR / TRINETRA_CONNECTOR) so bash-side device
-        // logic can branch without changing script positional contracts.
-        String finalVendor = TrinetraSession.getSessionFinalVendor(sanitized);
-        VendorConnector connector = VendorConnectorRegistry.resolve(finalVendor);
+        // Multi-vendor fix: resolve per device (target) — device_vendors
+        // map takes precedence so that two statRunAll invocations on the
+        // same combined session but different device targets each stamp
+        // their own correct vendor (no cross-vendor leakage). Legacy
+        // single-vendor sessions fall back to session-level
+        // vendor_resolution exactly as before.
+        String effectiveVendorRaw = TrinetraSession.getEffectiveVendorForDevice(sanitized, target);
+        if (effectiveVendorRaw == null || effectiveVendorRaw.isBlank()) {
+            effectiveVendorRaw = TrinetraSession.getSessionFinalVendor(sanitized);
+        }
+        VendorConnector connector = VendorConnectorRegistry.resolve(effectiveVendorRaw);
         Map<String, String> vendorEnv = new HashMap<>();
         vendorEnv.put("TRINETRA_VENDOR", connector.getVendorName());
-        vendorEnv.put("TRINETRA_VENDOR_REQUESTED", finalVendor);
+        vendorEnv.put("TRINETRA_VENDOR_REQUESTED", effectiveVendorRaw);
         vendorEnv.put("TRINETRA_CONNECTOR",
             connector.getClass().getSimpleName());
         try {
@@ -671,6 +719,57 @@ public class TrinetraStat {
             + " | Manual Review: " + review + " | Error: " + err);
 
         return results;
+    }
+
+    /**
+     * Multi-vendor batch helper — runs the same or different test
+     * selections across multiple device targets within ONE session.
+     * Each (device, test) pair executes via statRun with that device's
+     * effective vendor, so a shared vendor-agnostic test_id run on
+     * both Cisco and Juniper yields two distinct normalized_results
+     * entries (device_id + vendor correctly segregated). The chain
+     * remains a single tamper-evident sequence across all devices.
+     *
+     * @param sessionName session to write into
+     * @param deviceTargets ordered list of device identifiers (used as
+     *                      device_id / target address; must have a
+     *                      device_vendors entry or a session-level
+     *                      vendor_resolution fallback)
+     * @param selection tests to run per device (same selection for
+     *                  every device; use perDeviceSelection overload for
+     *                  heterogenous mixes)
+     * @param workers parallelism per device batch (1 = sequential)
+     * @param userId audit identity or null to skip audit rows
+     */
+    public static List<Map<String, Object>> statRunAllAcrossDevices(
+            String sessionName,
+            List<String> deviceTargets,
+            Set<String> selection,
+            int workers,
+            String userId) {
+        Map<String, Set<String>> perDevice = new LinkedHashMap<>();
+        for (String d : deviceTargets) perDevice.put(d, selection);
+        return statRunAllAcrossDevicesPerSelection(sessionName, perDevice, workers, userId);
+    }
+
+    /**
+     * Heterogenous variant: each device may have a different test mix.
+     * Enables the "vendor-agnostic shared test + vendor-specific test
+     * per vendor" requirement in one call.
+     */
+    public static List<Map<String, Object>> statRunAllAcrossDevicesPerSelection(
+            String sessionName,
+            Map<String, Set<String>> perDeviceSelection,
+            int workers,
+            String userId) {
+        List<Map<String, Object>> combined = new ArrayList<>();
+        for (Map.Entry<String, Set<String>> e : perDeviceSelection.entrySet()) {
+            String device = e.getKey();
+            Set<String> sel = e.getValue();
+            List<Map<String, Object>> part = statRunAll(sessionName, device, sel, workers, userId);
+            combined.addAll(part);
+        }
+        return combined;
     }
 
     /** Route one test id to its engine and normalize the result map. */

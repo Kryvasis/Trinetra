@@ -1,0 +1,9 @@
+=== T-JUNI ===
+Target: 10.10.1.20
+Exit code: 3
+=== STDOUT ===
+T-JUNI VENDOR=[Juniper] CONNECTOR=[JuniperConnector] TARGET=[10.10.1.20]
+show version | no-more -> Juniper Junos 22.4R1
+CONTROL_VIOLATION: exposed Juniper default creds
+=== STDERR ===
+

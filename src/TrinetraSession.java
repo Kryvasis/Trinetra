@@ -656,6 +656,104 @@ public class TrinetraSession {
         return "unknown";
     }
 
+    // ── Per-device vendor mapping (multi-vendor sessions) ──
+    // Optional map inside session JSON: device_id -> vendor name.
+    // Allows a single session to hold heterogenous devices (e.g. Cisco +
+    // Juniper) while keeping each normalized_results entry's vendor field
+    // faithfully segregated. Absent map -> single-vendor fallback.
+    public static final String DEVICE_VENDORS_FIELD = "device_vendors";
+
+    /**
+     * Register (or update) the vendor for a specific device inside a
+     * session. Thread-safe: whole read-modify-write holds the session
+     * lock so concurrent stat runs on different devices do not lose
+     * each other's registrations.
+     */
+    public static boolean setDeviceVendor(String sessionName,
+                                         String deviceId,
+                                         String vendor) {
+        if (sessionName == null || deviceId == null || vendor == null) return false;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String dev = deviceId.trim();
+        String ven = vendor.trim();
+        if (dev.isEmpty() || ven.isEmpty()) return false;
+        Boolean ok = withSessionStateLock(sanitized, () -> {
+            Path jsonPath = TrinetraCommon.sessionJson(sanitized);
+            Map<String, Object> session = TrinetraCommon.readJsonFile(jsonPath);
+            if (session.isEmpty()) return false;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = session.get(DEVICE_VENDORS_FIELD) instanceof Map
+                ? (Map<String, Object>) session.get(DEVICE_VENDORS_FIELD)
+                : new LinkedHashMap<>();
+            // Preserve insertion order; overwrite if already present.
+            map.put(dev, ven);
+            session.put(DEVICE_VENDORS_FIELD, map);
+            session.put("updated_at", TrinetraCommon.nowIso());
+            TrinetraCommon.writeJsonFile(jsonPath, session);
+            return true;
+        });
+        return Boolean.TRUE.equals(ok);
+    }
+
+    /** Read the vendor registered for a device, or null if none. */
+    public static String getDeviceVendor(String sessionName, String deviceId) {
+        if (sessionName == null || deviceId == null) return null;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_VENDORS_FIELD);
+        if (dv instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) dv;
+            Object v = map.get(deviceId);
+            if (v instanceof String && !((String) v).isBlank()) return ((String) v).trim();
+            // Also try trimmed key lookup for robustness
+            v = map.get(deviceId.trim());
+            if (v instanceof String && !((String) v).isBlank()) return ((String) v).trim();
+        }
+        return null;
+    }
+
+    /** All device->vendor pairs for a session (copy, never null). */
+    @SuppressWarnings("unchecked")
+    public static Map<String, String> getAllDeviceVendors(String sessionName) {
+        String sanitized = TrinetraCommon.sanitizeName(sessionName == null ? "" : sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_VENDORS_FIELD);
+        Map<String, String> out = new LinkedHashMap<>();
+        if (dv instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) dv).entrySet()) {
+                if (e.getKey() != null && e.getValue() != null)
+                    out.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+            }
+        }
+        return out;
+    }
+
+    /**
+     * Effective vendor for a given device execution.
+     * Lookup order:
+     *  1) device-specific entry in session JSON device_vendors
+     *  2) session-level vendor_resolution.final_vendor
+     *  3) Iskabon fingerprint (per-session)
+     *  4) "unknown"
+     * This is the sole source used by TrinetraStat to stamp the
+     * normalized_results.vendor field, guaranteeing no cross-vendor
+     * leakage even when the same test_id is run on two vendors with
+     * opposite verdicts in the same combined session.
+     */
+    public static String getEffectiveVendorForDevice(String sessionName,
+                                                     String deviceId) {
+        String devVendor = getDeviceVendor(sessionName, deviceId);
+        if (devVendor != null && !devVendor.isBlank()
+            && !"unknown".equalsIgnoreCase(devVendor)) {
+            return devVendor;
+        }
+        // Fall back to the legacy single-vendor path.
+        return getSessionFinalVendor(sessionName);
+    }
+
     /**
      * Latest known-good chain tip for a session (the hash a completed
      * audit/report should reference), or null when the session has no

@@ -1,0 +1,71 @@
+{
+  "session_name": "multi_vendor_e2e",
+  "target": "multi-target",
+  "state": "brain_updated",
+  "last_updated": "2026-08-27T15:46:56.602622248Z",
+  "brain_md_path": "/home/kali/Desktop/Trinetra/sessions/multi_vendor_e2e/brain_multi_vendor_e2e.md",
+  "brain_backup_path": "/home/kali/Desktop/Trinetra/sessions/multi_vendor_e2e/brain_multi_vendor_e2e.bak.md",
+  "byte_size": 472,
+  "estimated_tokens": 118,
+  "compression_count": 0,
+  "already_run_v_codes": [
+    "T-CISCO",
+    "T-SHARED",
+    "T-JUNI",
+    "T-SHARED"
+  ],
+  "confirmed_findings": [],
+  "suspected_findings": [],
+  "counts": {
+    "total_runs": "4",
+    "success_runs": "0",
+    "failed_runs": "4",
+    "unsummarized": "4"
+  },
+  "latest_suggestion": null,
+  "suggestion_history": [],
+  "normalized_results": [
+    {
+      "device_id": "10.10.1.10",
+      "vendor": "Cisco",
+      "test_id": "T-CISCO",
+      "raw_output": "T-CISCO VENDOR=[Cisco] CONNECTOR=[CiscoConnector] TARGET=[10.10.1.10]\nterminal length 0 ; show version -> Cisco IOS 15.9",
+      "normalized_result": "pass",
+      "timestamp": "2026-08-27T15:46:56.298797756Z",
+      "chain_hash": "19dd196ec3f0f70ec536dd2a3a1386e407d7be3e0136529bd1ec8af480638966"
+    },
+    {
+      "device_id": "10.10.1.10",
+      "vendor": "Cisco",
+      "test_id": "T-SHARED",
+      "raw_output": "T-SHARED VENDOR=[Cisco] CONNECTOR=[CiscoConnector] TARGET=[10.10.1.10]\nCISCO_TLS_OK: strong ciphers only",
+      "normalized_result": "pass",
+      "timestamp": "2026-08-27T15:46:56.335380312Z",
+      "chain_hash": "41a58b29a8cea0dee79069b9c9cb94f6e26fbe12bd9aa79cd9453033527df6c7"
+    },
+    {
+      "device_id": "10.10.1.20",
+      "vendor": "Juniper",
+      "test_id": "T-JUNI",
+      "raw_output": "T-JUNI VENDOR=[Juniper] CONNECTOR=[JuniperConnector] TARGET=[10.10.1.20]\nshow version | no-more -> Juniper Junos 22.4R1\nCONTROL_VIOLATION: exposed Juniper default creds",
+      "normalized_result": "fail",
+      "timestamp": "2026-08-27T15:46:56.575284609Z",
+      "chain_hash": "9a43a38bcd55c5029891a09c5d04cbe0aee265e39eee1a3b3f162223548c6d9a"
+    },
+    {
+      "device_id": "10.10.1.20",
+      "vendor": "Juniper",
+      "test_id": "T-SHARED",
+      "raw_output": "T-SHARED VENDOR=[Juniper] CONNECTOR=[JuniperConnector] TARGET=[10.10.1.20]\nCONTROL_VIOLATION: Juniper weak TLS 1.0 offered",
+      "normalized_result": "fail",
+      "timestamp": "2026-08-27T15:46:56.598477271Z",
+      "chain_hash": "fb3756f2d6aec03e1fa89bdfd0dd627c9e6e825b7b170461044895037f266dc4"
+    }
+  ],
+  "previous_chain_hash": "fb3756f2d6aec03e1fa89bdfd0dd627c9e6e825b7b170461044895037f266dc4",
+  "latest_score": {
+    "score": "50",
+    "scored_at": "2026-08-27T15:55:01.739581Z",
+    "note": "patched for doctor cleanliness - synthetic multi-vendor session"
+  }
+}
