@@ -1,6 +1,6 @@
 # Resume Point
 
-**Baseline commit:** `da27fb48bafb706e5ba1045e225e11f0bc9e0887` on `origin/main`
+**Baseline commit:** `826c035b2756596583485ac46855909f20785ace` on `origin/main`
 (Baseline: Flask bridge over CLI verified — no reimplementation, injection-safe (Prompt 20))
 
 ## Proven working end-to-end as of this commit
@@ -9,4 +9,4 @@ Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` +
 
 ## Next planned prompt
 
-Prompt 21 — React UI MVP (consume Flask bridge endpoints).
+PS26155 Alignment Fix — config-file ingestion + vendor training loop + CIS manifest + PDF export + minimal upload GUI (pre-React hardening).
