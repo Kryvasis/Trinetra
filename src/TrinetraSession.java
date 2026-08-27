@@ -754,6 +754,134 @@ public class TrinetraSession {
         return getSessionFinalVendor(sessionName);
     }
 
+    // ── Per-device ingestion method (PS26155: config_upload vs live_target) ──
+    public static final String DEVICE_INGESTION_FIELD = "device_ingestion";
+    public static final String UNRECOGNIZED_LINES_FIELD = "unrecognized_config_lines";
+
+    public static boolean setDeviceIngestion(String sessionName, String deviceId, String method, String filename) {
+        if (sessionName == null || deviceId == null || method == null) return false;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String dev = deviceId.trim();
+        String m = method.trim();
+        if (dev.isEmpty() || m.isEmpty()) return false;
+        Boolean ok = withSessionStateLock(sanitized, () -> {
+            Path jsonPath = TrinetraCommon.sessionJson(sanitized);
+            Map<String, Object> session = TrinetraCommon.readJsonFile(jsonPath);
+            if (session.isEmpty()) return false;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = session.get(DEVICE_INGESTION_FIELD) instanceof Map
+                ? (Map<String, Object>) session.get(DEVICE_INGESTION_FIELD)
+                : new LinkedHashMap<>();
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("method", m);
+            if (filename != null && !filename.isBlank()) entry.put("filename", filename.trim());
+            entry.put("timestamp", TrinetraCommon.nowIso());
+            map.put(dev, entry);
+            session.put(DEVICE_INGESTION_FIELD, map);
+            session.put("updated_at", TrinetraCommon.nowIso());
+            TrinetraCommon.writeJsonFile(jsonPath, session);
+            return true;
+        });
+        return Boolean.TRUE.equals(ok);
+    }
+
+    public static String getDeviceIngestionMethod(String sessionName, String deviceId) {
+        if (sessionName == null || deviceId == null) return null;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_INGESTION_FIELD);
+        if (dv instanceof Map) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = (Map<String, Object>) dv;
+            Object entry = map.get(deviceId);
+            if (entry instanceof Map) {
+                return TrinetraCommon.getString(entry, "method", null);
+            } else if (entry instanceof String) {
+                return (String) entry;
+            }
+        }
+        return null;
+    }
+
+    public static Map<String, Map<String, Object>> getAllDeviceIngestion(String sessionName) {
+        String sanitized = TrinetraCommon.sanitizeName(sessionName == null ? "" : sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_INGESTION_FIELD);
+        Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+        if (dv instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) dv).entrySet()) {
+                if (e.getValue() instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> val = (Map<String, Object>) e.getValue();
+                    out.put(String.valueOf(e.getKey()), val);
+                } else if (e.getValue() instanceof String) {
+                    Map<String, Object> val = new LinkedHashMap<>();
+                    val.put("method", String.valueOf(e.getValue()));
+                    out.put(String.valueOf(e.getKey()), val);
+                }
+            }
+        }
+        return out;
+    }
+
+    public static boolean setUnrecognizedLines(String sessionName, String deviceId, List<String> lines) {
+        if (sessionName == null || deviceId == null) return false;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String dev = deviceId.trim();
+        if (dev.isEmpty()) return false;
+        Boolean ok = withSessionStateLock(sanitized, () -> {
+            Path jsonPath = TrinetraCommon.sessionJson(sanitized);
+            Map<String, Object> session = TrinetraCommon.readJsonFile(jsonPath);
+            if (session.isEmpty()) return false;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = session.get(UNRECOGNIZED_LINES_FIELD) instanceof Map
+                ? (Map<String, Object>) session.get(UNRECOGNIZED_LINES_FIELD)
+                : new LinkedHashMap<>();
+            map.put(dev, lines != null ? new ArrayList<>(lines) : new ArrayList<>());
+            session.put(UNRECOGNIZED_LINES_FIELD, map);
+            session.put("updated_at", TrinetraCommon.nowIso());
+            TrinetraCommon.writeJsonFile(jsonPath, session);
+            return true;
+        });
+        return Boolean.TRUE.equals(ok);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static List<String> getUnrecognizedLines(String sessionName, String deviceId) {
+        if (sessionName == null || deviceId == null) return new ArrayList<>();
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(UNRECOGNIZED_LINES_FIELD);
+        if (dv instanceof Map) {
+            Map<String, Object> map = (Map<String, Object>) dv;
+            Object val = map.get(deviceId);
+            if (val instanceof List) {
+                List<String> out = new ArrayList<>();
+                for (Object o : (List<?>) val) out.add(String.valueOf(o));
+                return out;
+            }
+        }
+        return new ArrayList<>();
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, List<String>> getAllUnrecognizedLines(String sessionName) {
+        String sanitized = TrinetraCommon.sanitizeName(sessionName == null ? "" : sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(UNRECOGNIZED_LINES_FIELD);
+        Map<String, List<String>> out = new LinkedHashMap<>();
+        if (dv instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) dv).entrySet()) {
+                if (e.getValue() instanceof List) {
+                    List<String> list = new ArrayList<>();
+                    for (Object o : (List<?>) e.getValue()) list.add(String.valueOf(o));
+                    out.put(String.valueOf(e.getKey()), list);
+                }
+            }
+        }
+        return out;
+    }
+
     /**
      * Latest known-good chain tip for a session (the hash a completed
      * audit/report should reference), or null when the session has no

@@ -16,6 +16,9 @@
       "SOC2": [
         "CC6.1",
         "CC6.6"
+      ],
+      "CIS": [
+        "CIS-v8-4.6"
       ]
     }
   },
@@ -35,6 +38,9 @@
       ],
       "SOC2": [
         "CC6.1"
+      ],
+      "CIS": [
+        "CIS-v8-3.10"
       ]
     }
   },
@@ -53,6 +59,9 @@
       ],
       "SOC2": [
         "CC6.1"
+      ],
+      "CIS": [
+        "CIS-v8-3.10"
       ]
     }
   },
@@ -70,6 +79,9 @@
       ],
       "SOC2": [
         "CC6.1"
+      ],
+      "CIS": [
+        "CIS-v8-3.10"
       ]
     }
   },
@@ -89,6 +101,10 @@
       ],
       "SOC2": [
         "CC6.1"
+      ],
+      "CIS": [
+        "CIS-NX-OS-1.4.6",
+        "CIS-v8-4.7"
       ]
     }
   },
@@ -150,6 +166,72 @@
       "SOC2": [
         "CC6.1",
         "CC6.3"
+      ]
+    }
+  },
+  "V-005": {
+    "description": "Banner grabbing/fingerprinting",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-4.6"
+      ]
+    }
+  },
+  "V-013": {
+    "description": "Weak password policy",
+    "frameworks": {
+      "CIS": [
+        "CIS-IOS-1.1.1",
+        "CIS-v8-4.7"
+      ]
+    }
+  },
+  "V-058": {
+    "description": "Sensitive data in logs/errors",
+    "frameworks": {
+      "CIS": [
+        "CIS-NX-OS-1.5.1",
+        "CIS-NX-OS-1.5.2"
+      ]
+    }
+  },
+  "V-071": {
+    "description": "Exposed admin interface",
+    "frameworks": {
+      "CIS": [
+        "CIS-IOS-1.1.1",
+        "CIS-IOS-XE-1.2.6",
+        "CIS-IOS-XE-1.2.7",
+        "CIS-IOS-XE-2.1.1.1.4",
+        "CIS-NX-OS-1.2.1",
+        "CIS-v8-4.6"
+      ]
+    }
+  },
+  "V-105": {
+    "description": "Flat network/no segmentation",
+    "frameworks": {
+      "CIS": [
+        "CIS-IOS-XE-1.2.6",
+        "CIS-IOS-XE-1.2.7",
+        "CIS-NX-OS-1.2.1"
+      ]
+    }
+  },
+  "V-107": {
+    "description": "IAM/policy misconfig",
+    "frameworks": {
+      "CIS": [
+        "CIS-NX-OS-1.4.6"
+      ]
+    }
+  },
+  "V-144": {
+    "description": "Kernel hardening config audit",
+    "frameworks": {
+      "CIS": [
+        "CIS-NX-OS-1.5.1",
+        "CIS-NX-OS-1.5.2"
       ]
     }
   }

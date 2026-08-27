@@ -28,7 +28,7 @@ so testing can be continued, queried, summarized, and reported across sessions.
 - **Append-only SQLite audit log** — one row per significant action, linked via per-run UUIDs to
   the tamper-evident chain hash of each session.
 - **Standards-aligned scorecards** — `-agr [cert] [session]` generates cert-mode scorecards
-  (`default`, `stig`).
+  (`default`, `stig` — STIG cert mode is a placeholder; no STIG framework mappings exist in the compliance manifest yet).
 
 ## Requirements
 

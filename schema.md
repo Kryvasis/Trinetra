@@ -28,10 +28,10 @@ src/
   "findings": [
     {
       "finding_id": "uuid-or-deterministic-id",
-      "v_code": "V-029",
-      "v_name": "SQLi",
+      "v_code": "V-013",
+      "v_name": "Weak password policy",
       "target": "example.com",
-      "script": "stat_scripts/V-029.sh",
+      "script": "stat_scripts/V-013.sh",
       "started_at": "ISO-8601",
       "ended_at": "ISO-8601",
       "exit_code": 0,
@@ -42,7 +42,7 @@ src/
       "summary_model": "nvidia/nemotron-3-ultra-550b-a55b:free",
       "summary_error": null,
       "artifacts": ["artifacts/file1.txt"],
-      "tags": ["web", "injection"]
+      "tags": ["config", "hardening"]
     }
   ]
 }
@@ -60,9 +60,9 @@ src/
   "byte_size": 12345,
   "estimated_tokens": 2800,
   "compression_count": 1,
-  "already_run_v_codes": ["V-001", "V-029"],
-  "confirmed_findings": ["V-029"],
-  "suspected_findings": ["V-021"],
+  "already_run_v_codes": ["V-003", "V-013"],
+  "confirmed_findings": ["V-013"],
+  "suspected_findings": ["V-006"],
   "counts": {
     "total_runs": 7,
     "success_runs": 6,
@@ -70,17 +70,17 @@ src/
     "unsummarized": 1
   },
   "latest_suggestion": {
-    "next_v_code": "V-033",
-    "reason": "Command injection remains untested",
+    "next_v_code": "V-006",
+    "reason": "Weak TLS configuration remains untested",
     "confidence": "medium",
     "requires_revalidation": false,
-    "based_on": ["input_surface_present"]
+    "based_on": ["tls_surface_present"]
   },
   "suggestion_history": [
     {
       "timestamp": "ISO-8601",
-      "next_v_code": "V-033",
-      "reason": "Command injection remains untested"
+      "next_v_code": "V-006",
+      "reason": "Weak TLS configuration remains untested"
     }
   ]
 }
@@ -98,7 +98,7 @@ src/
       "session": "demo1",
       "timestamp": "ISO-8601",
       "event": "finding_recorded",
-      "v_code": "V-029"
+      "v_code": "V-013"
     }
   ]
 }

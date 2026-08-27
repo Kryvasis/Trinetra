@@ -384,6 +384,11 @@ public class TrinetraAuditReportBuilder {
               .append(String.join(", ", skippedFw)).append("\n\n");
         }
 
+        // PS hygiene: CIS/NIST/ISO are PS-required; PCI-DSS/SOC2 are bonus/additional coverage.
+        // NOTE: STIG is NOT computed — no STIG mappings exist in the compliance manifest.
+        // Do not claim STIG coverage without real scoring data backing it.
+        sb.append("> **Framework scope note:** *CIS, NIST 800-53, and ISO 27001 are the PS-required frameworks. PCI-DSS and SOC2 are shown as **bonus/additional coverage** only and are not PS-required.*\n\n");
+
         // ── Unmapped tests ──
         sb.append("---\n\n## Unmapped Tests\n\n");
         if (unmapped.isEmpty()) {

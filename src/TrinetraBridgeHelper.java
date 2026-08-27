@@ -12,7 +12,7 @@ import java.util.*;
 public class TrinetraBridgeHelper {
     public static void main(String[] args) {
         if (args.length == 0) {
-            System.err.println("Usage: TrinetraBridgeHelper <status|set-vendor> ...");
+            System.err.println("Usage: TrinetraBridgeHelper <status|set-vendor|ingest-config|get-unrecognized> ...");
             System.exit(1);
         }
         String cmd = args[0];
@@ -23,6 +23,12 @@ public class TrinetraBridgeHelper {
                     break;
                 case "set-vendor":
                     handleSetVendor(args);
+                    break;
+                case "ingest-config":
+                    handleIngestConfig(args);
+                    break;
+                case "get-unrecognized":
+                    handleGetUnrecognized(args);
                     break;
                 default:
                     System.err.println("Unknown command: " + cmd);
@@ -87,6 +93,8 @@ public class TrinetraBridgeHelper {
         ));
         out.put("normalized_results_count", nr.size());
         out.put("device_vendors", deviceVendors);
+        out.put("device_ingestion", TrinetraSession.getAllDeviceIngestion(sanitized));
+        out.put("unrecognized_by_device", TrinetraSession.getAllUnrecognizedLines(sanitized));
         out.put("brain_state_exists", !brainState.isEmpty());
         if (!brainState.isEmpty()) {
             out.put("brain_state_last_updated", TrinetraCommon.getString(brainState, "last_updated", ""));
@@ -122,6 +130,69 @@ public class TrinetraBridgeHelper {
         out.put("device_id", deviceId);
         out.put("vendor", vendor);
         out.put("status", "ok");
+        System.out.println(TrinetraJson.prettyJson(out));
+    }
+
+    private static void handleIngestConfig(String[] args) {
+        if (args.length < 5) {
+            System.err.println("Usage: TrinetraBridgeHelper ingest-config <session> <device_id> <vendor> <config_file_path>");
+            System.exit(1);
+        }
+        String session = args[1];
+        String deviceId = args[2];
+        String vendor = args[3];
+        String configPath = args[4];
+        String configContent = TrinetraCommon.readFileIfExists(Path.of(configPath));
+        if (configContent == null) {
+            System.err.println("Config file not found: " + configPath);
+            System.exit(1);
+        }
+        String filename = Path.of(configPath).getFileName().toString();
+        TrinetraConfigIngestor.IngestResult result = TrinetraConfigIngestor.ingest(session, deviceId, vendor, configContent, filename);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("session", TrinetraCommon.sanitizeName(session));
+        out.put("device_id", result.deviceId);
+        out.put("vendor", result.vendor);
+        out.put("ingestion_method", result.ingestionMethod);
+        out.put("total_checks", result.totalChecks);
+        out.put("passed", result.passed);
+        out.put("failed", result.failed);
+        out.put("unrecognized_lines", result.unrecognizedLines);
+        out.put("unrecognized_count", result.unrecognizedLines.size());
+        out.put("status", "ok");
+        System.out.println(TrinetraJson.prettyJson(out));
+    }
+
+    private static void handleGetUnrecognized(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Usage: TrinetraBridgeHelper get-unrecognized <session> [device_id]");
+            System.exit(1);
+        }
+        String session = args[1];
+        String sanitized = TrinetraCommon.sanitizeName(session);
+        Map<String, Object> sess = TrinetraSession.loadSession(sanitized);
+        if (sess == null || sess.isEmpty()) {
+            System.err.println("Session not found: " + session);
+            System.exit(2);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("session", sanitized);
+        if (args.length >= 3) {
+            String deviceId = args[2];
+            List<String> lines = TrinetraSession.getUnrecognizedLines(sanitized, deviceId);
+            out.put("device_id", deviceId);
+            out.put("unrecognized_lines", lines);
+            out.put("count", lines.size());
+        } else {
+            Map<String, List<String>> all = TrinetraSession.getAllUnrecognizedLines(sanitized);
+            out.put("unrecognized_by_device", all);
+            int total = 0;
+            for (List<String> l : all.values()) total += l.size();
+            out.put("total_unrecognized", total);
+        }
+        // Also include device ingestion map for context
+        out.put("device_ingestion", TrinetraSession.getAllDeviceIngestion(sanitized));
+        out.put("device_vendors", TrinetraSession.getAllDeviceVendors(sanitized));
         System.out.println(TrinetraJson.prettyJson(out));
     }
 }

@@ -61,7 +61,12 @@ public class TrinetraStat {
     }
 
     // ── State: loaded test definitions ──
-    private static Map<String, TestDefinition> testDefinitions = new LinkedHashMap<>();
+    static Map<String, TestDefinition> testDefinitions = new LinkedHashMap<>();
+
+    public static TestDefinition getTestDefinition(String code) {
+        loadDefinitions();
+        return testDefinitions.get(code.toUpperCase());
+    }
 
     // ── Load static map and decision engine ──
     @SuppressWarnings("unchecked")

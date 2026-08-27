@@ -121,6 +121,56 @@ curl http://127.0.0.1:5000/api/doctor
 # 200 -> {"raw_stdout":"=== Trinetra Doctor ...","sections":{...},"test_definitions":{"count":124},"session_validation":{"session_errors":{...}},"ai_integration":{...}}
 ```
 
+### `POST /api/session/<name>/upload-config` — config-file upload (PS26155 primary path)
+```bash
+# Primary demo flow: upload static config file, no live SSH required
+curl -X POST http://127.0.0.1:5000/api/session/demo/upload-config \
+  -F "device_id=cisco-01" -F "vendor=Cisco" -F "config=@cisco-01_running-config.txt"
+# or JSON:
+curl -X POST http://127.0.0.1:5000/api/session/demo/upload-config \
+  -H 'Content-Type: application/json' \
+  -d '{"device_id":"cisco-01","vendor":"Cisco","config_content":"hostname R1\nenable secret 5 ...","filename":"cisco-01_config.txt"}'
+# 200 -> {"device_id":"cisco-01","vendor":"Cisco","ingestion_method":"config_upload","total_checks":7,"passed":3,"failed":0,"unrecognized_count":2,"unrecognized_lines":[...]}
+# ingestion_method is recorded per device (config_upload vs live_target) and shown in reports
+```
+
+### `GET /api/session/<name>/unrecognized` — list unrecognized config lines
+```bash
+curl http://127.0.0.1:5000/api/session/demo/unrecognized
+# 200 -> {"session":"demo","unrecognized_by_device":{"cisco-01":[...]}, "total_unrecognized":2}
+curl http://127.0.0.1:5000/api/session/demo/unrecognized?device_id=cisco-01
+# 200 -> {"device_id":"cisco-01","unrecognized_lines":[...],"count":2}
+```
+
+### `POST /api/session/<name>/train` — label unrecognized line (no redeploy)
+```bash
+curl -X POST http://127.0.0.1:5000/api/session/demo/train \
+  -H 'Content-Type: application/json' \
+  -d '{"vendor":"Cisco","pattern":"my-custom-feature.*","security_category":"Custom Hardening","control_mapping":["CIS-v8-4.6"],"remediation":"no my-custom-feature"}'
+# 201 -> {"message":"training entry added","entry":{...},"total_entries":1}
+# Writes to config/vendor_training_map.json (not .java); next upload re-parses correctly
+```
+
+### `GET /api/session/<name>/audit-report/pdf` — PDF export
+```bash
+curl http://127.0.0.1:5000/api/session/demo/audit-report/pdf -o audit_report_demo.pdf
+# 200 -> application/pdf, Content-Disposition: attachment; filename=audit_report_demo.pdf
+# PDF includes device_id/hardware field, per-device evidence rows, and remediation per failed test
+# Remediation is sourced from stat_script docs first; only falls back to LLM (labeled "AI-suggested — verify before use")
+```
+
+### `GET /` / `GET /ui` / `GET /upload` — minimal upload GUI (PS26155)
+Plain HTML/JS served by Flask (no React needed):
+- File upload form (device config + vendor select or auto-detect)
+- Trigger run, results/score view, link to download PDF
+- Training-loop labeling form (shows unrecognized lines, lets admin label and re-parse)
+```bash
+# Open in browser
+xdg-open http://127.0.0.1:5000/
+# or
+curl http://127.0.0.1:5000/ | head -20
+```
+
 ### `GET /api/health` — bridge health
 ```bash
 curl http://127.0.0.1:5000/api/health
