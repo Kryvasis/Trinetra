@@ -34,6 +34,18 @@ stat_scripts_backup_*/
 *.tmp
 *.lock
 .DS_Store
+__pycache__/
+*.pyc
+*.pyo
 
 # Local API keys (never commit)
 config.json
+
+# Bridge test sessions (ephemeral, created by pytest/flask bridge)
+sessions/test_*/
+sessions/demo_bridge_*/
+sessions/consistency_*/
+sessions/err_test_*/
+sessions/bridge_test_*/
+sessions/nonexistent_*/
+sessions/this_session_*/

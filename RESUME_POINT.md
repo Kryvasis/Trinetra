@@ -1,12 +1,12 @@
 # Resume Point
 
-**Baseline commit:** `cd22323fd3f7b4c5fb79447ddabc439c9eee2538` on `origin/main`
-(Baseline: multi-vendor combined-session wiring verified — no cross-vendor leakage (Prompt 19))
+**Baseline commit:** `da27fb48bafb706e5ba1045e225e11f0bc9e0887` on `origin/main`
+(Baseline: Flask bridge over CLI verified — no reimplementation, injection-safe (Prompt 20))
 
 ## Proven working end-to-end as of this commit
 
-Full pipeline verified on real sessions: Iskabon fingerprinting (banner / SNMP OID / TCP-IP stack) feeds `vendor_resolution.final_vendor` and new per-device `device_vendors` map for heterogenous sessions; both registered connectors (Cisco IOS, Juniper Junos) resolve through `VendorConnectorRegistry` with correct per-vendor dialects and generic fallback; **multi-vendor combined session `multi_vendor_e2e` (10.10.1.10 Cisco + 10.10.1.20 Juniper) verified end-to-end**: stat runs via `statRunAllAcrossDevicesPerSelection` stamp each `normalized_results` entry with its device's effective vendor (no leakage, trap `T-SHARED` same test_id yields Cisco PASS + Juniper FAIL as two distinct chain links), `verifyChain()` INTACT (4 links), deterministic scorer aggregates per-framework across both vendors (ISO27001 66.7% 2/3, SOC2 33.3% 1/3), derived executive aggregate 50.0% correctly computed as unweighted mean and labeled derived, narratives pass strict number validation (Gemini validated or template fallback), and `TrinetraAuditReportBuilder` emits per-framework and combined reports with per-device evidence rows (`| Device | Vendor | Test ID | Verdict |`) showing both vendors distinctly. All 11 Java suites (including new `TrinetraMultiVendorE2ETest` hermetic regression) + 3 Iskabon C++ suites green. Doctor shows 124 definitions and 4 legacy `latest_score` warnings (clean).
+Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` + `VendorConnectorRegistry` (Cisco/Juniper) → hash-chained `normalized_results` (no cross-vendor leakage, verified via `multi_vendor_e2e` trap `T-SHARED` Cisco PASS + Juniper FAIL as distinct links, `verifyChain()` INTACT) → deterministic scorer (ISO 66.7/SOC2 33.3 etc.) → validated Gemini narratives → audit reports with per-device evidence rows and derived aggregate 50.0% labeled derived. **New: Python Flask bridge (`bridge/app.py`) wraps `trinetra` CLI via `subprocess.run(shell=False)` with strict regex + injection blocklist validation before any subprocess, exposes `POST /api/session`, `POST /api/session/<name>/run` (multi-vendor vendor-hint), `GET /status` (verifyChain via `TrinetraBridgeHelper`), `GET /score`/`/report`/`/audit-report` (byte-for-byte CLI-consistent), `GET /doctor` (structured JSON), all with proper 4xx/5xx error propagation; `src/TrinetraBridgeHelper.java` is thin JSON wrapper around `verifyChain()`/`setDeviceVendor()`; `bridge/config.py` env-overridable, no hardcoded absolute paths; 14 pytest bridge tests pass (including 3 extra injection payloads `$(whoami)`, backticks, `../../etc/passwd` rejected pre-subprocess), `make test` still 11 Java +3 C++ green, `trinetra -doctor` shows 124 definitions and 4 legacy warnings (clean).
 
 ## Next planned prompt
 
-Prompt 20 — Python Flask bridge exposing brain-state / scorer / narrative / report endpoints.
+Prompt 21 — React UI MVP (consume Flask bridge endpoints).
