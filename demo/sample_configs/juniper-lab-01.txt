@@ -2,7 +2,9 @@
 ! Demo Juniper Config — Trinetra Compliance Scanner
 ! Device: juniper-lab-01
 ! Vendor: Juniper
+! OS: JUNOS 20.4R3-S2.4 (header for OS-version detection demo)
 ! ============================================================
+/* JUNOS 20.4R3-S2.4 */
 system {
     host-name juniper-lab-01;
     root-authentication {

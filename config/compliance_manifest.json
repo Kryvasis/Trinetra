@@ -1,4 +1,5 @@
 {
+  "_STIG_source_note": "DISA STIG Viewer — Cisco IOS Switch NDM STIG V2R5 (2024-01-26), Cisco IOS-XE Router NDM STIG V2R4, and Juniper SRX SG NDM STIG V2R4 / Network Device Management SRG; Group IDs CISC-ND-xxxxxx (Cisco) and JUSX-ND-xxxxxx (Juniper) correspond to Vuln IDs V-2204xx/V-2148xx. Verified via https://public.cyber.mil/stigs/ and STIG Viewer. Partial real coverage — STIG presence per V-code reflects genuine applicability; unmapped V-codes have no STIG entry and appear in coverage_gaps.",
   "V-003": {
     "description": "Open port/unnecessary service detection",
     "frameworks": {
@@ -19,6 +20,10 @@
       ],
       "CIS": [
         "CIS-v8-4.6"
+      ],
+      "STIG": [
+        "CISC-ND-000020",
+        "CISC-ND-000040"
       ]
     }
   },
@@ -41,6 +46,10 @@
       ],
       "CIS": [
         "CIS-v8-3.10"
+      ],
+      "STIG": [
+        "CISC-ND-000130",
+        "JUSX-ND-000130"
       ]
     }
   },
@@ -62,6 +71,11 @@
       ],
       "CIS": [
         "CIS-v8-3.10"
+      ],
+      "STIG": [
+        "CISC-ND-000130",
+        "CISC-ND-000135",
+        "JUSX-ND-000130"
       ]
     }
   },
@@ -82,6 +96,11 @@
       ],
       "CIS": [
         "CIS-v8-3.10"
+      ],
+      "STIG": [
+        "CISC-ND-000130",
+        "CISC-ND-000250",
+        "JUSX-ND-000250"
       ]
     }
   },
@@ -105,6 +124,11 @@
       "CIS": [
         "CIS-NX-OS-1.4.6",
         "CIS-v8-4.7"
+      ],
+      "STIG": [
+        "CISC-ND-000015",
+        "CISC-ND-000025",
+        "JUSX-ND-000015"
       ]
     }
   },
@@ -124,6 +148,10 @@
       ],
       "SOC2": [
         "CC7.1"
+      ],
+      "STIG": [
+        "CISC-ND-000160",
+        "JUSX-ND-000160"
       ]
     }
   },
@@ -145,6 +173,10 @@
       "SOC2": [
         "CC7.1",
         "CC8.1"
+      ],
+      "STIG": [
+        "CISC-ND-000160",
+        "JUSX-ND-000160"
       ]
     }
   },
@@ -174,6 +206,10 @@
     "frameworks": {
       "CIS": [
         "CIS-v8-4.6"
+      ],
+      "STIG": [
+        "CISC-ND-000320",
+        "JUSX-ND-000320"
       ]
     }
   },
@@ -183,6 +219,11 @@
       "CIS": [
         "CIS-IOS-1.1.1",
         "CIS-v8-4.7"
+      ],
+      "STIG": [
+        "CISC-ND-000015",
+        "CISC-ND-000030",
+        "JUSX-ND-000015"
       ]
     }
   },
@@ -192,6 +233,10 @@
       "CIS": [
         "CIS-NX-OS-1.5.1",
         "CIS-NX-OS-1.5.2"
+      ],
+      "STIG": [
+        "CISC-ND-000140",
+        "JUSX-ND-000140"
       ]
     }
   },
@@ -205,6 +250,12 @@
         "CIS-IOS-XE-2.1.1.1.4",
         "CIS-NX-OS-1.2.1",
         "CIS-v8-4.6"
+      ],
+      "STIG": [
+        "CISC-ND-000010",
+        "CISC-ND-000040",
+        "CISC-ND-000080",
+        "JUSX-ND-000010"
       ]
     }
   },
@@ -215,6 +266,10 @@
         "CIS-IOS-XE-1.2.6",
         "CIS-IOS-XE-1.2.7",
         "CIS-NX-OS-1.2.1"
+      ],
+      "STIG": [
+        "CISC-ND-000300",
+        "JUSX-ND-000300"
       ]
     }
   },
@@ -223,6 +278,11 @@
     "frameworks": {
       "CIS": [
         "CIS-NX-OS-1.4.6"
+      ],
+      "STIG": [
+        "CISC-ND-000015",
+        "CISC-ND-000030",
+        "JUSX-ND-000030"
       ]
     }
   },
@@ -232,6 +292,10 @@
       "CIS": [
         "CIS-NX-OS-1.5.1",
         "CIS-NX-OS-1.5.2"
+      ],
+      "STIG": [
+        "CISC-ND-000230",
+        "JUSX-ND-000230"
       ]
     }
   }

@@ -24,7 +24,23 @@ public class TrinetraComplianceScorer {
      * @return the scoring result as a structured map
      */
     public static Map<String, Object> score(String sessionName) {
+        return score(sessionName, null);
+    }
+
+    /**
+     * Filtered scoring entry point. If frameworkFilter is null or empty, all
+     * frameworks in the manifest are scored. Otherwise only the requested
+     * framework keys (case-insensitive, underscores/hyphens tolerant) are
+     * included in the output. This enables the PS-required "user-selected benchmarks"
+     * without breaking existing callers that pass no filter.
+     *
+     * @param sessionName the session to score
+     * @param frameworkFilter optional set of framework keys to include (e.g. CIS, STIG, NIST_800-53)
+     * @return the scoring result as a structured map (filtered)
+     */
+    public static Map<String, Object> score(String sessionName, Set<String> frameworkFilter) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        Set<String> normalizedFilter = normalizeFrameworkFilter(frameworkFilter);
 
         List<Map<String, Object>> results =
             TrinetraSession.getNormalizedResults(sanitized);
@@ -55,6 +71,9 @@ public class TrinetraComplianceScorer {
 
             for (Map.Entry<String, List<String>> fw : controlMappings.entrySet()) {
                 String framework = fw.getKey();
+                if (normalizedFilter != null && !normalizedFilter.contains(normalizeFrameworkKey(framework))) {
+                    continue;
+                }
                 List<String> controlIds = fw.getValue();
 
                 FrameworkAccumulator acc = accumulators.computeIfAbsent(
@@ -71,10 +90,27 @@ public class TrinetraComplianceScorer {
             }
         }
 
+        // When a filter is active, ensure selected frameworks are represented even if
+        // no executed test mapped to them (shows 0% + full coverage_gaps honestly).
+        if (normalizedFilter != null) {
+            Set<String> canonicalFrameworks = new LinkedHashSet<>();
+            for (String tid : TrinetraCompliance.getMappedTestIds()) {
+                for (String fw : TrinetraCompliance.getControlMappings(tid).keySet()) {
+                    canonicalFrameworks.add(fw);
+                }
+            }
+            for (String canon : canonicalFrameworks) {
+                if (normalizedFilter.contains(normalizeFrameworkKey(canon)) && !accumulators.containsKey(canon)) {
+                    accumulators.put(canon, new FrameworkAccumulator());
+                }
+            }
+        }
+
         // ── Detect control coverage gaps ──
         // For each framework, find control IDs present in the manifest
         // that were NOT covered by any executed test in this session.
-        Map<String, List<String>> coverageGaps = detectCoverageGaps(accumulators);
+        // When a filter is active, gaps are computed only for the selected frameworks.
+        Map<String, List<String>> coverageGaps = detectCoverageGaps(accumulators, normalizedFilter);
 
         // ── Build output ──
         Map<String, Object> output = new LinkedHashMap<>();
@@ -120,12 +156,47 @@ public class TrinetraComplianceScorer {
      * @return the path to the written file
      */
     public static Path scoreAndWrite(String sessionName) {
+        return scoreAndWrite(sessionName, null);
+    }
+
+    /**
+     * Filtered scoreAndWrite. When filter is null/empty, writes the canonical
+     * compliance_score_&lt;session&gt;.json. When filter is non-empty, writes a
+     * transient filtered file and also returns its path so callers can still
+     * locate an artifact without clobbering the canonical file.
+     */
+    public static Path scoreAndWrite(String sessionName, Set<String> frameworkFilter) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
-        Map<String, Object> result = score(sanitized);
-        Path outPath = TrinetraCommon.sessionDir(sanitized)
-            .resolve("compliance_score_" + sanitized + ".json");
-        TrinetraCommon.writeJsonFile(outPath, result);
-        return outPath;
+        Map<String, Object> result = score(sanitized, frameworkFilter);
+        if (frameworkFilter == null || frameworkFilter.isEmpty()) {
+            Path outPath = TrinetraCommon.sessionDir(sanitized)
+                .resolve("compliance_score_" + sanitized + ".json");
+            TrinetraCommon.writeJsonFile(outPath, result);
+            return outPath;
+        } else {
+            // Write filtered variant to avoid clobbering canonical file
+            String suffix = String.join("_", normalizeFrameworkFilter(frameworkFilter));
+            Path outPath = TrinetraCommon.sessionDir(sanitized)
+                .resolve("compliance_score_" + sanitized + "_filtered_" + suffix + ".json");
+            TrinetraCommon.writeJsonFile(outPath, result);
+            return outPath;
+        }
+    }
+
+    // ── Framework filter helpers ──
+    private static Set<String> normalizeFrameworkFilter(Set<String> filter) {
+        if (filter == null || filter.isEmpty()) return null;
+        Set<String> out = new LinkedHashSet<>();
+        for (String f : filter) {
+            if (f == null) continue;
+            String n = normalizeFrameworkKey(f.trim());
+            if (!n.isEmpty()) out.add(n);
+        }
+        return out.isEmpty() ? null : out;
+    }
+
+    private static String normalizeFrameworkKey(String key) {
+        return key.toLowerCase().replaceAll("[\\s\\-]", "_");
     }
 
     /**
@@ -150,6 +221,11 @@ public class TrinetraComplianceScorer {
      */
     private static Map<String, List<String>> detectCoverageGaps(
             Map<String, FrameworkAccumulator> accumulators) {
+        return detectCoverageGaps(accumulators, null);
+    }
+
+    private static Map<String, List<String>> detectCoverageGaps(
+            Map<String, FrameworkAccumulator> accumulators, Set<String> normalizedFilter) {
 
         Map<String, List<String>> gaps = new LinkedHashMap<>();
 
@@ -160,6 +236,9 @@ public class TrinetraComplianceScorer {
             Map<String, List<String>> mappings =
                 TrinetraCompliance.getControlMappings(testId);
             for (Map.Entry<String, List<String>> fw : mappings.entrySet()) {
+                if (normalizedFilter != null && !normalizedFilter.contains(normalizeFrameworkKey(fw.getKey()))) {
+                    continue;
+                }
                 allControlsByFramework
                     .computeIfAbsent(fw.getKey(), k -> new LinkedHashSet<>())
                     .addAll(fw.getValue());

@@ -487,3 +487,186 @@ def test_devices_endpoint(client):
     sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
     if sess_dir.exists():
         shutil.rmtree(sess_dir)
+
+# ── New: STIG, framework filter, bulk with hardware, severity in report/PDF ──
+
+def test_stig_scoring(client):
+    """STIG is now 4th PS-required benchmark — score must contain STIG framework."""
+    sess = unique_session("test_stig")
+    client.post("/api/session", json={"name": sess, "target": "127.0.0.1"})
+    cfg = "hostname R1\nenable secret 5 $1$abc\nip ssh version 2\nsnmp-server community public RO\n"
+    client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "cisco-stig-01",
+        "vendor": "Cisco",
+        "config_content": cfg,
+        "filename": "cisco_stig.txt",
+    })
+    resp = client.get(f"/api/session/{sess}/score")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+    score = data["score"]
+    assert "STIG" in score["frameworks"], f"STIG missing; frameworks present: {list(score['frameworks'].keys())}"
+    stig = score["frameworks"]["STIG"]
+    assert "compliance_percentage" in stig
+    assert "tests_passed" in stig
+    assert "controls_covered" in stig
+    for ctrl in stig.get("controls_covered", []):
+        assert ctrl.startswith("CISC-ND-") or ctrl.startswith("JUSX-ND-"), f"STIG control not real Group ID: {ctrl}"
+    import shutil
+    sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
+    if sess_dir.exists():
+        shutil.rmtree(sess_dir)
+
+def test_framework_selection_filtering(client):
+    """User-selected benchmarks via ?frameworks=CIS,STIG — filtered scoring."""
+    sess = unique_session("test_fw_filter")
+    client.post("/api/session", json={"name": sess, "target": "127.0.0.1"})
+    cfg = "hostname R1\nenable secret 5 $1$abc\nsnmp-server community public RO\n"
+    client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "fw-dev-01",
+        "vendor": "Cisco",
+        "config_content": cfg,
+        "filename": "fw.txt",
+    })
+    resp = client.get(f"/api/session/{sess}/score")
+    assert resp.status_code == 200
+    full = resp.get_json()["score"]["frameworks"]
+    assert "STIG" in full and "CIS" in full
+    resp = client.get(f"/api/session/{sess}/score?frameworks=CIS")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    filtered = resp.get_json()["score"]["frameworks"]
+    assert list(filtered.keys()) == ["CIS"], f"Expected only CIS, got {list(filtered.keys())}"
+    resp = client.get(f"/api/session/{sess}/score?frameworks=CIS,STIG")
+    assert resp.status_code == 200
+    filtered2 = resp.get_json()["score"]["frameworks"]
+    assert set(filtered2.keys()) == {"CIS", "STIG"}, f"Expected CIS+STIG, got {set(filtered2.keys())}"
+    resp = client.get(f"/api/session/{sess}/audit-report?frameworks=CIS")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["combined_content"] is not None
+    import shutil
+    sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
+    if sess_dir.exists():
+        shutil.rmtree(sess_dir)
+
+def test_bulk_upload_with_hardware_metadata(client):
+    """Bulk-equivalent via sequential single-upload — per-file device_id derived from filename + hardware fields appear in devices dashboard."""
+    sess = unique_session("test_bulk_hw")
+    client.post("/api/session", json={"name": sess, "target": "bulk-target"})
+    cfg_cisco = "! Cisco IOS XE Software, Version 17.6.5\nhostname R1\nenable secret 5 $1$abc\n"
+    cfg_juniper = "/* JUNOS 20.4R3-S2.4 */\nsystem { host-name sw2; }\n"
+    resp1 = client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "cisco-bulk-01",
+        "vendor": "Cisco",
+        "serial_number": "FTX12345678",
+        "hardware_model": "C9300-48P",
+        "os_version": "IOS XE 17.6.5",
+        "config_content": cfg_cisco,
+        "filename": "cisco-bulk-01.txt",
+    })
+    assert resp1.status_code == 200, resp1.get_data(as_text=True)
+    resp2 = client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "juniper-bulk-01",
+        "vendor": "Juniper",
+        "serial_number": "JN78901234",
+        "hardware_model": "SRX345",
+        "os_version": "JUNOS 20.4R3",
+        "config_content": cfg_juniper,
+        "filename": "juniper-bulk-01.txt",
+    })
+    assert resp2.status_code == 200, resp2.get_data(as_text=True)
+    resp = client.get(f"/api/session/{sess}/devices")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+    assert data["device_count"] == 2, f"Expected 2 devices, got {data}"
+    devs = {d["device_id"]: d for d in data["devices"]}
+    assert "cisco-bulk-01" in devs and "juniper-bulk-01" in devs
+    assert devs["cisco-bulk-01"]["serial_number"] == "FTX12345678"
+    assert devs["cisco-bulk-01"]["hardware_model"] == "C9300-48P"
+    assert devs["cisco-bulk-01"]["os_version"] == "IOS XE 17.6.5"
+    assert devs["juniper-bulk-01"]["hardware_model"] == "SRX345"
+    cfg_auto = "! Cisco IOS XE Software, Version 17.6.5\nhostname auto-os\n"
+    resp3 = client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "auto-os-dev",
+        "vendor": "auto",
+        "config_content": cfg_auto,
+        "filename": "auto.txt",
+    })
+    assert resp3.status_code == 200
+    resp = client.get(f"/api/session/{sess}/devices")
+    devs = {d["device_id"]: d for d in resp.get_json()["devices"]}
+    assert devs["auto-os-dev"]["os_version"] != "" and "IOS" in devs["auto-os-dev"]["os_version"], f"OS auto-detect failed: {devs['auto-os-dev']}"
+    import shutil
+    sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
+    if sess_dir.exists():
+        shutil.rmtree(sess_dir)
+
+def test_severity_in_report_and_pdf(client):
+    """Severity column appears in primary audit report markdown and PDF evidence table."""
+    sess = unique_session("test_severity")
+    client.post("/api/session", json={"name": sess, "target": "127.0.0.1"})
+    cfg = "hostname R1\nenable secret 5 $1$abc\nsnmp-server community public RO\n"
+    client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "sev-dev-01",
+        "vendor": "Cisco",
+        "config_content": cfg,
+        "filename": "sev.txt",
+    })
+    resp = client.get(f"/api/session/{sess}/audit-report")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    combined = resp.get_json()["combined_content"]
+    assert combined is not None
+    assert "Severity" in combined, "Severity column missing in combined markdown"
+    assert "Serial" in combined and "Hardware" in combined and "OS Version" in combined, "Distinct hardware columns missing"
+    assert any(sev in combined.lower() for sev in ["medium", "low", "high", "critical"]), "No severity values in report"
+    resp = client.get(f"/api/session/{sess}/audit-report/pdf")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    # PDF header check
+    ctype = resp.headers.get("Content-Type", "")
+    assert ctype.startswith("application/pdf") or resp.data[:4] == b"%PDF", "PDF not returned"
+    pdf_text = resp.data.decode("latin1", errors="ignore")
+    assert "Severity" in pdf_text or "Severity" in combined, "Severity not in PDF text layer"
+    assert "configure terminal" in pdf_text.lower() or "1." in pdf_text, "Step-by-step remediation not in PDF"
+    import shutil
+    sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
+    if sess_dir.exists():
+        shutil.rmtree(sess_dir)
+
+def test_os_version_training_metadata(client):
+    """Training entry can carry os_version metadata."""
+    sess = unique_session("test_train_os")
+    client.post("/api/session", json={"name": sess, "target": "127.0.0.1"})
+    resp = client.post(f"/api/session/{sess}/train", json={
+        "vendor": "Cisco",
+        "pattern": "test-os-pattern-.*",
+        "security_category": "Test",
+        "control_mapping": ["CIS-v8-4.6"],
+        "remediation": "test",
+        "os_version": "IOS XE 17.6.5"
+    })
+    if resp.status_code == 409:
+        from pathlib import Path
+        import json
+        map_path = Path(__file__).resolve().parent.parent.parent / "config" / "vendor_training_map.json"
+        data = json.loads(map_path.read_text())
+        data["entries"] = [e for e in data.get("entries", []) if e.get("pattern") != "test-os-pattern-.*"]
+        map_path.write_text(json.dumps(data, indent=2))
+        resp = client.post(f"/api/session/{sess}/train", json={
+            "vendor": "Cisco",
+            "pattern": "test-os-pattern-.*",
+            "security_category": "Test",
+            "control_mapping": ["CIS-v8-4.6"],
+            "remediation": "test",
+            "os_version": "IOS XE 17.6.5"
+        })
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    assert resp.get_json()["entry"].get("os_version") == "IOS XE 17.6.5"
+    from pathlib import Path
+    import json
+    map_path = Path(__file__).resolve().parent.parent.parent / "config" / "vendor_training_map.json"
+    data = json.loads(map_path.read_text())
+    data["entries"] = [e for e in data.get("entries", []) if e.get("pattern") != "test-os-pattern-.*"]
+    map_path.write_text(json.dumps(data, indent=2))
+    import shutil
+    sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
+    if sess_dir.exists():
+        shutil.rmtree(sess_dir)

@@ -2,7 +2,9 @@
 ! Demo Cisco IOS Config — Trinetra Compliance Scanner
 ! Device: cisco-lab-01
 ! Vendor: Cisco
+! OS: IOS XE 17.6.5 (header banner for OS-version detection demo)
 ! ============================================================
+! Cisco IOS XE Software, Version 17.6.5
 hostname cisco-lab-01
 !
 ! --- Password & Access ---

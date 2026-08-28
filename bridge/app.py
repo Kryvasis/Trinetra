@@ -64,6 +64,30 @@ def validate_vendor(v: str):
         return False
     return True
 
+def get_framework_filter():
+    """Parse ?frameworks=CIS,STIG,NIST_800-53 etc. Returns list or None."""
+    raw = request.args.get("frameworks") or request.args.get("framework") or request.args.get("benchmarks")
+    if not raw:
+        # Also accept JSON body for POST fallback (not used by GET but harmless)
+        try:
+            body = request.get_json(silent=True) or {}
+            raw = body.get("frameworks") or body.get("framework") or body.get("benchmarks")
+            if isinstance(raw, list):
+                raw = ",".join(raw)
+        except:
+            pass
+    if not raw or not isinstance(raw, str):
+        return None
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    valid = []
+    for p in parts:
+        if not re.match(r"^[A-Za-z0-9_\-\.]+$", p):
+            continue
+        if contains_injection(p):
+            continue
+        valid.append(p)
+    return valid if valid else None
+
 # ── Subprocess helpers ──
 def run_trinetra(args, timeout=SUBPROCESS_TIMEOUT):
     """
@@ -275,7 +299,11 @@ def session_status(name):
 def compliance_score(name):
     if not validate_session(name):
         return error_response(f"invalid session name: {name!r}", 400)
-    rc, out, err = run_trinetra(["-compliance-score", name])
+    fw_filter = get_framework_filter()
+    tr_args = ["-compliance-score", name]
+    if fw_filter:
+        tr_args += ["--frameworks", ",".join(fw_filter)]
+    rc, out, err = run_trinetra(tr_args)
     if rc != 0:
         msg = (err.strip() or out.strip()) or "compliance-score failed"
         if "not found" in msg.lower() or "no such" in msg.lower() or "session" in msg.lower() and "not" in msg.lower():
@@ -320,7 +348,11 @@ def compliance_score(name):
 def compliance_report(name):
     if not validate_session(name):
         return error_response(f"invalid session name: {name!r}", 400)
-    rc, out, err = run_trinetra(["-compliance-report", name], timeout=120)
+    fw_filter = get_framework_filter()
+    tr_args = ["-compliance-report", name]
+    if fw_filter:
+        tr_args += ["--frameworks", ",".join(fw_filter)]
+    rc, out, err = run_trinetra(tr_args, timeout=120)
     if rc != 0:
         msg = (err.strip() or out.strip()) or "compliance-report failed"
         if "not found" in msg.lower():
@@ -351,7 +383,11 @@ def compliance_report(name):
 def audit_report(name):
     if not validate_session(name):
         return error_response(f"invalid session name: {name!r}", 400)
-    rc, out, err = run_trinetra(["-audit-report", name], timeout=120)
+    fw_filter = get_framework_filter()
+    tr_args = ["-audit-report", name]
+    if fw_filter:
+        tr_args += ["--frameworks", ",".join(fw_filter)]
+    rc, out, err = run_trinetra(tr_args, timeout=120)
     if rc != 0:
         msg = (err.strip() or out.strip()) or "audit-report failed"
         if "not found" in msg.lower() or "no readable" in msg.lower():
@@ -421,10 +457,16 @@ def upload_config(name):
     vendor = None
     config_content = None
     filename = None
+    serial_number = None
+    hardware_model = None
+    os_version = None
 
     if request.content_type and "multipart/form-data" in request.content_type:
         device_id = request.form.get("device_id") or request.form.get("deviceId")
         vendor = request.form.get("vendor") or request.form.get("vendor_hint")
+        serial_number = request.form.get("serial_number") or request.form.get("serialNumber") or request.form.get("serial")
+        hardware_model = request.form.get("hardware_model") or request.form.get("hardwareModel") or request.form.get("model")
+        os_version = request.form.get("os_version") or request.form.get("osVersion") or request.form.get("os")
         # File field can be named "config" or "file" or "config_file"
         file = request.files.get("config") or request.files.get("file") or request.files.get("config_file")
         if file and file.filename:
@@ -444,6 +486,9 @@ def upload_config(name):
         data = request.get_json(silent=True) or {}
         device_id = data.get("device_id") or data.get("deviceId") or data.get("target")
         vendor = data.get("vendor") or data.get("vendor_hint")
+        serial_number = data.get("serial_number") or data.get("serialNumber") or data.get("serial")
+        hardware_model = data.get("hardware_model") or data.get("hardwareModel") or data.get("model")
+        os_version = data.get("os_version") or data.get("osVersion") or data.get("os")
         config_content = data.get("config_content") or data.get("config") or data.get("content") or data.get("file_content")
         filename = data.get("filename") or data.get("file_name") or (f"{device_id}_config.txt" if device_id else None)
 
@@ -453,6 +498,11 @@ def upload_config(name):
         return error_response(f"invalid device_id: {device_id!r}", 400)
     if vendor and not validate_vendor(vendor):
         return error_response(f"invalid vendor: {vendor!r}", 400)
+    # Validate optional hardware metadata (free-text, injection-safe, max lengths)
+    for field_name, field_val in [("serial_number", serial_number), ("hardware_model", hardware_model), ("os_version", os_version)]:
+        if field_val is not None and field_val != "":
+            if not isinstance(field_val, str) or len(field_val) > 128 or contains_injection(field_val):
+                return error_response(f"invalid {field_name}: {field_val!r}", 400)
     if not config_content or not isinstance(config_content, str) or len(config_content.strip()) == 0:
         return error_response("missing or empty config file content", 400)
     if len(config_content) > 1024 * 1024:  # 1MB limit
@@ -473,8 +523,11 @@ def upload_config(name):
             tf.write(config_content)
             tmp_path = tf.name
 
-        # Call Java helper ingest-config
-        args = ["ingest-config", name, device_id, vendor or "auto", tmp_path]
+        # Call Java helper ingest-config — include hardware metadata (use "_" placeholder for blank to preserve positional args)
+        serial_arg = serial_number.strip() if serial_number and serial_number.strip() else "_"
+        hardware_arg = hardware_model.strip() if hardware_model and hardware_model.strip() else "_"
+        os_arg = os_version.strip() if os_version and os_version.strip() else "_"
+        args = ["ingest-config", name, device_id, vendor or "auto", tmp_path, serial_arg, hardware_arg, os_arg]
         rc, out, err = run_java_helper("TrinetraBridgeHelper", args, timeout=120)
         if rc != 0:
             msg = (err.strip() or out.strip()) or "config ingestion failed"
@@ -548,6 +601,7 @@ def session_devices(name):
 
     device_vendors = session_data.get("device_vendors") or {}
     device_ingestion = session_data.get("device_ingestion") or {}
+    device_details = session_data.get("device_details") or {}
     findings = session_data.get("findings") or []
     normalized_results = brain_data.get("normalized_results") or []
 
@@ -600,11 +654,19 @@ def session_devices(name):
         if nr_total > 0:
             pass_count, fail_count, total = nr_pass, nr_fail, nr_total
 
+        details = device_details.get(did) or {}
+        serial_number = details.get("serial_number", "")
+        hardware_model = details.get("hardware_model", "")
+        os_version = details.get("os_version", "")
+
         devices.append({
             "device_id": did,
             "vendor": vendor,
             "ingestion_method": ingestion_method,
             "filename": ingestion_filename,
+            "serial_number": serial_number,
+            "hardware_model": hardware_model,
+            "os_version": os_version,
             "pass_count": pass_count,
             "fail_count": fail_count,
             "total_checks": total,
@@ -627,6 +689,7 @@ def train_vendor(name):
     category = data.get("security_category") or data.get("category") or ""
     controls = data.get("control_mapping") or data.get("controls") or []
     remediation = data.get("remediation") or ""
+    os_version_train = data.get("os_version") or data.get("osVersion") or data.get("os") or ""
 
     if not vendor or not pattern:
         return error_response("missing required fields: vendor and pattern", 400)
@@ -652,6 +715,8 @@ def train_vendor(name):
         return error_response(f"invalid security_category: {category!r}", 400)
     if remediation and (not isinstance(remediation, str) or len(remediation) > 1000):
         return error_response("invalid remediation", 400)
+    if os_version_train and (not isinstance(os_version_train, str) or len(os_version_train) > 128 or contains_injection(os_version_train)):
+        return error_response(f"invalid os_version: {os_version_train!r}", 400)
 
     # Directly update the JSON file via Python (no Java code change) — this is the training loop
     try:
@@ -678,6 +743,8 @@ def train_vendor(name):
             "added_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
             "added_via": f"session:{name}"
         }
+        if os_version_train and os_version_train.strip():
+            new_entry["os_version"] = os_version_train.strip()
         data_json["entries"].append(new_entry)
         map_path.parent.mkdir(parents=True, exist_ok=True)
         # Atomic write
@@ -696,8 +763,12 @@ def train_vendor(name):
 def audit_report_pdf(name):
     if not validate_session(name):
         return error_response(f"invalid session name: {name!r}", 400)
-    # First ensure audit report exists (generate if needed)
-    rc, out, err = run_trinetra(["-audit-report", name], timeout=120)
+    # First ensure audit report exists (generate if needed) — honor framework filter
+    fw_filter = get_framework_filter()
+    tr_args = ["-audit-report", name]
+    if fw_filter:
+        tr_args += ["--frameworks", ",".join(fw_filter)]
+    rc, out, err = run_trinetra(tr_args, timeout=120)
     if rc != 0:
         msg = (err.strip() or out.strip()) or "audit-report failed"
         if "not found" in msg.lower() or "no readable" in msg.lower():
@@ -737,13 +808,16 @@ def audit_report_pdf(name):
         with open(combined_path, "r") as f:
             md_content = f.read()
 
-        # Build PDF in memory
+        # Build PDF in memory — landscape for 9-col evidence table (Device+Serial+Hardware+OS+Test+Verdict+Severity+Timestamp)
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=18)
+        from reportlab.lib.pagesizes import landscape
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=16)
         styles = getSampleStyleSheet()
         title_style = styles["Heading1"]
         heading_style = styles["Heading2"]
         normal_style = styles["Normal"]
+        small_style = ParagraphStyle('small', parent=normal_style, fontSize=7, leading=9)
+        header_cell_style = ParagraphStyle('headerCell', parent=normal_style, fontSize=6, leading=7, textColor=colors.whitesmoke, alignment=1)
         # Custom style for evidence rows
         story = []
 
@@ -772,44 +846,117 @@ def audit_report_pdf(name):
         if device_vendors:
             for dev, ven in device_vendors.items():
                 meta_data.append([f"Device {dev} vendor", ven])
+        # Add distinct hardware metadata (PS Deliverable 4) + OS version (item 8 metadata-level)
+        device_details = status_data.get("device_details", {})
+        if device_details:
+            for dev, det in device_details.items():
+                if not isinstance(det, dict):
+                    continue
+                sn = det.get("serial_number", "")
+                hw = det.get("hardware_model", "")
+                osv = det.get("os_version", "")
+                if sn:
+                    meta_data.append([f"Device {dev} serial", sn])
+                if hw:
+                    meta_data.append([f"Device {dev} hardware", hw])
+                if osv:
+                    meta_data.append([f"Device {dev} OS version", osv])
+                if not sn and not hw and not osv:
+                    meta_data.append([f"Device {dev} details", "no serial/hardware/OS provided (optional)"])
 
-        t = Table(meta_data, colWidths=[2.5*inch, 4.5*inch])
+        t = Table(meta_data, colWidths=[2.5*inch, 8*inch])
         t.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
             ('TEXTCOLOR', (0,0), (-1,0), colors.black),
             ('ALIGN', (0,0), (-1,-1), 'LEFT'),
             ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0,0), (-1,-1), 9),
+            ('FONTSIZE', (0,0), (-1,-1), 8),
             ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
         story.append(t)
         story.append(Spacer(1, 12))
 
-        # Evidence rows — try to parse from markdown's evidence tables
-        # Look for lines like "| Device | Vendor | Test ID | Verdict |"
+        # Evidence rows — parse markdown's evidence tables dynamically (supports old 5-col + new 9-col with Serial/Hardware/OS/Severity)
         import re as _re
+        header_row = None
         evidence_rows = []
         in_evidence = False
+        col_index = {}
         for line in md_content.splitlines():
             if "| Device" in line and "Vendor" in line:
+                # Header line — capture column names for dynamic indexing
+                header_cells = [p.strip() for p in line.split("|") if p.strip()]
+                header_row = header_cells
+                # Build case-insensitive index map
+                col_index = {c.lower(): i for i, c in enumerate(header_cells)}
                 in_evidence = True
                 continue
             if in_evidence and line.strip().startswith("|"):
-                parts = [p.strip() for p in line.split("|") if p.strip()]
-                if len(parts) >= 4:
-                    evidence_rows.append(parts[:5])  # Device, Vendor, Test ID, Verdict, Timestamp...
+                # Skip separator line like |--------| etc
+                stripped = line.strip()
+                if set(stripped.replace("|","").replace("-","").replace(":","").strip()) == set() or stripped.replace("|","").replace("-","").strip() == "":
+                    continue
+                if stripped.startswith("|--------") or stripped.startswith("|---"):
+                    continue
+                parts = [p.strip() for p in line.split("|") if p.strip() != ""]
+                # Ignore header repeated
+                if parts and parts[0].lower() == "device" and "vendor" in " ".join(parts).lower():
+                    continue
+                if len(parts) >= 2:
+                    evidence_rows.append(parts)
             elif in_evidence and not line.strip().startswith("|"):
-                # End of table
                 if evidence_rows:
                     break
 
-        if evidence_rows:
+        if evidence_rows and header_row:
             story.append(Paragraph("Evidence — Per-Device Test Results", heading_style))
-            # Header + rows, ensure device_id is shown
+            # Use header from markdown directly for PDF header; fallback to old 5-col if header missing new fields
+            # Build PDF header cells as Paragraphs for wrapping
+            pdf_header = [Paragraph(f"<b>{h}</b>", header_cell_style) for h in header_row[:10]]
+            table_data = [pdf_header]
+            # Determine indices for verdict/severity/device for remediation extraction
+            verdict_idx = col_index.get("verdict", 3)
+            # Severity may be present at different index
+            for row in evidence_rows[:60]:  # limit
+                # Ensure row length matches header
+                while len(row) < len(header_row):
+                    row.append("")
+                # Truncate to header length
+                pdf_row = [Paragraph(p[:50], small_style) if len(p) > 35 else Paragraph(p, small_style) for p in row[:len(header_row)]]
+                table_data.append(pdf_row)
+            # Column widths: distribute landscape width (~10.5 inch usable) across columns
+            ncols = len(header_row)
+            # Heuristic widths: Device 1.1, Vendor 0.9, Serial 0.9, Hardware 1.0, OS 1.0, Test 0.8, Verdict 0.7, Severity 0.8, Timestamp 1.2, Controls 1.3
+            width_map = {"device":1.0, "vendor":0.9, "serial":0.9, "hardware":1.0, "os version":1.0, "os":1.0, "test id":0.8, "verdict":0.7, "severity":0.8, "timestamp":1.3, "controls":1.4}
+            col_widths = []
+            for h in header_row:
+                w = width_map.get(h.lower(), 0.9) * inch
+                col_widths.append(w)
+            # Normalize to fit ~10.5 inch
+            total_w = sum(col_widths)
+            if total_w > 10.5*inch:
+                scale = (10.5*inch)/total_w
+                col_widths = [w*scale for w in col_widths]
+            et = Table(table_data, repeatRows=1, colWidths=col_widths)
+            et.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#4472C4")),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+                ('FONTSIZE', (0,0), (-1,-1), 6),
+                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F2F2F2")]),
+                ('LEFTPADDING', (0,0), (-1,-1), 3),
+                ('RIGHTPADDING', (0,0), (-1,-1), 3),
+            ]))
+            story.append(et)
+            story.append(Spacer(1, 12))
+        elif evidence_rows:
+            # Fallback old 5-col
+            story.append(Paragraph("Evidence — Per-Device Test Results", heading_style))
             table_data = [["Device ID", "Vendor", "Test ID", "Verdict", "Timestamp"]]
-            for row in evidence_rows[:50]:  # limit
-                # Ensure 5 cols
+            for row in evidence_rows[:50]:
                 while len(row) < 5:
                     row.append("")
                 table_data.append(row[:5])
@@ -826,26 +973,36 @@ def audit_report_pdf(name):
             story.append(et)
             story.append(Spacer(1, 12))
 
-        # Remediation section — per failed test, source from TrinetraAgr REMEDIATION map or training map
-        # For demo, we extract failed tests from evidence rows where Verdict == fail
-        failed_tests = [r for r in evidence_rows if len(r) >= 4 and r[3].lower() == "fail"]
+        # Remediation section — per failed test, step-by-step CLI sequences (item 6)
+        # Extract failed tests dynamically using header index
+        failed_tests = []
+        if header_row and evidence_rows:
+            verdict_idx_dyn = col_index.get("verdict", -1)
+            test_idx = col_index.get("test id", 2)
+            device_idx = col_index.get("device", 0)
+            if verdict_idx_dyn >= 0:
+                failed_tests = [r for r in evidence_rows if len(r) > verdict_idx_dyn and r[verdict_idx_dyn].lower() == "fail"]
+        else:
+            failed_tests = [r for r in evidence_rows if len(r) >= 4 and r[3].lower() == "fail"]
         if failed_tests:
-            story.append(Paragraph("Remediation — Failed Tests", heading_style))
-            # Try to load remediation from Java via TrinetraAgr? For now, use static map + training map
-            # We'll hardcode a few known remediations and label fallback as AI-suggested
+            story.append(Paragraph("Remediation — Failed Tests (Step-by-Step CLI)", heading_style))
+            # Updated remediation map: numbered step-by-step sequences (item 6) — not new research, just structuring on correct commands
             remediation_map = {
-                "V-003": "Close unnecessary ports: `no transport input telnet` / firewall restrict. (Documented)",
-                "V-006": "Disable weak TLS: `no ip http server`, enforce TLS 1.2+ with `ip ssh version 2`. (Documented)",
-                "V-007": "Disable weak ciphers: `no ip ssh cipher ...` use AES-GCM/ChaCha20. (Documented)",
-                "V-008": "Replace self-signed cert: `crypto ca enroll` with CA-signed. (Documented)",
-                "V-013": "Enforce strong password: `enable secret <strong>` + `aaa new-model`. (Documented)",
-                "V-071": "Disable insecure mgmt: `no transport input telnet`, `no ip http server`, set `exec-timeout 5 0`. (Documented)",
-                "V-057": "Remove hardcoded community: `no snmp-server community public`. Use vault. (Documented)",
-                "V-058": "Enable logging: `logging host <syslog>` + `service timestamps log`. (Documented)",
+                "V-003": "1. Enter config mode: <font face=\"Courier\">configure terminal</font>. 2. Identify service: <font face=\"Courier\">show running-config | include transport|http</font>. 3. Disable unused: <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">no transport input telnet</font>; <font face=\"Courier\">no ip http server</font>. 4. Restrict with ACL: <font face=\"Courier\">access-list 10 permit 10.0.0.0 0.255.255.255</font> → <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">access-class 10 in</font>. 5. Save: <font face=\"Courier\">write memory</font>. (Documented)",
+                "V-006": "1. <font face=\"Courier\">configure terminal</font>. 2. Disable weak TLS: <font face=\"Courier\">no ip http server</font> (or <font face=\"Courier\">ip http secure-server</font> only). 3. Enforce TLS 1.2+: <font face=\"Courier\">ip ssh version 2</font> → <font face=\"Courier\">ip ssh server algorithm encryption aes128-ctr aes256-ctr aes128-gcm</font>. 4. Verify: <font face=\"Courier\">show ip http server status</font> / <font face=\"Courier\">show ip ssh</font>. (Documented)",
+                "V-007": "1. <font face=\"Courier\">configure terminal</font>. 2. Remove weak ciphers: <font face=\"Courier\">no ip ssh server algorithm encryption 3des-cbc</font> / <font face=\"Courier\">no ip ssh server algorithm encryption rc4</font>. 3. Enable strong AEAD: <font face=\"Courier\">ip ssh server algorithm encryption aes128-ctr aes256-ctr aes128-gcm</font> + <font face=\"Courier\">ip ssh server algorithm mac hmac-sha2-256</font>. 4. Verify: <font face=\"Courier\">show ip ssh</font>. (Documented)",
+                "V-008": "1. Generate CSR: <font face=\"Courier\">crypto pki enroll &lt;trustpoint&gt;</font>. 2. Install CA-signed cert: <font face=\"Courier\">crypto pki import &lt;trustpoint&gt; certificate</font>. 3. Bind: <font face=\"Courier\">ip http secure-trustpoint &lt;trustpoint&gt;</font>. 4. Verify &amp; renew: <font face=\"Courier\">show crypto pki certificates</font>. (Documented)",
+                "V-013": "1. <font face=\"Courier\">configure terminal</font>. 2. Enforce complexity: <font face=\"Courier\">aaa new-model</font> (or <font face=\"Courier\">security passwords min-length 12</font>). 3. Create strong secret: <font face=\"Courier\">enable secret &lt;strong-password&gt;</font>. 4. Local user: <font face=\"Courier\">username admin privilege 15 secret &lt;strong-password&gt;</font>. 5. Save: <font face=\"Courier\">write memory</font>. (Documented)",
+                "V-071": "1. <font face=\"Courier\">configure terminal</font>. 2. Harden vty: <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">no transport input telnet</font> → <font face=\"Courier\">transport input ssh</font>. 3. Disable HTTP: <font face=\"Courier\">no ip http server</font>. 4. Set idle timeout: <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">exec-timeout 5 0</font> → <font face=\"Courier\">logging synchronous</font>. 5. <font face=\"Courier\">end</font> → <font face=\"Courier\">write memory</font>. (Documented)",
+                "V-057": "1. <font face=\"Courier\">configure terminal</font>. 2. Remove hardcoded: <font face=\"Courier\">no snmp-server community public</font> / <font face=\"Courier\">no snmp-server community private</font>. 3. Use vault/manager: <font face=\"Courier\">snmp-server group &lt;name&gt; v3 priv</font> + store secret in vault. 4. Verify: <font face=\"Courier\">show running-config | include snmp-server</font>. (Documented)",
+                "V-058": "1. <font face=\"Courier\">configure terminal</font>. 2. Enable logging: <font face=\"Courier\">logging host 10.10.1.100</font> + <font face=\"Courier\">logging trap informational</font>. 3. Protect: <font face=\"Courier\">service timestamps log datetime msec</font> + <font face=\"Courier\">no logging console</font> (avoid sensitive). 4. Verify: <font face=\"Courier\">show logging</font>. (Documented)",
             }
+            # Resolve indices for test_id/device
+            t_idx = col_index.get("test id", 2) if col_index else 2
+            d_idx = col_index.get("device", 0) if col_index else 0
             for row in failed_tests:
-                test_id = row[2] if len(row) > 2 else "unknown"
-                device = row[0] if len(row) > 0 else "unknown"
+                test_id = row[t_idx] if len(row) > t_idx else "unknown"
+                device = row[d_idx] if len(row) > d_idx else "unknown"
                 remediation = remediation_map.get(test_id)
                 is_ai = False
                 if not remediation:
@@ -888,9 +1045,9 @@ def audit_report_pdf(name):
                     for l in lines[:10]:
                         story.append(Paragraph(f"&nbsp;&nbsp;&bull; <font face=\"Courier\">{l[:80]}</font>", normal_style))
 
-        # Footer — note bonus frameworks
+        # Footer — note bonus frameworks (now includes STIG as PS-required)
         story.append(Spacer(1, 12))
-        story.append(Paragraph("Note: PCI-DSS and SOC2 are shown as <b>bonus/additional coverage</b> only. PS-required frameworks are CIS, NIST 800-53, and ISO 27001.", normal_style))
+        story.append(Paragraph("Note: PCI-DSS and SOC2 are shown as <b>bonus/additional coverage</b> only. PS-required frameworks are CIS, NIST 800-53, ISO 27001, and STIG (STIG controls: CISC-ND/JUSX-ND via DISA STIG Viewer).", normal_style))
         story.append(Spacer(1, 6))
         story.append(Paragraph("Generated by Trinetra — static config-file auditor (live SSH optional). Ingestion method per device is recorded honestly in the report.", normal_style))
 

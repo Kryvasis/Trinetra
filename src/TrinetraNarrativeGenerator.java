@@ -513,18 +513,30 @@ public class TrinetraNarrativeGenerator {
     }
 
     private static String practicalImpact(String fw) {
-        switch (fw) {
-            case "ISO27001":
-                return "the associated Annex A controls cannot currently be considered fully effective; treat the findings as ISMS nonconformities requiring corrective action.";
-            case "NIST_800-53":
-                return "the corresponding NIST security controls are not satisfied and should be remediated before an authority-to-operate decision.";
-            case "PCI-DSS":
-                return "cardholder-data-environment requirements may be violated, creating potential compliance liability with card brands.";
-            case "SOC2":
-                return "the related trust services criteria lack operating evidence, which auditors would flag as a control deficiency.";
-            default:
-                return "the associated controls remain at risk and should be remediated per vendor guidance.";
-        }
+        if (fw == null) return "the associated controls remain at risk and should be remediated per vendor guidance.";
+        // Explicit prose for PS-required + bonus; generic fallback formats any new manifest framework cleanly
+        return switch (fw) {
+            case "ISO27001" -> "the associated Annex A controls cannot currently be considered fully effective; treat the findings as ISMS nonconformities requiring corrective action.";
+            case "NIST_800-53" -> "the corresponding NIST security controls are not satisfied and should be remediated before an authority-to-operate decision.";
+            case "PCI-DSS" -> "cardholder-data-environment requirements may be violated, creating potential compliance liability with card brands.";
+            case "SOC2" -> "the related trust services criteria lack operating evidence, which auditors would flag as a control deficiency.";
+            case "STIG" -> "the corresponding DISA STIG controls are not satisfied and should be remediated per the applicable STIG (CISC-ND/JUSX-ND) guidance before an authority-to-operate decision.";
+            default -> {
+                // Generic: title-case framework key for readable prose
+                String readable = fw.replace("_", " ").replace("-", " ").trim();
+                if (!readable.isEmpty()) {
+                    String[] parts = readable.split("\\s+");
+                    StringBuilder sb = new StringBuilder();
+                    for (int i = 0; i < parts.length; i++) {
+                        if (i > 0) sb.append(' ');
+                        String p = parts[i];
+                        sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1).toLowerCase());
+                    }
+                    readable = sb.toString();
+                } else readable = fw;
+                yield "the associated " + readable + " controls remain at risk and should be remediated per vendor guidance.";
+            }
+        };
     }
 
     // ── Report assembly ──────────────────────────────────────────────

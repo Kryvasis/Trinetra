@@ -756,6 +756,7 @@ public class TrinetraSession {
 
     // ── Per-device ingestion method (PS26155: config_upload vs live_target) ──
     public static final String DEVICE_INGESTION_FIELD = "device_ingestion";
+    public static final String DEVICE_DETAILS_FIELD = "device_details";
     public static final String UNRECOGNIZED_LINES_FIELD = "unrecognized_config_lines";
 
     public static boolean setDeviceIngestion(String sessionName, String deviceId, String method, String filename) {
@@ -818,6 +819,73 @@ public class TrinetraSession {
                     Map<String, Object> val = new LinkedHashMap<>();
                     val.put("method", String.valueOf(e.getValue()));
                     out.put(String.valueOf(e.getKey()), val);
+                }
+            }
+        }
+        return out;
+    }
+
+    // ── Per-device distinct metadata: serial_number, hardware_model, os_version ──
+    // PS Deliverable 4: device identification including serial numbers and hardware details
+    // Stored separately from opaque device_id; optional free-text, no auto-detection required
+    // (os_version also populated by lightweight header detection in TrinetraConfigIngestor when blank).
+    public static boolean setDeviceDetails(String sessionName, String deviceId,
+                                           String serialNumber, String hardwareModel, String osVersion) {
+        if (sessionName == null || deviceId == null) return false;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String dev = deviceId.trim();
+        if (dev.isEmpty()) return false;
+        Boolean ok = withSessionStateLock(sanitized, () -> {
+            Path jsonPath = TrinetraCommon.sessionJson(sanitized);
+            Map<String, Object> session = TrinetraCommon.readJsonFile(jsonPath);
+            if (session.isEmpty()) return false;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = session.get(DEVICE_DETAILS_FIELD) instanceof Map
+                ? (Map<String, Object>) session.get(DEVICE_DETAILS_FIELD)
+                : new LinkedHashMap<>();
+            Map<String, Object> entry = map.get(dev) instanceof Map
+                ? new LinkedHashMap<>((Map<String, Object>) map.get(dev))
+                : new LinkedHashMap<>();
+            if (serialNumber != null && !serialNumber.isBlank()) entry.put("serial_number", serialNumber.trim());
+            else if (!entry.containsKey("serial_number")) entry.put("serial_number", "");
+            if (hardwareModel != null && !hardwareModel.isBlank()) entry.put("hardware_model", hardwareModel.trim());
+            else if (!entry.containsKey("hardware_model")) entry.put("hardware_model", "");
+            if (osVersion != null && !osVersion.isBlank()) entry.put("os_version", osVersion.trim());
+            else if (!entry.containsKey("os_version")) entry.put("os_version", "");
+            entry.put("updated_at", TrinetraCommon.nowIso());
+            map.put(dev, entry);
+            session.put(DEVICE_DETAILS_FIELD, map);
+            session.put("updated_at", TrinetraCommon.nowIso());
+            TrinetraCommon.writeJsonFile(jsonPath, session);
+            return true;
+        });
+        return Boolean.TRUE.equals(ok);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, Object> getDeviceDetails(String sessionName, String deviceId) {
+        if (sessionName == null || deviceId == null) return new LinkedHashMap<>();
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_DETAILS_FIELD);
+        if (dv instanceof Map) {
+            Object entry = ((Map<String, Object>) dv).get(deviceId);
+            if (entry instanceof Map) return new LinkedHashMap<>((Map<String, Object>) entry);
+        }
+        return new LinkedHashMap<>();
+    }
+
+    public static Map<String, Map<String, Object>> getAllDeviceDetails(String sessionName) {
+        String sanitized = TrinetraCommon.sanitizeName(sessionName == null ? "" : sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_DETAILS_FIELD);
+        Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+        if (dv instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) dv).entrySet()) {
+                if (e.getValue() instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> val = (Map<String, Object>) e.getValue();
+                    out.put(String.valueOf(e.getKey()), new LinkedHashMap<>(val));
                 }
             }
         }

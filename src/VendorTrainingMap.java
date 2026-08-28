@@ -24,14 +24,20 @@ public class VendorTrainingMap {
         public final List<String> controlMapping;
         public final String remediation;
         public final String addedAt;
+        public final String osVersion; // optional metadata — which OS version this pattern was observed on
 
         public Entry(String vendor, String pattern, String securityCategory, List<String> controlMapping, String remediation, String addedAt) {
+            this(vendor, pattern, securityCategory, controlMapping, remediation, addedAt, "");
+        }
+
+        public Entry(String vendor, String pattern, String securityCategory, List<String> controlMapping, String remediation, String addedAt, String osVersion) {
             this.vendor = vendor;
             this.pattern = pattern;
             this.securityCategory = securityCategory;
             this.controlMapping = controlMapping != null ? controlMapping : new ArrayList<>();
             this.remediation = remediation;
             this.addedAt = addedAt;
+            this.osVersion = osVersion != null ? osVersion : "";
         }
     }
 
@@ -68,8 +74,9 @@ public class VendorTrainingMap {
                     List<String> controls = TrinetraCommon.getStringList(m, "control_mapping");
                     String remediation = TrinetraCommon.getString(m, "remediation", "");
                     String addedAt = TrinetraCommon.getString(m, "added_at", "");
+                    String osVersion = TrinetraCommon.getString(m, "os_version", "");
                     if (!vendor.isEmpty() && !pattern.isEmpty()) {
-                        out.add(new Entry(vendor, pattern, cat, controls, remediation, addedAt));
+                        out.add(new Entry(vendor, pattern, cat, controls, remediation, addedAt, osVersion));
                     }
                 }
             }
@@ -113,6 +120,7 @@ public class VendorTrainingMap {
             m.put("control_mapping", e.controlMapping);
             if (e.remediation != null && !e.remediation.isEmpty()) m.put("remediation", e.remediation);
             m.put("added_at", e.addedAt);
+            if (e.osVersion != null && !e.osVersion.isBlank()) m.put("os_version", e.osVersion);
             list.add(m);
         }
         root.put("entries", list);

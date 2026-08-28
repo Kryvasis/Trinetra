@@ -136,15 +136,18 @@ export default function SessionDevicesView({ api, toast }) {
             </div>
           )}
 
-          {/* Device table */}
+          {/* Device table — now with distinct PS-required Serial/Hardware/OS columns */}
           <div className="card">
             <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Devices in Session "{session}"</h2>
-            <div className="table-wrap">
+            <div className="table-wrap" style={{ overflowX: 'auto' }}>
               <table>
                 <thead>
                   <tr>
                     <th>Device ID</th>
                     <th>Vendor</th>
+                    <th>Serial</th>
+                    <th>Hardware</th>
+                    <th>OS Version</th>
                     <th>Ingestion Method</th>
                     <th>Pass</th>
                     <th>Fail</th>
@@ -163,6 +166,9 @@ export default function SessionDevicesView({ api, toast }) {
                         <td>
                           <span className="badge badge-info">{d.vendor}</span>
                         </td>
+                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.serial_number || <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.hardware_model || <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
+                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.os_version || <span style={{ color: 'var(--text-dim)' }}>{d.vendor === 'Cisco' ? 'auto: IOS' : d.vendor === 'Juniper' ? 'auto: JUNOS' : '—'}</span>}</td>
                         <td>
                           <span className={`badge ${d.ingestion_method === 'config_upload' ? 'badge-pass' : d.ingestion_method === 'live_target' ? 'badge-review' : ''}`}>
                             {d.ingestion_method === 'config_upload' ? 'Config Upload' :

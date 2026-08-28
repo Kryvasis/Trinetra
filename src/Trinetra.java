@@ -60,6 +60,12 @@ public class Trinetra {
         // the chosen identity source is always logged.
         String userId = extractUserId(argList);
 
+        // --frameworks <a,b,c>  (user-selected benchmarks, e.g. CIS,STIG,NIST_800-53)
+        // Normalized case-insensitive; absent/empty -> all applicable frameworks.
+        // Extracted here so subsequent handlers can consume it; preserved in
+        // filteredHandlers via re-extraction.
+        Set<String> frameworkFilter = extractFrameworkFilter(argList);
+
         // -new <session> <target>
         int newIdx = argList.indexOf("-new");
         if (newIdx >= 0) {
@@ -106,22 +112,22 @@ public class Trinetra {
             return;
         }
 
-        // -compliance-score <session>
+        // -compliance-score <session> [--frameworks <a,b>]
         if (argList.contains("-compliance-score")) {
-            handleComplianceScore(argList);
+            handleComplianceScore(argList, frameworkFilter);
             return;
         }
 
-        // -compliance-report <session>  (scorer + validated LLM narrative)
+        // -compliance-report <session> [--frameworks <a,b>]  (scorer + validated LLM narrative)
         if (argList.contains("-compliance-report")) {
-            handleComplianceReport(argList);
+            handleComplianceReport(argList, frameworkFilter);
             return;
         }
 
-        // -audit-report <session>  (final deliverable: per-framework reports
+        // -audit-report <session> [--frameworks <a,b>]  (final deliverable: per-framework reports
         // + combined appended audit report; runs scorer -> narrative -> build)
         if (argList.contains("-audit-report")) {
-            handleAuditReport(argList, userId);
+            handleAuditReport(argList, userId, frameworkFilter);
             return;
         }
 
@@ -231,6 +237,22 @@ public class Trinetra {
         String osUser = System.getProperty("user.name", "unknown");
         System.out.println("[audit] user: " + osUser + " (OS username fallback)");
         return osUser;
+    }
+
+    static Set<String> extractFrameworkFilter(List<String> args) {
+        for (int i = 0; i < args.size(); i++) {
+            if (args.get(i).equals("--frameworks") && i + 1 < args.size()) {
+                Set<String> out = new LinkedHashSet<>();
+                for (String fw : args.get(i + 1).split(",")) {
+                    String t = fw.trim();
+                    if (!t.isEmpty()) out.add(t);
+                }
+                args.remove(i);
+                args.remove(i);
+                return out.isEmpty() ? null : out;
+            }
+        }
+        return null;
     }
 
     private static void handleStat(List<String> args, String userId,
@@ -553,37 +575,43 @@ public class Trinetra {
         System.out.println("\n=== Doctor Complete ===");
     }
 
-    private static void handleComplianceScore(List<String> args) {
+    private static void handleComplianceScore(List<String> args, Set<String> frameworkFilter) {
         int idx = args.indexOf("-compliance-score");
         if (idx < 0 || idx + 1 >= args.size()) {
-            System.err.println("Usage: trinetra -compliance-score <session>");
+            System.err.println("Usage: trinetra -compliance-score <session> [--frameworks <a,b>]");
             System.exit(1);
         }
         String session = args.get(idx + 1);
-        Map<String, Object> result = TrinetraComplianceScorer.score(session);
-        Path outPath = TrinetraComplianceScorer.scoreAndWrite(session);
+        // Support --frameworks even if main() already extracted; re-extract for direct calls
+        Set<String> filter = frameworkFilter != null ? frameworkFilter : extractFrameworkFilter(args);
+        Map<String, Object> result = TrinetraComplianceScorer.score(session, filter);
+        Path outPath = TrinetraComplianceScorer.scoreAndWrite(session, filter);
         System.out.println(TrinetraJson.prettyJson(result));
         System.out.println("\nCompliance score written to: " + outPath);
+        if (filter != null && !filter.isEmpty()) {
+            System.out.println("Framework filter: " + String.join(",", filter));
+        }
     }
 
     /**
-     * -compliance-report <session>
+     * -compliance-report <session> [--frameworks <a,b>]
      * Runs the deterministic compliance scorer (Prompt 15) and then the
      * validated LLM narrative layer (Prompt 16). The narrative never alters
      * scorer numbers; on LLM rejection/unavailability a template fallback
      * built from the same data is used and clearly labeled.
      */
-    private static void handleComplianceReport(List<String> args) {
+    private static void handleComplianceReport(List<String> args, Set<String> frameworkFilter) {
         int idx = args.indexOf("-compliance-report");
         if (idx < 0 || idx + 1 >= args.size()) {
-            System.err.println("Usage: trinetra -compliance-report <session>");
+            System.err.println("Usage: trinetra -compliance-report <session> [--frameworks <a,b>]");
             System.exit(1);
         }
         String session = args.get(idx + 1);
+        Set<String> filter = frameworkFilter != null ? frameworkFilter : extractFrameworkFilter(args);
 
         System.out.println("[1/2] Running deterministic compliance scorer...");
-        Path scorePath = TrinetraComplianceScorer.scoreAndWrite(session);
-        Map<String, Object> score = TrinetraComplianceScorer.score(session);
+        Path scorePath = TrinetraComplianceScorer.scoreAndWrite(session, filter);
+        Map<String, Object> score = TrinetraComplianceScorer.score(session, filter);
 
         System.out.println("[2/2] Generating narrative layer (LLM with strict number validation)...");
         Map<String, Object> meta =
@@ -620,7 +648,7 @@ public class Trinetra {
     }
 
     /**
-     * -audit-report <session>
+     * -audit-report <session> [--frameworks <a,b>]
      * Assembles the final deliverable audit report set (Prompt 17):
      * ensures scorer + narrative artifacts exist for the session, then
      * writes one per-framework report plus the combined appended audit
@@ -628,17 +656,20 @@ public class Trinetra {
      * tamper-evidence appendix. Derived artifacts only — never touches
      * brain state or the hash chain.
      */
-    private static void handleAuditReport(List<String> args, String userId) {
+    private static void handleAuditReport(List<String> args, String userId, Set<String> frameworkFilter) {
         int idx = args.indexOf("-audit-report");
         if (idx < 0 || idx + 1 >= args.size()) {
-            System.err.println("Usage: trinetra -audit-report <session>");
+            System.err.println("Usage: trinetra -audit-report <session> [--frameworks <a,b>]");
             System.exit(1);
             return;
         }
         String session = args.get(idx + 1);
+        Set<String> filter = frameworkFilter != null ? frameworkFilter : extractFrameworkFilter(args);
 
         System.out.println("[1/3] Ensuring deterministic compliance score exists...");
-        Map<String, Object> result = TrinetraAuditReportBuilder.buildAuditReport(session);
+        Map<String, Object> result = filter == null
+            ? TrinetraAuditReportBuilder.buildAuditReport(session)
+            : TrinetraAuditReportBuilder.buildAuditReport(session, filter);
         if (result == null) {
             System.err.println("Failed: no readable brain-state record for session '"
                 + session + "'. Run tests first (trinetra -stat ...).");

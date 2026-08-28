@@ -46,6 +46,16 @@ public class TrinetraAuditReportBuilder {
      *         no readable brain-state record.
      */
     public static Map<String, Object> buildAuditReport(String sessionName) {
+        return buildAuditReport(sessionName, null);
+    }
+
+    /**
+     * Filtered variant — when frameworkFilter is non-null, only the selected
+     * frameworks are scored and rendered; defaults to all via the no-filter
+     * overload. Used by the React UI "user-selected benchmarks" path and the
+     * bridge --frameworks param. Returns same metadata shape.
+     */
+    public static Map<String, Object> buildAuditReport(String sessionName, Set<String> frameworkFilter) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
 
         Map<String, Object> brainState = TrinetraCommon.readJsonFile(
@@ -58,19 +68,28 @@ public class TrinetraAuditReportBuilder {
         }
 
         // ── Plane 2: scorer output (generate if absent) ──
-        Path scorePath = TrinetraCommon.sessionDir(sanitized)
-            .resolve("compliance_score_" + sanitized + ".json");
+        // When a filter is active, always regenerate filtered score rather than
+        // reusing canonical file (which contains all frameworks).
         Map<String, Object> score;
-        if (Files.exists(scorePath)) {
-            score = TrinetraCommon.readJsonFile(scorePath);
-            if (score.isEmpty()) {
-                TrinetraComplianceScorer.scoreAndWrite(sanitized);
+        Path scorePath;
+        if (frameworkFilter != null && !frameworkFilter.isEmpty()) {
+            score = TrinetraComplianceScorer.score(sanitized, frameworkFilter);
+            scorePath = TrinetraComplianceScorer.scoreAndWrite(sanitized, frameworkFilter);
+            TrinetraCommon.logInfo("Generated filtered scorer output: " + scorePath);
+        } else {
+            scorePath = TrinetraCommon.sessionDir(sanitized)
+                .resolve("compliance_score_" + sanitized + ".json");
+            if (Files.exists(scorePath)) {
+                score = TrinetraCommon.readJsonFile(scorePath);
+                if (score.isEmpty()) {
+                    TrinetraComplianceScorer.scoreAndWrite(sanitized);
+                    score = TrinetraCommon.readJsonFile(scorePath);
+                }
+                TrinetraCommon.logInfo("Reusing existing scorer output: " + scorePath);
+            } else {
+                scorePath = TrinetraComplianceScorer.scoreAndWrite(sanitized);
                 score = TrinetraCommon.readJsonFile(scorePath);
             }
-            TrinetraCommon.logInfo("Reusing existing scorer output: " + scorePath);
-        } else {
-            scorePath = TrinetraComplianceScorer.scoreAndWrite(sanitized);
-            score = TrinetraCommon.readJsonFile(scorePath);
         }
 
         // ── Plane 3: narrative (generate if absent) ──
@@ -130,6 +149,9 @@ public class TrinetraAuditReportBuilder {
         Map<String, String> narrativeSections =
             extractFrameworkSections(narrative, score);
 
+        // Device details for hardware columns (serial, model, OS version)
+        Map<String, Map<String, Object>> deviceDetails = TrinetraSession.getAllDeviceDetails(sanitized);
+
         // ── Tier 1: per-framework reports ──
         Map<String, Object> frameworks = TrinetraCommon.getMap(score, "frameworks");
         List<String> frameworkPaths = new ArrayList<>();
@@ -145,8 +167,8 @@ public class TrinetraAuditReportBuilder {
                 .resolve("report_" + fw + "_" + sanitized + ".md");
             TrinetraCommon.atomicWriteFile(p,
                 renderFrameworkReport(sanitized, fw, frameworks.get(fw),
-                                      rows, narrativeSections.get(fw),
-                                      templateMode));
+                                       rows, narrativeSections.get(fw),
+                                       templateMode, deviceDetails));
             frameworkPaths.add(p.toString());
         }
 
@@ -159,9 +181,9 @@ public class TrinetraAuditReportBuilder {
             .resolve("audit_report_" + sanitized + ".md");
         TrinetraCommon.atomicWriteFile(combinedPath,
             renderCombinedReport(sanitized, score, frameworks,
-                                 evidenceByFramework, narrativeSections,
-                                 narrative, templateMode, aggregate,
-                                 chain, auditUuids, skipped));
+                                  evidenceByFramework, narrativeSections,
+                                  narrative, templateMode, aggregate,
+                                  chain, auditUuids, skipped, deviceDetails));
 
         Map<String, Object> out = TrinetraCommon.newMap();
         out.put("session_name", sanitized);
@@ -180,7 +202,8 @@ public class TrinetraAuditReportBuilder {
                                                 Object fwScoreObj,
                                                 List<Map<String, Object>> rows,
                                                 String section,
-                                                boolean templateMode) {
+                                                boolean templateMode,
+                                                Map<String, Map<String, Object>> deviceDetails) {
         @SuppressWarnings("unchecked")
         Map<String, Object> fwScore =
             fwScoreObj instanceof Map ? (Map<String, Object>) fwScoreObj
@@ -237,15 +260,23 @@ public class TrinetraAuditReportBuilder {
         }
 
         sb.append("## Test Evidence\n\n");
-        sb.append("| Device | Vendor | Test ID | Verdict | Timestamp | Controls |\n");
-        sb.append("|--------|--------|---------|---------|-----------|----------|\n");
+        sb.append("| Device | Vendor | Serial | Hardware | OS Version | Test ID | Verdict | Severity | Timestamp | Controls |\n");
+        sb.append("|--------|--------|--------|----------|------------|---------|---------|----------|-----------|----------|\n");
         for (Map<String, Object> row : rows) {
             @SuppressWarnings("unchecked")
             Map<String, Object> e = (Map<String, Object>) row.get("entry");
-            sb.append("| ").append(cell(TrinetraCommon.getString(e, "device_id", "?")))
+            String did = TrinetraCommon.getString(e, "device_id", "?");
+            String testId = TrinetraCommon.getString(e, "test_id", "?");
+            String severity = resolveSeverity(testId, e);
+            Map<String, Object> det = deviceDetails.getOrDefault(did, Collections.emptyMap());
+            sb.append("| ").append(cell(did))
               .append(" | ").append(cell(TrinetraCommon.getString(e, "vendor", "?")))
-              .append(" | ").append(cell(TrinetraCommon.getString(e, "test_id", "?")))
+              .append(" | ").append(cell(TrinetraCommon.getString(det, "serial_number", "")))
+              .append(" | ").append(cell(TrinetraCommon.getString(det, "hardware_model", "")))
+              .append(" | ").append(cell(TrinetraCommon.getString(det, "os_version", "")))
+              .append(" | ").append(cell(testId))
               .append(" | ").append(cell(TrinetraCommon.getString(e, "normalized_result", "?")))
+              .append(" | ").append(cell(severity))
               .append(" | ").append(cell(TrinetraCommon.getString(e, "timestamp", "?")))
               .append(" | ").append(cell(joinList(row.get("controls"))))
               .append(" |\n");
@@ -270,7 +301,8 @@ public class TrinetraAuditReportBuilder {
                                                double aggregate,
                                                TrinetraSession.ChainVerifyResult chain,
                                                List<String> auditUuids,
-                                               List<String> skippedFw) {
+                                               List<String> skippedFw,
+                                               Map<String, Map<String, Object>> deviceDetails) {
         String target = TrinetraCommon.getString(
             TrinetraSession.loadSession(session), "target", "unknown");
 
@@ -364,15 +396,23 @@ public class TrinetraAuditReportBuilder {
                 : "_No narrative section available for this framework._\n\n");
 
             sb.append("Test evidence:\n\n");
-            sb.append("| Device | Vendor | Test ID | Verdict | Timestamp |\n");
-            sb.append("|--------|--------|---------|---------|------------|\n");
+            sb.append("| Device | Vendor | Serial | Hardware | OS Version | Test ID | Verdict | Severity | Timestamp |\n");
+            sb.append("|--------|--------|--------|----------|------------|---------|---------|----------|------------|\n");
             for (Map<String, Object> row : rows) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> entry = (Map<String, Object>) row.get("entry");
-                sb.append("| ").append(cell(TrinetraCommon.getString(entry, "device_id", "?")))
+                String did2 = TrinetraCommon.getString(entry, "device_id", "?");
+                String tid2 = TrinetraCommon.getString(entry, "test_id", "?");
+                String sev2 = resolveSeverity(tid2, entry);
+                Map<String, Object> det2 = deviceDetails.getOrDefault(did2, Collections.emptyMap());
+                sb.append("| ").append(cell(did2))
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "vendor", "?")))
-                  .append(" | ").append(cell(TrinetraCommon.getString(entry, "test_id", "?")))
+                  .append(" | ").append(cell(TrinetraCommon.getString(det2, "serial_number", "")))
+                  .append(" | ").append(cell(TrinetraCommon.getString(det2, "hardware_model", "")))
+                  .append(" | ").append(cell(TrinetraCommon.getString(det2, "os_version", "")))
+                  .append(" | ").append(cell(tid2))
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "normalized_result", "?")))
+                  .append(" | ").append(cell(sev2))
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "timestamp", "?")))
                   .append(" |\n");
             }
@@ -384,10 +424,9 @@ public class TrinetraAuditReportBuilder {
               .append(String.join(", ", skippedFw)).append("\n\n");
         }
 
-        // PS hygiene: CIS/NIST/ISO are PS-required; PCI-DSS/SOC2 are bonus/additional coverage.
-        // NOTE: STIG is NOT computed — no STIG mappings exist in the compliance manifest.
-        // Do not claim STIG coverage without real scoring data backing it.
-        sb.append("> **Framework scope note:** *CIS, NIST 800-53, and ISO 27001 are the PS-required frameworks. PCI-DSS and SOC2 are shown as **bonus/additional coverage** only and are not PS-required.*\n\n");
+        // PS-required: CIS, NIST 800-53, ISO 27001, STIG — all four now have real manifest mappings.
+        // PCI-DSS / SOC2 remain bonus/additional coverage.
+        sb.append("> **Framework scope note:** *CIS, NIST 800-53, ISO 27001, and STIG are the PS-required frameworks. PCI-DSS and SOC2 are shown as **bonus/additional coverage** only and are not PS-required. STIG mappings sourced from DISA STIG Viewer — Cisco IOS Switch NDM STIG V2R5 / Juniper SRX SG NDM STIG V2R4 (Group IDs CISC-ND-xxxxxx / JUSX-ND-xxxxxx, see compliance_manifest.json `_STIG_source_note`). Partial real coverage — STIG coverage_gaps reflect applicability, not placeholder.*\n\n");
 
         // ── Unmapped tests ──
         sb.append("---\n\n## Unmapped Tests\n\n");
@@ -533,13 +572,45 @@ public class TrinetraAuditReportBuilder {
         return String.join(", ", strList(v));
     }
 
+    private static String resolveSeverity(String testId, Map<String, Object> entry) {
+        // Prefer entry's stored severity if present, else lookup via static_map/decision_engine
+        String sev = TrinetraCommon.getString(entry, "default_severity", "");
+        if (!sev.isBlank()) return sev.toLowerCase();
+        sev = TrinetraCommon.getString(entry, "severity", "");
+        if (!sev.isBlank()) return sev.toLowerCase();
+        TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(testId);
+        if (def != null && def.defaultSeverity != null && !def.defaultSeverity.isBlank()) {
+            return def.defaultSeverity.toLowerCase();
+        }
+        return "medium";
+    }
+
     private static String displayName(String fw) {
+        if (fw == null) return "";
+        // Explicit cases for known frameworks, generic title-casing fallback for any new manifest key
         return switch (fw) {
             case "ISO27001" -> "ISO 27001";
             case "NIST_800-53" -> "NIST 800-53";
             case "PCI-DSS" -> "PCI DSS";
             case "SOC2" -> "SOC 2";
-            default -> fw;
+            case "STIG" -> "STIG";
+            default -> {
+                // Generic: replace underscores/hyphens with spaces, Title Case words
+                String spaced = fw.replace("_", " ").replace("-", " ").trim();
+                if (spaced.isEmpty()) yield fw;
+                String[] parts = spaced.split("\\s+");
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < parts.length; i++) {
+                    if (i > 0) sb.append(' ');
+                    String p = parts[i];
+                    if (p.equalsIgnoreCase("stig") || p.equalsIgnoreCase("cis") || p.equalsIgnoreCase("iso") || p.equalsIgnoreCase("nist") || p.equalsIgnoreCase("pci") || p.equalsIgnoreCase("soc2")) {
+                        sb.append(p.toUpperCase());
+                    } else {
+                        sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1).toLowerCase());
+                    }
+                }
+                yield sb.toString();
+            }
         };
     }
 

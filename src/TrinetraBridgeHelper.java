@@ -94,6 +94,7 @@ public class TrinetraBridgeHelper {
         out.put("normalized_results_count", nr.size());
         out.put("device_vendors", deviceVendors);
         out.put("device_ingestion", TrinetraSession.getAllDeviceIngestion(sanitized));
+        out.put("device_details", TrinetraSession.getAllDeviceDetails(sanitized));
         out.put("unrecognized_by_device", TrinetraSession.getAllUnrecognizedLines(sanitized));
         out.put("brain_state_exists", !brainState.isEmpty());
         if (!brainState.isEmpty()) {
@@ -135,20 +136,27 @@ public class TrinetraBridgeHelper {
 
     private static void handleIngestConfig(String[] args) {
         if (args.length < 5) {
-            System.err.println("Usage: TrinetraBridgeHelper ingest-config <session> <device_id> <vendor> <config_file_path>");
+            System.err.println("Usage: TrinetraBridgeHelper ingest-config <session> <device_id> <vendor> <config_file_path> [serial] [hardware_model] [os_version]");
             System.exit(1);
         }
         String session = args[1];
         String deviceId = args[2];
         String vendor = args[3];
         String configPath = args[4];
+        String serialNumber = args.length > 5 ? args[5] : null;
+        String hardwareModel = args.length > 6 ? args[6] : null;
+        String osVersion = args.length > 7 ? args[7] : null;
+        // Decode "_" placeholder used for empty optional fields
+        if ("_".equals(serialNumber)) serialNumber = "";
+        if ("_".equals(hardwareModel)) hardwareModel = "";
+        if ("_".equals(osVersion)) osVersion = "";
         String configContent = TrinetraCommon.readFileIfExists(Path.of(configPath));
         if (configContent == null) {
             System.err.println("Config file not found: " + configPath);
             System.exit(1);
         }
         String filename = Path.of(configPath).getFileName().toString();
-        TrinetraConfigIngestor.IngestResult result = TrinetraConfigIngestor.ingest(session, deviceId, vendor, configContent, filename);
+        TrinetraConfigIngestor.IngestResult result = TrinetraConfigIngestor.ingest(session, deviceId, vendor, configContent, filename, serialNumber, hardwareModel, osVersion);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("session", TrinetraCommon.sanitizeName(session));
         out.put("device_id", result.deviceId);
@@ -190,9 +198,10 @@ public class TrinetraBridgeHelper {
             for (List<String> l : all.values()) total += l.size();
             out.put("total_unrecognized", total);
         }
-        // Also include device ingestion map for context
+        // Also include device ingestion map + details for context
         out.put("device_ingestion", TrinetraSession.getAllDeviceIngestion(sanitized));
         out.put("device_vendors", TrinetraSession.getAllDeviceVendors(sanitized));
+        out.put("device_details", TrinetraSession.getAllDeviceDetails(sanitized));
         System.out.println(TrinetraJson.prettyJson(out));
     }
 }

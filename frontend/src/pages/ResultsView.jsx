@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react'
 import Spinner from '../components/Spinner'
 
-const FRAMEWORKS = ['ISO27001', 'NIST_800-53', 'PCI-DSS', 'SOC2', 'CIS']
-const STIG_SUPPORTED = false
+const FRAMEWORKS = ['CIS', 'ISO27001', 'NIST_800-53', 'STIG', 'PCI-DSS', 'SOC2']
+const PS_REQUIRED = new Set(['CIS', 'ISO27001', 'NIST_800-53', 'STIG'])
 
 export default function ResultsView({ api, toast }) {
   const params = new URLSearchParams(window.location.search)
@@ -13,7 +13,25 @@ export default function ResultsView({ api, toast }) {
   const [report, setReport] = useState(null)
   const [activeFramework, setActiveFramework] = useState(null)
   const [error, setError] = useState(null)
+  const [selectedFrameworks, setSelectedFrameworks] = useState(new Set(FRAMEWORKS))
   const abortRef = useRef(null)
+
+  const toggleFramework = (fw) => {
+    setSelectedFrameworks(prev => {
+      const next = new Set(prev)
+      if (next.has(fw)) {
+        if (next.size === 1) return prev // keep at least one
+        next.delete(fw)
+      } else {
+        next.add(fw)
+      }
+      return next
+    })
+  }
+  const frameworksQuery = () => {
+    if (selectedFrameworks.size === FRAMEWORKS.length) return ''
+    return `?frameworks=${Array.from(selectedFrameworks).join(',')}`
+  }
 
   useEffect(() => {
     const s = params.get('session')
@@ -37,9 +55,10 @@ export default function ResultsView({ api, toast }) {
     const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     try {
+      const fq = frameworksQuery()
       const [scoreRes, reportRes] = await Promise.all([
-        fetch(`${api}/session/${s}/score`, { signal: controller.signal }),
-        fetch(`${api}/session/${s}/audit-report`, { signal: controller.signal }),
+        fetch(`${api}/session/${s}/score${fq}`, { signal: controller.signal }),
+        fetch(`${api}/session/${s}/audit-report${fq}`, { signal: controller.signal }),
       ])
       clearTimeout(timeoutId)
 
@@ -86,6 +105,22 @@ export default function ResultsView({ api, toast }) {
         View compliance scores per framework and detailed test results.
       </p>
 
+      <div className="card" style={{ marginBottom: 16, padding: 16 }}>
+        <label style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 8 }}>Benchmarks to evaluate (user-selected, per PS)</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+          {FRAMEWORKS.map(fw => (
+            <label key={fw} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+              <input type="checkbox" checked={selectedFrameworks.has(fw)} onChange={() => toggleFramework(fw)} />
+              <span style={{ fontFamily: 'var(--mono)', fontWeight: selectedFrameworks.has(fw) ? 700 : 400 }}>{fw.replace(/_/g, ' ')}</span>
+              {PS_REQUIRED.has(fw) ? <span className="badge badge-info" style={{ fontSize: 10 }}>PS</span> : <span className="badge badge-bonus" style={{ fontSize: 10 }}>bonus</span>}
+            </label>
+          ))}
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>
+          Default: all frameworks. Uncheck to filter scoring/reports/PDF to only selected benchmarks.
+        </div>
+      </div>
+
       <form onSubmit={load} style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         <input
           type="text"
@@ -125,24 +160,14 @@ export default function ResultsView({ api, toast }) {
             {Object.entries(score.frameworks || {}).map(([fw, data]) => (
               <div className="stat-card" key={fw}>
                 <div className="stat-value">
-                  {data.total_percentage ?? data.percentage ?? '—'}%
+                  {data.compliance_percentage ?? data.total_percentage ?? data.percentage ?? '—'}%
                 </div>
-                <div className="stat-label">{fw.replace('_', ' ')}</div>
+                <div className="stat-label">{fw.replace(/_/g, ' ')}</div>
               </div>
             ))}
           </div>
 
-          {/* STIG badge */}
-          {!STIG_SUPPORTED && (
-            <div className="card" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-              <span className="badge badge-info">STIG</span>
-              <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>
-                STIG framework support coming soon — not yet available for scoring
-              </span>
-            </div>
-          )}
-
-          {/* Framework tabs */}
+          {/* Framework tabs — all PS-required + bonus */}
           <div className="framework-tabs">
             {FRAMEWORKS.map(fw => (
               <button
@@ -150,31 +175,31 @@ export default function ResultsView({ api, toast }) {
                 className={`framework-tab ${activeFramework === fw ? 'active' : ''}`}
                 onClick={() => setActiveFramework(fw)}
               >
-                {fw.replace('_', ' ')}
+                {fw.replace(/_/g, ' ')}
               </button>
             ))}
-            {!STIG_SUPPORTED && (
-              <span className="framework-tab coming-soon" title="STIG mappings not yet implemented">
-                STIG
-              </span>
-            )}
           </div>
 
           {/* Active framework detail */}
           {activeFramework && fwScore && (
             <div className="card">
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h2 style={{ fontSize: 18, fontWeight: 600 }}>
-                  {activeFramework.replace('_', ' ')} Results
-                </h2>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>
-                    {fwScore.total_percentage ?? fwScore.percentage ?? 0}%
-                  </span>
-                  {(activeFramework === 'PCI-DSS' || activeFramework === 'SOC2') && (
-                    <span className="badge badge-bonus">Bonus Coverage</span>
-                  )}
-                </div>
+                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>
+                    {activeFramework.replace(/_/g, ' ')} Results
+                  </h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>
+                      {fwScore.total_percentage ?? fwScore.percentage ?? 0}%
+                    </span>
+                    {!PS_REQUIRED.has(activeFramework) && (
+                      <span className="badge badge-bonus">Bonus Coverage</span>
+                    )}
+                    {activeFramework === 'STIG' && fwScore.compliance_percentage != null && (
+                      <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                        STIG coverage: {fwScore.tests_passed}/{fwScore.total_tests_mapped} controls mapped
+                      </span>
+                    )}
+                  </div>
               </div>
 
               {/* Progress bar */}
@@ -231,16 +256,16 @@ export default function ResultsView({ api, toast }) {
             </div>
           )}
 
-          {/* PDF download */}
+          {/* PDF download — respects framework filter */}
           <div style={{ marginTop: 24 }}>
             <a
-              href={`${api}/session/${session}/audit-report/pdf`}
+              href={`${api}/session/${session}/audit-report/pdf${frameworksQuery()}`}
               className="btn-primary"
               style={{ display: 'inline-block' }}
               target="_blank"
               rel="noopener noreferrer"
             >
-              Download PDF Report
+              Download PDF Report {selectedFrameworks.size !== FRAMEWORKS.length ? `(${Array.from(selectedFrameworks).join(', ')})` : ''}
             </a>
           </div>
         </>

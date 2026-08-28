@@ -96,20 +96,35 @@ public class TrinetraConfigIngestor {
     /**
      * Ingest config file for a device: parse, run checks, store findings, track ingestion_method and unrecognized lines.
      * Returns IngestResult with summary.
+     * Overload without hardware metadata delegates to full version with blank details.
      */
     public static IngestResult ingest(String sessionName, String deviceId, String vendorHint, String configContent, String filename) {
+        return ingest(sessionName, deviceId, vendorHint, configContent, filename, null, null, null);
+    }
+
+    /**
+     * Full ingest with distinct hardware metadata (PS Deliverable 4 + item 8 OS-version).
+     * serialNumber, hardwareModel, osVersion are optional free-text; osVersion is also
+     * auto-detected via lightweight header scan when blank (metadata-level awareness, not parsing branch).
+     */
+    public static IngestResult ingest(String sessionName, String deviceId, String vendorHint, String configContent, String filename,
+                                      String serialNumber, String hardwareModel, String osVersion) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
         String vendor = vendorHint;
         if (vendor == null || vendor.isBlank() || vendor.equalsIgnoreCase("auto")) {
             vendor = autoDetectVendor(configContent);
         }
         vendor = vendor.trim();
+        // ── OS-version lightweight detection (item 8) — header scan only, no parsing branch ──
+        String detectedOs = detectOsVersion(configContent, vendor);
+        String effectiveOs = (osVersion != null && !osVersion.isBlank()) ? osVersion.trim() : detectedOs;
         // Normalize vendor via registry (ensures Cisco/Juniper canonical)
         VendorConnector connector = VendorConnectorRegistry.resolve(vendor);
         String canonicalVendor = connector.getVendorName();
-        // Store device vendor and ingestion method
+        // Store device vendor, ingestion method, and distinct metadata
         TrinetraSession.setDeviceVendor(sanitized, deviceId, canonicalVendor);
         TrinetraSession.setDeviceIngestion(sanitized, deviceId, "config_upload", filename);
+        TrinetraSession.setDeviceDetails(sanitized, deviceId, serialNumber, hardwareModel, effectiveOs);
 
         // Save config file to artifacts
         try {
@@ -299,6 +314,49 @@ public class TrinetraConfigIngestor {
         TrinetraBrain.updateBrain(sanitized);
 
         return new IngestResult(deviceId, canonicalVendor, "config_upload", findings.size(), passed, failed, unrecognized, findings);
+    }
+
+    /**
+     * Lightweight OS-version detection — scans first ~2000 chars for common
+     * version-banner strings. Returns empty string when no banner found.
+     * This is metadata-level awareness only; core parsing does NOT branch on it.
+     */
+    static String detectOsVersion(String configContent, String vendorHint) {
+        if (configContent == null || configContent.isBlank()) return "";
+        String head = configContent.length() > 4000 ? configContent.substring(0, 4000) : configContent;
+        String lower = head.toLowerCase();
+        // IOS XE — e.g. "Cisco IOS XE Software, Version 17.6.5" or "ios-xe"
+        if (lower.contains("ios xe") || lower.contains("ios-xe") || lower.contains("version 17.") || lower.contains("version 16.")) {
+            // Try to extract version token
+            java.util.regex.Matcher m = Pattern.compile("version\\s+([\\d\\.\\(\\)A-Za-z]+)", Pattern.CASE_INSENSITIVE).matcher(head);
+            if (m.find()) return "IOS XE " + m.group(1).trim();
+            return "IOS XE";
+        }
+        // NX-OS — e.g. "Cisco Nexus Operating System (NX-OS) Software, Version 9.3(9)"
+        if (lower.contains("nx-os") || lower.contains("nexus") || lower.contains("nxos")) {
+            java.util.regex.Matcher m = Pattern.compile("version\\s+([\\d\\.\\(\\)]+)", Pattern.CASE_INSENSITIVE).matcher(head);
+            if (m.find()) return "NX-OS " + m.group(1).trim();
+            return "NX-OS";
+        }
+        // JUNOS — e.g. "JUNOS 20.4R3-S2.4" or "junos"
+        if (lower.contains("junos") || lower.contains("juniper")) {
+            java.util.regex.Matcher m = Pattern.compile("junos\\s+([\\d\\.R\\-S]+)", Pattern.CASE_INSENSITIVE).matcher(head);
+            if (m.find()) return "JUNOS " + m.group(1).trim();
+            if (lower.contains("junos")) return "JUNOS";
+            return "JUNOS";
+        }
+        // Generic IOS — e.g. "Cisco IOS Software, Version 15.9(3)M6"
+        if (lower.contains("cisco ios software") || lower.contains("cisco ios ")) {
+            java.util.regex.Matcher m = Pattern.compile("version\\s+([\\d\\.\\(\\)A-Za-z]+)", Pattern.CASE_INSENSITIVE).matcher(head);
+            if (m.find()) return "IOS " + m.group(1).trim();
+            return "IOS";
+        }
+        // Generic version fallback: look for Cisco/Juniper version line
+        java.util.regex.Matcher m = Pattern.compile("version\\s+([\\d\\.]+)", Pattern.CASE_INSENSITIVE).matcher(head);
+        if (m.find() && (lower.contains("cisco") || lower.contains("juniper"))) {
+            return (vendorHint != null ? vendorHint + " " : "") + m.group(1).trim();
+        }
+        return "";
     }
 
     private static String mapCategoryToVcode(String category, List<String> controls) {

@@ -29,18 +29,22 @@ public class TrinetraAgr {
         OWASP_MAP.put("V-107", "A05:2021 – Security Misconfiguration");
     }
 
-    // ── Remediation hints per V-code (IN-SCOPE test_ids only) ──
+    // ── Remediation hints per V-code — step-by-step CLI sequences (item 6) ──
+    // Reformatted from single-paragraph hints into numbered device-specific steps where fix requires multiple CLI invocations.
+    // All remediation content is correct per vendor documentation; only structuring changed.
     private static final Map<String, String> REMEDIATION = new LinkedHashMap<>();
     static {
-        REMEDIATION.put("V-003", "Close or firewall unnecessary ports. Restrict services to least-privilege. Implement network segmentation.");
-        REMEDIATION.put("V-005", "Suppress version banners in server configuration. Disable server signature and expose HTTP header version info.");
-        REMEDIATION.put("V-006", "Disable SSLv3, TLS 1.0, and TLS 1.1. Enforce TLS 1.2+ minimum. Update server configuration.");
-        REMEDIATION.put("V-007", "Remove support for NULL, EXPORT, RC4, DES, and 3DES cipher suites. Prefer AEAD ciphers (AES-GCM, ChaCha20).");
-        REMEDIATION.put("V-008", "Replace self-signed certificates with CA-signed certificates. Renew expiring certificates promptly.");
-        REMEDIATION.put("V-010", "Add Strict-Transport-Security header with appropriate max-age (e.g., 31536000). Include includeSubDomains and preload.");
-        REMEDIATION.put("V-013", "Enforce strong password policy: minimum 12 characters, complexity requirements, password history.");
-        REMEDIATION.put("V-057", "Remove hardcoded secrets from source code. Use environment variables or secret managers.");
-        REMEDIATION.put("V-087", "Update vulnerable dependencies. Implement automated SCA in CI/CD. Monitor CVE databases.");
+        REMEDIATION.put("V-003", "1. Enter config mode: `configure terminal`. 2. Identify service: `show running-config | include transport|http`. 3. Disable unused: `line vty 0 4` → `no transport input telnet`; `no ip http server`. 4. Restrict with ACL: `access-list 10 permit 10.0.0.0 0.255.255.255` → `line vty 0 4` → `access-class 10 in`. 5. Save: `write memory`.");
+        REMEDIATION.put("V-005", "1. `configure terminal`. 2. Suppress banner: `no banner motd` or `banner motd # authorized use only #`. 3. Disable version disclosure: `no ip http server` + `no service pad`. 4. Verify: `show running-config | include banner|version`.");
+        REMEDIATION.put("V-006", "1. `configure terminal`. 2. Disable weak TLS: `no ip http server` (or restrict to `ip http secure-server` only). 3. Enforce TLS 1.2+: `ip ssh version 2` → `ip ssh server algorithm encryption aes128-ctr aes256-ctr aes128-gcm`. 4. Verify: `show ip ssh` / `show ip http server status`.");
+        REMEDIATION.put("V-007", "1. `configure terminal`. 2. Remove weak ciphers: `no ip ssh server algorithm encryption 3des-cbc` / `no ip ssh server algorithm encryption rc4`. 3. Enable AEAD: `ip ssh server algorithm encryption aes128-ctr aes256-ctr aes128-gcm` + `ip ssh server algorithm mac hmac-sha2-256`. 4. Verify: `show ip ssh`.");
+        REMEDIATION.put("V-008", "1. Generate CSR: `crypto pki enroll <trustpoint>`. 2. Import CA-signed cert: `crypto pki import <trustpoint> certificate`. 3. Bind: `ip http secure-trustpoint <trustpoint>`. 4. Verify & renew: `show crypto pki certificates`.");
+        REMEDIATION.put("V-010", "1. `configure terminal`. 2. Add HSTS: `ip http secure-server` → `ip http csp` (or web-server hsts). 3. Set header: `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`. 4. Verify via browser devtools headers.");
+        REMEDIATION.put("V-013", "1. `configure terminal`. 2. Enforce complexity: `aaa new-model` (or `security passwords min-length 12`). 3. Strong secret: `enable secret <strong-password>`. 4. Local user: `username admin privilege 15 secret <strong-password>`. 5. Save: `write memory`.");
+        REMEDIATION.put("V-057", "1. `configure terminal`. 2. Remove hardcoded: `no snmp-server community public` / `no snmp-server community private`. 3. Use vault: `snmp-server group <name> v3 priv` + store secret in vault/manager. 4. Verify: `show running-config | include snmp-server`.");
+        REMEDIATION.put("V-071", "1. `configure terminal`. 2. Harden vty: `line vty 0 4` → `no transport input telnet` → `transport input ssh`. 3. Disable HTTP: `no ip http server`. 4. Set idle timeout: `line vty 0 4` → `exec-timeout 5 0` → `logging synchronous`. 5. `end` → `write memory`.");
+        REMEDIATION.put("V-058", "1. `configure terminal`. 2. Enable logging: `logging host 10.10.1.100` + `logging trap informational`. 3. Protect: `service timestamps log datetime msec` + `no logging console` (avoid sensitive data). 4. Verify: `show logging`.");
+        REMEDIATION.put("V-087", "1. Identify vulnerable dep: `show version` / `show inventory`. 2. Check patch: compare to `https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory`. 3. Apply patch via `install add file <image> activate commit` or `request system software add <image>` (Juniper). 4. Verify: `show version` post-upgrade.");
     }
 
     /**

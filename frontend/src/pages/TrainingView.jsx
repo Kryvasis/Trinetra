@@ -18,6 +18,7 @@ export default function TrainingView({ api, toast }) {
   const [category, setCategory] = useState('')
   const [controlMapping, setControlMapping] = useState('')
   const [remediation, setRemediation] = useState('')
+  const [osVersionTrain, setOsVersionTrain] = useState('')
   const [training, setTraining] = useState(false)
   const [trainErrors, setTrainErrors] = useState({})
   const abortRef = useRef(null)
@@ -106,6 +107,7 @@ export default function TrainingView({ api, toast }) {
         security_category: category.trim(),
         control_mapping: controlMapping.split(',').map(s => s.trim()).filter(Boolean),
         remediation: remediation.trim() || `Configure ${category.trim()} properly`,
+        os_version: osVersionTrain.trim() || undefined,
       }
       const res = await fetch(`${api}/session/${session}/train`, {
         method: 'POST',
@@ -125,6 +127,7 @@ export default function TrainingView({ api, toast }) {
       setCategory('')
       setControlMapping('')
       setRemediation('')
+      setOsVersionTrain('')
       setTrainErrors({})
       // Re-fetch to show updated count
       const newUnrecognized = unrecognized.filter(u => u.line !== selectedLine)
@@ -149,6 +152,7 @@ export default function TrainingView({ api, toast }) {
     setCategory('')
     setControlMapping('')
     setRemediation('')
+    setOsVersionTrain('')
     setTrainErrors({})
   }
 
@@ -280,6 +284,16 @@ export default function TrainingView({ api, toast }) {
                     onChange={e => setRemediation(e.target.value)}
                     rows={3}
                     placeholder="How to remediate this finding..."
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>OS Version (optional — metadata only, not parsing branch)</label>
+                  <input
+                    type="text"
+                    value={osVersionTrain}
+                    onChange={e => setOsVersionTrain(e.target.value)}
+                    placeholder="e.g. IOS XE 17.6.5, NX-OS 9.3(9), JUNOS 20.4R3"
                   />
                 </div>
 
