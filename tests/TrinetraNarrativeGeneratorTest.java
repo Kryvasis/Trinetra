@@ -257,8 +257,10 @@ public class TrinetraNarrativeGeneratorTest {
             "report grounded in scorer data");
 
         // Derived-report rule: brain-state schema untouched, chain intact.
+        // After bootstrap fix (28 Aug) latest_score is initialized to null, so
+        // a fresh session should validate cleanly — narrative must not disturb it.
         List<String> errs = TrinetraSession.validateBrainState(session);
-        expect(errs.size() == 1 && errs.get(0).contains("latest_score"),
+        expect(errs.isEmpty(),
             "brain-state schema unchanged by narrative layer -> " + errs);
         TrinetraSession.ChainVerifyResult v = TrinetraSession.verifyChain(session);
         expect(v.intact, "normalized_results chain still intact -> " + v);

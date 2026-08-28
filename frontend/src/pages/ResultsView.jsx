@@ -160,7 +160,8 @@ export default function ResultsView({ api, toast }) {
             {Object.entries(score.frameworks || {}).map(([fw, data]) => (
               <div className="stat-card" key={fw}>
                 <div className="stat-value">
-                  {data.compliance_percentage ?? data.total_percentage ?? data.percentage ?? '—'}%
+                  {/* canonical scorer field is compliance_percentage (TrinetraComplianceScorer.java:132, bridge /score passthrough) */}
+                  {data.compliance_percentage ?? '—'}%
                 </div>
                 <div className="stat-label">{fw.replace(/_/g, ' ')}</div>
               </div>
@@ -189,7 +190,8 @@ export default function ResultsView({ api, toast }) {
                   </h2>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                     <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>
-                      {fwScore.total_percentage ?? fwScore.percentage ?? 0}%
+                      {/* canonical: compliance_percentage; fallback removed — API stable since STIG 14/15 (28 Aug) */}
+                      {fwScore.compliance_percentage ?? 0}%
                     </span>
                     {!PS_REQUIRED.has(activeFramework) && (
                       <span className="badge badge-bonus">Bonus Coverage</span>
@@ -207,9 +209,9 @@ export default function ResultsView({ api, toast }) {
                 <div
                   className="progress-bar"
                   style={{
-                    width: `${fwScore.total_percentage ?? fwScore.percentage ?? 0}%`,
-                    background: (fwScore.total_percentage ?? 0) >= 80 ? 'var(--green)' :
-                      (fwScore.total_percentage ?? 0) >= 50 ? 'var(--yellow)' : 'var(--red)',
+                    width: `${fwScore.compliance_percentage ?? 0}%`,
+                    background: (fwScore.compliance_percentage ?? 0) >= 80 ? 'var(--green)' :
+                      (fwScore.compliance_percentage ?? 0) >= 50 ? 'var(--yellow)' : 'var(--red)',
                   }}
                 />
               </div>

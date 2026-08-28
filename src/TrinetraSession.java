@@ -171,6 +171,7 @@ public class TrinetraSession {
         ));
         state.put("latest_suggestion", null);
         state.put("suggestion_history", TrinetraCommon.newList());
+        state.put("latest_score", null);
 
         TrinetraCommon.writeJsonFile(statePath, state);
     }

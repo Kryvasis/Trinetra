@@ -62,5 +62,6 @@
       "chain_hash": "82fa3f5b6794b52f3118f078ab9a39da2f4c97827c56e45e4668c44e008a9678"
     }
   ],
-  "previous_chain_hash": "82fa3f5b6794b52f3118f078ab9a39da2f4c97827c56e45e4668c44e008a9678"
+  "previous_chain_hash": "82fa3f5b6794b52f3118f078ab9a39da2f4c97827c56e45e4668c44e008a9678",
+  "latest_score": null
 }

@@ -49,6 +49,18 @@ sessions/err_test_*/
 sessions/bridge_test_*/
 sessions/nonexistent_*/
 sessions/this_session_*/
+# Audit/demo ephemeral sessions (created by live audit scripts / manual demo runs)
+sessions/audit_*/
+sessions/audit_d*/
+sessions/pdf_quick_*/
+sessions/demo-judge*/
+sessions/demo_judge*/
+sessions/test_audit_*/
+sessions/test_report_*/
+sessions/test_severity_*/
+sessions/test_devices_*/
+sessions/fail_remediation_*/
+sessions/train_loop_*/
 
 # React frontend build artifacts
 frontend/node_modules/

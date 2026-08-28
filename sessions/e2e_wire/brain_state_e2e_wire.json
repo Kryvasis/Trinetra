@@ -42,5 +42,6 @@
       "chain_hash": "0e4291f2bf500b126cf8052a90cbd2c1fff814fe18fa582916f2d6acea36fa54"
     }
   ],
-  "previous_chain_hash": "0e4291f2bf500b126cf8052a90cbd2c1fff814fe18fa582916f2d6acea36fa54"
+  "previous_chain_hash": "0e4291f2bf500b126cf8052a90cbd2c1fff814fe18fa582916f2d6acea36fa54",
+  "latest_score": null
 }

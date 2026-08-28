@@ -47,5 +47,6 @@
       "next_v_code": "V-002",
       "reason": "After initial reconnaissance (V-001), subdomain enumeration expands the attack surface and reveals additional targets for further testing."
     }
-  ]
+  ],
+  "latest_score": null
 }
