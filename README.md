@@ -84,9 +84,9 @@ Today, checking whether a network is configured securely means a human reading h
 
 ---
 
-## 4. Final Scorecard — submission-facing audit (28 Aug 2026, cited, live-tested)
+## 4. Final Scorecard — submission-facing audit (28 Aug 2026, cited, live-tested — updated 28 Aug post 6-gap closure `3551a9d`)
 
-*This single table answers "does this meet the PS?" — no verdict without evidence. Detailed design per row is in §5–§6; plain-language reading is in the right-most column of the same table in the previous revision (preserved in git history `1f5322c`). Status freshly re-derived from code + live bridge tests on 28 Aug 2026.*
+*This single table answers "does this meet the PS?" — no verdict without evidence. Detailed design per row is in §5–§6; plain-language reading is in the right-most column of the same table in the previous revision (preserved in git history `1f5322c`). Status freshly re-derived from code + live bridge tests on 28 Aug 2026 and re-verified after `DEMO_SCRIPT.md` rewrite, `doctor` clean, and `ResultsView` canonical fix (see §7–§8, commit `3551a9d`).*
 
 | PS Deliverable | Verdict | Evidence-based justification (1 sentence, with citation + live proof) |
 |---|---|---|
@@ -179,15 +179,17 @@ Bridge tests: `python3 -m pytest bridge/tests/test_bridge.py -v` (20 tests, ~240
 
 * **Remediation step-by-step is now 15/15 but still manually curated.** Numbered CLI sequences now exist for **all 15 manifest V-codes** (`V-003` through `V-144`, including newly added `V-005`, `V-070`, `V-087`, `V-105`, `V-106` (cloud `aws s3api`/`gsutil`), `V-107`, `V-144`) in both `bridge/app.py:990` and `src/TrinetraAgr.java:32` — each verified as real multi-step where applicable (e.g., `V-070: show version → compare to advisory → copy tftp → install add → verify`). Single-command fixes remain 1 step honestly (not padded). They are not auto-generated per new training entry — a new `V-999` taught via training still falls back to the generic `Review V-999 for device X and apply vendor hardening guide. (AI-suggested — verify before use)` until someone curates its steps. *Keep that fallback label visible.*
 
-* **Full OS-version branches + NCIIPC remain open going into submission** — these are the two explicitly-out-of-scope items from Prompt 24. They are the only honest gaps left; everything else in the 7-item audit is closed.
+* **Doctor + ResultsView fixable gaps now closed (28 Aug follow-up).** `src/TrinetraSession.java:175` `bootstrapBrainState()` now initializes `latest_score: null` — new sessions validate clean; 4 legacy `sessions/*/brain_state_*.json` (`demo`, `ses27_07_26`, `e2e_smoke2`, `e2e_wire`) patched; `trinetra -doctor` now reports `All sessions valid` (was `Missing latest_score`). `frontend/src/pages/ResultsView.jsx:163,192,210` now uses canonical `compliance_percentage` (scorer `TrinetraComplianceScorer.java:132`, bridge passthrough) — redundant `total_percentage`/`percentage` fallback removed with inline comment. `.gitignore:45-62` now broadly ignores ephemeral `sessions/audit_*/`, `pdf_quick_*`, `demo-judge*`, `test_audit_*` etc., so `git status` stays clean.
+
+* **Full OS-version branches + NCIIPC remain open going into submission** — these are the two explicitly-out-of-scope items from Prompt 24. They are the only honest gaps left; the 6 fixable gaps from the ranked list (DEMO STIG drift, bulk/hardware steps, OS auto-detect, repo cleanup, doctor `latest_score`, ResultsView fallback) are now closed and verified in `DEMO_SCRIPT.md:21-58` and commit `3551a9d`.
 
 ---
 
 ## 8. Demo flow reference
 
-Full script is `DEMO_SCRIPT.md` (Prompt 23, 8–10 minutes). Quick reference for the table:
+Full script is `DEMO_SCRIPT.md` (Prompt 23, 8–10 minutes, **rewritten 28 Aug to match live UI**). Quick reference for the table:
 
-`Upload (single or bulk with serial/hardware/OS) → Results (pick CIS/STIG/etc., see %`+`bars) → Training (click unrecognized → fill category/controls → Add) → Re-upload same file → show count drops → Session Devices (per-device pass/fail + Serial/Hardware/OS) → Download PDF (landscape, Severity + Hardware columns + numbered remediation) → System → Run trinetra -doctor (124 defs, chain INTACT)`.
+`Upload (single with Serial `FTX999`/Hardware `C9300`/OS `IOS XE 17.6.5` — or blank for auto-detect from banner — then bulk 2 files in one action `cisco-lab-01.txt`+`juniper-lab-01.txt` → per-file Bulk Results table `pending→uploading→success`) → Results (pick CIS/NIST/ISO27001/STIG — STIG enabled 14/15 `CISC-ND`/`JUSX-ND`, `V-106` gap honest — + bonus PCI-DSS/SOC2, filter `?frameworks=CIS` → `Frameworks scored:1`) → Training (click unrecognized `custom-vendor-feature enable zone-trust` → fill category/controls → Add) → Re-upload same file → show count drops → Session Devices (per-device pass/fail + Serial/Hardware/OS) → Download PDF (ReportLab `landscape`, Serial/Hardware/OS/Severity distinct columns + numbered `1. configure terminal …` remediation) → System → Run `trinetra -doctor` (124 defs, `All sessions valid`, `INTACT`)`.
 
 Point the judge to `demo/sample_configs/cisco-lab-01.txt` (contains `custom-vendor-feature enable zone-trust` unrecognized line + `IOS XE 17.6.5` banner) and `juniper-lab-01.txt`.
 
