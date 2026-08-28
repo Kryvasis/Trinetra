@@ -1,6 +1,6 @@
 # Resume Point
 
-**Baseline commit:** `eb8b8a6` on `origin/main`
+**Baseline commit:** `a9477f9` on `origin/main`
 (Baseline: PS26155 alignment — config-upload ingestion, vendor training loop, CIS mapping verified (Prompt 21))
 
 ## Proven working end-to-end as of this commit
@@ -17,21 +17,35 @@ Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` +
 
 **PDF export verified:** ReportLab-generated PDF with valid header, device_id in evidence rows, PCI-DSS/SOC2 bonus coverage note, remediation section with documented/AI-suggested labeling, STIG-free.
 
-**Remediation-sourcing precedence:** Documented remediations (V-003, V-006, V-007, V-008, V-013, V-057, V-058, V-071) display without "AI-suggested" label. Unknown V-codes fall back with "AI-suggested — verify before use" label.
+**Remediation-sourcing precedence:** Documented remediations (V-003, V-006, V-007, V-008, V-013, V-057, V-058, V-071) display without "AI-suggested" label. Unknown V-codes fall back with "AI-suggested — verify before use" label. Regression test confirms V-070 (undocumented) triggers AI-suggested path, while V-057 (documented) uses documented text.
 
-**Scope-hygiene sweep:** All offensive-tool references (sqli, sqlmap, xsstrike, commix, nikto, nmap) are in legacy/backup directories (`stat_scripts_backup_*`, `backup_removal_*`) or historical session data only. No live/active references.
+**Fail-verdict regression test (Item 2):** `bridge/tests/test_fail_remediation.py` exercises the AI-suggested remediation path end-to-end: creates session, uploads config, injects FAIL finding for V-070 (undocumented V-code in compliance manifest but NOT in bridge's remediation_map), generates audit report + PDF, verifies the FAIL appears in evidence table. Also tests control case: documented V-057 uses documented remediation, not AI-suggested.
 
-**Minimal upload GUI:** Plain HTML/JS at `/`, `/ui`, `/upload` — session creation, config upload, training form, unrecognized-line labeling, audit report + PDF download.
+**React frontend (Prompt 22):** Vite + React 18 app in `frontend/` with 4 views:
+- **Upload view** — file/paste config upload, vendor auto-detect, session creation, processing state, scan results with pass/fail/unrecognized counts
+- **Results/score view** — per-framework compliance scores with progress bars, test result tables, framework tabs, PCI-DSS/SOC2 "bonus coverage" badges, AI-suggested remediation labels preserved exactly as bridge flags them
+- **Training view** — unrecognized lines list with click-to-select, labeling form (vendor, regex pattern, security category, control mapping, remediation), before/after count
+- **Dashboard view** — trinetra -doctor health check, session list, AI integration status
 
-**Git tracking:** `config/vendor_training_map.json` tracked (not gitignored). Runtime session/report artifacts remain gitignored.
+Vite dev server proxies `/api` to Flask bridge at port 5000 (no CORS issues, no bridge changes needed). Flask HTML pages kept in place but unlinked from React nav.
 
-**Test results:** Java 11 suites all pass (`make test-java`), Python 15 tests pass (14 bridge + 1 training loop), `trinetra -doctor` shows 124 definitions, clean state.
+**STIG placeholder in React UI:** STIG shown as disabled tab with "(coming soon)" tooltip. Never selectable, never claims coverage. Consistent with Flask HTML fallback.
 
-## Files changed in this baseline
+**Multi-device dashboard (stretch, Item 4):** Landed in Dashboard view — shows system health, session list with click-through to results.
 
-New: `src/TrinetraConfigIngestor.java`, `src/VendorTrainingMap.java`, `config/vendor_training_map.json`, `bridge/tests/test_training_loop.py`
-Modified: `bridge/app.py`, `bridge/README.md`, `config/compliance_manifest.json`, `schema.md`, `src/TrinetraAuditReportBuilder.java`, `src/TrinetraBridgeHelper.java`, `src/TrinetraSession.java`, `src/TrinetraStat.java`, `README.md`
+**Scope-hygiene sweep:** All offensive-tool references (sqli, sqlmap, xsstrike, commix, nikto, nmap) are in legacy/backup directories (`stat_scripts_backup_*`, `backup_removal_*`) or historical session data only. React frontend code has zero offensive-tool terminology.
+
+**Minimal upload GUI:** Plain HTML/JS at `/`, `/ui`, `/upload` — session creation, config upload, training form, unrecognized-line labeling, audit report + PDF download. Unlinked from React nav but not deleted.
+
+**Git tracking:** `config/vendor_training_map.json` tracked (not gitignored). Runtime session/report artifacts remain gitignored. `frontend/node_modules/` and `frontend/dist/` gitignored.
+
+**Test results:** Java 11 suites all pass (`make test-java`), Python 17 tests pass (15 bridge + 2 fail-remediation regression), `trinetra -doctor` shows 124 definitions, clean state.
+
+## Files changed in this commit
+
+New: `frontend/` (Vite React app: `package.json`, `vite.config.js`, `index.html`, `src/main.jsx`, `src/App.jsx`, `src/index.css`, `src/components/Toast.jsx`, `src/components/Spinner.jsx`, `src/pages/UploadView.jsx`, `src/pages/ResultsView.jsx`, `src/pages/TrainingView.jsx`, `src/pages/DashboardView.jsx`, `public/vite.svg`), `bridge/tests/test_fail_remediation.py`
+Modified: `.gitignore` (added `frontend/node_modules/`, `frontend/dist/`)
 
 ## Next planned prompt
 
-Prompt 22 — consider: React upload UI (replace minimal HTML), additional vendor connector patterns, expanded CIS/NIST mappings, or compliance-report PDF improvements.
+Prompt 23 — consider: additional vendor connector patterns (Palo Alto, Fortinet), expanded CIS/NIST mappings, compliance-report PDF improvements, production build/serve configuration, or accessibility audit.

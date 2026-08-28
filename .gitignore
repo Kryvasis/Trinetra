@@ -49,3 +49,7 @@ sessions/err_test_*/
 sessions/bridge_test_*/
 sessions/nonexistent_*/
 sessions/this_session_*/
+
+# React frontend build artifacts
+frontend/node_modules/
+frontend/dist/
