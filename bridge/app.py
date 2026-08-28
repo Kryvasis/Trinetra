@@ -519,6 +519,103 @@ def get_unrecognized(name):
     except Exception as e:
         return error_response(f"failed to parse unrecognized output: {e}", 500, {"raw_stdout": out, "raw_stderr": err})
 
+# ── GET /api/session/<name>/devices — per-device summary for multi-device dashboard ──
+@app.route("/api/session/<name>/devices", methods=["GET"])
+def session_devices(name):
+    if not validate_session(name):
+        return error_response(f"invalid session name: {name!r}", 400)
+
+    # Read session JSON for device metadata
+    session_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"{name}.json")
+    if not os.path.exists(session_path):
+        return error_response(f"session not found: {name}", 404)
+
+    try:
+        with open(session_path, "r") as f:
+            session_data = json.load(f)
+    except Exception as e:
+        return error_response(f"failed to read session: {e}", 500)
+
+    # Read brain state for normalized_results (pass/fail counts)
+    brain_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"brain_state_{name}.json")
+    brain_data = {}
+    if os.path.exists(brain_path):
+        try:
+            with open(brain_path, "r") as f:
+                brain_data = json.load(f)
+        except Exception:
+            pass
+
+    device_vendors = session_data.get("device_vendors") or {}
+    device_ingestion = session_data.get("device_ingestion") or {}
+    findings = session_data.get("findings") or []
+    normalized_results = brain_data.get("normalized_results") or []
+
+    # Build device set from findings + device_vendors
+    device_ids = set(device_vendors.keys())
+    for f in findings:
+        did = f.get("device_id")
+        if did:
+            device_ids.add(did)
+    for nr in normalized_results:
+        did = nr.get("device_id")
+        if did:
+            device_ids.add(did)
+
+    # Build per-device summaries
+    devices = []
+    for did in sorted(device_ids):
+        vendor = device_vendors.get(did, "unknown")
+        ingestion = device_ingestion.get(did)
+        ingestion_method = ingestion.get("method", "unknown") if ingestion else "unknown"
+        ingestion_filename = ingestion.get("filename") if ingestion else None
+
+        # Count pass/fail/manual_review from findings
+        pass_count = 0
+        fail_count = 0
+        total = 0
+        for f in findings:
+            if f.get("device_id") == did:
+                total += 1
+                verdict = (f.get("verdict") or "").lower()
+                if verdict == "pass":
+                    pass_count += 1
+                elif verdict == "fail":
+                    fail_count += 1
+
+        # Also count from normalized_results (more authoritative)
+        nr_pass = 0
+        nr_fail = 0
+        nr_total = 0
+        for nr in normalized_results:
+            if nr.get("device_id") == did:
+                nr_total += 1
+                result = (nr.get("normalized_result") or "").lower()
+                if result == "pass":
+                    nr_pass += 1
+                elif result == "fail":
+                    nr_fail += 1
+
+        # Use normalized_results counts if available, else findings
+        if nr_total > 0:
+            pass_count, fail_count, total = nr_pass, nr_fail, nr_total
+
+        devices.append({
+            "device_id": did,
+            "vendor": vendor,
+            "ingestion_method": ingestion_method,
+            "filename": ingestion_filename,
+            "pass_count": pass_count,
+            "fail_count": fail_count,
+            "total_checks": total,
+        })
+
+    return jsonify({
+        "session": name,
+        "device_count": len(devices),
+        "devices": devices,
+    }), 200
+
 # ── POST /api/session/<name>/train — add training entry (no code change) ──
 @app.route("/api/session/<name>/train", methods=["POST"])
 def train_vendor(name):

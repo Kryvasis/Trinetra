@@ -4,6 +4,7 @@ import UploadView from './pages/UploadView'
 import ResultsView from './pages/ResultsView'
 import TrainingView from './pages/TrainingView'
 import DashboardView from './pages/DashboardView'
+import SessionDevicesView from './pages/SessionDevicesView'
 import Toast from './components/Toast'
 
 const API = '/api'
@@ -26,7 +27,8 @@ export default function App() {
             <NavLink to="/" end>Upload</NavLink>
             <NavLink to="/results">Results</NavLink>
             <NavLink to="/training">Training</NavLink>
-            <NavLink to="/dashboard">Dashboard</NavLink>
+            <NavLink to="/devices">Devices</NavLink>
+            <NavLink to="/dashboard">System</NavLink>
           </div>
         </div>
       </nav>
@@ -35,6 +37,7 @@ export default function App() {
           <Route path="/" element={<UploadView api={API} toast={addToast} />} />
           <Route path="/results" element={<ResultsView api={API} toast={addToast} />} />
           <Route path="/training" element={<TrainingView api={API} toast={addToast} />} />
+          <Route path="/devices" element={<SessionDevicesView api={API} toast={addToast} />} />
           <Route path="/dashboard" element={<DashboardView api={API} toast={addToast} />} />
         </Routes>
       </div>

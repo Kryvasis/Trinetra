@@ -1,0 +1,61 @@
+! ============================================================
+! Demo Juniper Config — Trinetra Compliance Scanner
+! Device: juniper-lab-01
+! Vendor: Juniper
+! ============================================================
+system {
+    host-name juniper-lab-01;
+    root-authentication {
+        encrypted-password "$1$xyz$abc123def456";
+    }
+    login {
+        user admin {
+            class super-user;
+            authentication {
+                encrypted-password "$1$xyz$abc123def456";
+            }
+        }
+    }
+    services {
+        ssh {
+            root-login deny;
+            protocol-version v2;
+            max-sessions-per-connection 4;
+        }
+        netconf {
+            ssh;
+        }
+    }
+    syslog {
+        host 10.10.1.100 {
+            any any;
+            interactive-commands any;
+        }
+    }
+}
+interfaces {
+    ge-0/0/0 {
+        unit 0 {
+            family inet {
+                address 10.10.2.1/24;
+            }
+        }
+    }
+    ge-0/0/1 {
+        unit 0 {
+            family inet {
+                address 192.168.2.1/24;
+            }
+        }
+    }
+}
+snmp {
+    community public {
+        authorization read-only;
+    }
+}
+routing-options {
+    static {
+        route 0.0.0.0/0 next-hop 10.10.2.254;
+    }
+}

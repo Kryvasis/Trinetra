@@ -1,19 +1,27 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 
 export default function DashboardView({ api, toast }) {
   const [loading, setLoading] = useState(false)
   const [doctor, setDoctor] = useState(null)
   const [sessions, setSessions] = useState([])
+  const [error, setError] = useState(null)
+  const abortRef = useRef(null)
 
   const loadDoctor = async () => {
     setLoading(true)
+    setError(null)
+    const controller = new AbortController()
+    abortRef.current = controller
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+
     try {
-      const res = await fetch(`${api}/doctor`)
+      const res = await fetch(`${api}/doctor`, { signal: controller.signal })
+      clearTimeout(timeoutId)
       if (!res.ok) throw new Error(`Doctor failed: ${res.status}`)
       const data = await res.json()
       setDoctor(data)
-      // Extract session list from doctor output
       const errs = data.session_validation?.session_errors || {}
       const sessionNames = Object.keys(errs)
       if (sessionNames.length > 0) {
@@ -21,22 +29,38 @@ export default function DashboardView({ api, toast }) {
       }
       toast('Health check loaded', 'success')
     } catch (err) {
-      toast(err.message, 'error')
+      if (err.name === 'AbortError') {
+        toast('Doctor timed out. Is the bridge running?', 'error')
+        setError('Bridge unreachable — timed out after 30s')
+      } else {
+        toast(err.message, 'error')
+        setError(err.message)
+      }
     } finally {
+      clearTimeout(timeoutId)
+      abortRef.current = null
       setLoading(false)
     }
   }
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Dashboard</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>System Status</h1>
       <p style={{ color: 'var(--text-dim)', marginBottom: 24, fontSize: 14 }}>
-        System health and multi-device session overview.
+        System health diagnostics and session overview.
       </p>
 
       <button className="btn-primary" onClick={loadDoctor} disabled={loading} style={{ marginBottom: 24 }}>
         {loading ? <><Spinner size={14} /> Running Doctor...</> : 'Run trinetra -doctor'}
       </button>
+
+      {error && !loading && (
+        <div className="card" style={{ borderLeft: '3px solid var(--red)', marginBottom: 24 }}>
+          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Diagnostics failed</h3>
+          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
+          <button className="btn-secondary" onClick={loadDoctor} style={{ marginTop: 8 }}>Retry</button>
+        </div>
+      )}
 
       {doctor && (
         <div className="card" style={{ marginBottom: 24 }}>
@@ -99,25 +123,56 @@ export default function DashboardView({ api, toast }) {
         </div>
       )}
 
-      {/* Multi-device session cards */}
+      {/* Session list with device links */}
       {sessions.length > 0 && (
         <div className="card">
           <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Sessions</h2>
-          <div className="stat-grid">
-            {sessions.map(s => (
-              <div className="stat-card" key={s} style={{ cursor: 'pointer' }} onClick={() => window.location.href = `/results?session=${s}`}>
-                <div className="stat-value" style={{ fontSize: 16, wordBreak: 'break-all' }}>{s}</div>
-                <div className="stat-label">Session</div>
-              </div>
-            ))}
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Session</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessions.map(s => (
+                  <tr key={s}>
+                    <td style={{ fontFamily: 'var(--mono)' }}>{s}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Link
+                          to={`/results?session=${encodeURIComponent(s)}`}
+                          className="btn-secondary"
+                          style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
+                        >
+                          Results
+                        </Link>
+                        <Link
+                          to={`/devices?session=${encodeURIComponent(s)}`}
+                          className="btn-secondary"
+                          style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
+                        >
+                          Devices
+                        </Link>
+                        <Link
+                          to={`/training?session=${encodeURIComponent(s)}`}
+                          className="btn-secondary"
+                          style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
+                        >
+                          Training
+                        </Link>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12 }}>
-            Click a session to view its results.
-          </p>
         </div>
       )}
 
-      {!doctor && !loading && (
+      {!doctor && !loading && !error && (
         <div className="empty-state card">
           <h3>System Status</h3>
           <p>Click "Run trinetra -doctor" to check system health.</p>

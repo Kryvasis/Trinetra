@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Spinner from '../components/Spinner'
 
 const FRAMEWORKS = ['ISO27001', 'NIST_800-53', 'PCI-DSS', 'SOC2', 'CIS']
-const STIG_SUPPORTED = false // placeholder — no mappings yet
+const STIG_SUPPORTED = false
 
 export default function ResultsView({ api, toast }) {
   const params = new URLSearchParams(window.location.search)
@@ -12,6 +12,8 @@ export default function ResultsView({ api, toast }) {
   const [score, setScore] = useState(null)
   const [report, setReport] = useState(null)
   const [activeFramework, setActiveFramework] = useState(null)
+  const [error, setError] = useState(null)
+  const abortRef = useRef(null)
 
   useEffect(() => {
     const s = params.get('session')
@@ -28,13 +30,28 @@ export default function ResultsView({ api, toast }) {
     setLoading(true)
     setScore(null)
     setReport(null)
+    setError(null)
+
+    const controller = new AbortController()
+    abortRef.current = controller
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
+
     try {
       const [scoreRes, reportRes] = await Promise.all([
-        fetch(`${api}/session/${s}/score`),
-        fetch(`${api}/session/${s}/audit-report`),
+        fetch(`${api}/session/${s}/score`, { signal: controller.signal }),
+        fetch(`${api}/session/${s}/audit-report`, { signal: controller.signal }),
       ])
-      if (!scoreRes.ok) throw new Error(`Score failed: ${scoreRes.status}`)
-      if (!reportRes.ok) throw new Error(`Report failed: ${reportRes.status}`)
+      clearTimeout(timeoutId)
+
+      if (!scoreRes.ok) {
+        const body = await scoreRes.json().catch(() => ({}))
+        throw new Error(body.error || `Score request failed (${scoreRes.status})`)
+      }
+      if (!reportRes.ok) {
+        const body = await reportRes.json().catch(() => ({}))
+        throw new Error(body.error || `Report request failed (${reportRes.status})`)
+      }
+
       const scoreData = await scoreRes.json()
       const reportData = await reportRes.json()
       setScore(scoreData.score || scoreData)
@@ -46,14 +63,21 @@ export default function ResultsView({ api, toast }) {
       }
       toast('Results loaded', 'success')
     } catch (err) {
-      toast(err.message, 'error')
+      if (err.name === 'AbortError') {
+        toast('Request timed out. Is the bridge running?', 'error')
+        setError('Request timed out')
+      } else {
+        toast(err.message, 'error')
+        setError(err.message)
+      }
     } finally {
+      clearTimeout(timeoutId)
+      abortRef.current = null
       setLoading(false)
     }
   }
 
   const fwScore = score?.frameworks?.[activeFramework]
-  const totalPct = fwScore?.total_percentage ?? fwScore?.percentage ?? null
 
   return (
     <div>
@@ -75,10 +99,18 @@ export default function ResultsView({ api, toast }) {
         </button>
       </form>
 
-      {!score && !loading && (
+      {!score && !loading && !error && (
         <div className="empty-state card">
           <h3>No results loaded</h3>
           <p>Enter a session name above to view compliance results.</p>
+        </div>
+      )}
+
+      {error && !loading && (
+        <div className="card" style={{ borderLeft: '3px solid var(--red)' }}>
+          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load results</h3>
+          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
+          <button className="btn-secondary" onClick={load} style={{ marginTop: 8 }}>Retry</button>
         </div>
       )}
 
@@ -100,7 +132,7 @@ export default function ResultsView({ api, toast }) {
             ))}
           </div>
 
-          {/* STIG badge — show as coming soon, never as active */}
+          {/* STIG badge */}
           {!STIG_SUPPORTED && (
             <div className="card" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
               <span className="badge badge-info">STIG</span>
@@ -182,8 +214,6 @@ export default function ResultsView({ api, toast }) {
                               <div className={`remediation ${(r.remediation || '').toLowerCase().includes('ai-suggested') ? 'ai-suggested' : ''}`}>
                                 {r.remediation}
                               </div>
-                            ) : r.remediation_source === 'llm' || (r.remediation || '').includes('AI-suggested') ? (
-                              <div className="remediation ai-suggested">{r.remediation}</div>
                             ) : (
                               <span style={{ color: 'var(--text-dim)', fontSize: 12 }}>No remediation</span>
                             )}

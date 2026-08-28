@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Spinner from '../components/Spinner'
 
 export default function TrainingView({ api, toast }) {
@@ -9,6 +9,7 @@ export default function TrainingView({ api, toast }) {
   const [unrecognized, setUnrecognized] = useState([])
   const [totalBefore, setTotalBefore] = useState(0)
   const [totalAfter, setTotalAfter] = useState(0)
+  const [error, setError] = useState(null)
 
   // Training form state
   const [selectedLine, setSelectedLine] = useState(null)
@@ -18,6 +19,8 @@ export default function TrainingView({ api, toast }) {
   const [controlMapping, setControlMapping] = useState('')
   const [remediation, setRemediation] = useState('')
   const [training, setTraining] = useState(false)
+  const [trainErrors, setTrainErrors] = useState({})
+  const abortRef = useRef(null)
 
   useEffect(() => {
     const s = params.get('session')
@@ -29,9 +32,18 @@ export default function TrainingView({ api, toast }) {
 
   const fetchUnrecognized = async (sessName) => {
     setLoading(true)
+    setError(null)
     try {
-      const res = await fetch(`${api}/session/${sessName}/unrecognized`)
-      if (!res.ok) throw new Error(`Failed to load: ${res.status}`)
+      const controller = new AbortController()
+      abortRef.current = controller
+      const timeoutId = setTimeout(() => controller.abort(), 30000)
+
+      const res = await fetch(`${api}/session/${sessName}/unrecognized`, { signal: controller.signal })
+      clearTimeout(timeoutId)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || `Failed to load: ${res.status}`)
+      }
       const data = await res.json()
       const lines = []
       Object.entries(data.unrecognized_by_device || {}).forEach(([dev, devLines]) => {
@@ -45,8 +57,14 @@ export default function TrainingView({ api, toast }) {
         toast(`Found ${lines.length} unrecognized line(s)`, 'info')
       }
     } catch (err) {
-      toast(err.message, 'error')
+      if (err.name === 'AbortError') {
+        toast('Request timed out. Is the bridge running?', 'error')
+      } else {
+        setError(err.message)
+        toast(err.message, 'error')
+      }
     } finally {
+      abortRef.current = null
       setLoading(false)
     }
   }
@@ -59,13 +77,28 @@ export default function TrainingView({ api, toast }) {
     fetchUnrecognized(s)
   }
 
+  const validateTraining = () => {
+    const e = {}
+    if (!selectedLine) e.line = 'Select a line first'
+    if (!pattern.trim()) e.pattern = 'Pattern is required'
+    else {
+      try { new RegExp(pattern.trim()) } catch { e.pattern = 'Invalid regex pattern' }
+    }
+    if (!category.trim()) e.category = 'Security category is required'
+    else if (category.trim().length < 2) e.category = 'Category must be at least 2 characters'
+    setTrainErrors(e)
+    return Object.keys(e).length === 0
+  }
+
   const handleTrain = async (e) => {
     e.preventDefault()
-    if (!selectedLine || !pattern.trim() || !category.trim()) {
-      toast('Select a line and fill pattern + category', 'error')
-      return
-    }
+    if (!validateTraining()) return
+
     setTraining(true)
+    const controller = new AbortController()
+    abortRef.current = controller
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
+
     try {
       const payload = {
         vendor: vendor.trim() || 'Cisco',
@@ -78,25 +111,34 @@ export default function TrainingView({ api, toast }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       })
+      clearTimeout(timeoutId)
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'training failed' }))
         throw new Error(err.error || `Training failed: ${res.status}`)
       }
-      toast('Training entry added', 'success')
+      toast('Training entry added — re-upload config to see effect', 'success')
       // Clear form
       setSelectedLine(null)
       setPattern('')
       setCategory('')
       setControlMapping('')
       setRemediation('')
+      setTrainErrors({})
       // Re-fetch to show updated count
       const newUnrecognized = unrecognized.filter(u => u.line !== selectedLine)
       setUnrecognized(newUnrecognized)
       setTotalAfter(newUnrecognized.length)
     } catch (err) {
-      toast(err.message, 'error')
+      if (err.name === 'AbortError') {
+        toast('Training request timed out', 'error')
+      } else {
+        toast(err.message, 'error')
+      }
     } finally {
+      clearTimeout(timeoutId)
+      abortRef.current = null
       setTraining(false)
     }
   }
@@ -107,6 +149,7 @@ export default function TrainingView({ api, toast }) {
     setCategory('')
     setControlMapping('')
     setRemediation('')
+    setTrainErrors({})
   }
 
   return (
@@ -136,7 +179,17 @@ export default function TrainingView({ api, toast }) {
         </div>
       )}
 
-      {!loading && session && unrecognized.length === 0 && totalBefore === 0 && (
+      {error && !loading && (
+        <div className="card" style={{ borderLeft: '3px solid var(--red)' }}>
+          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load</h3>
+          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
+          <button className="btn-secondary" onClick={() => fetchUnrecognized(inputSession.trim())} style={{ marginTop: 8 }}>
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!loading && session && unrecognized.length === 0 && totalBefore === 0 && !error && (
         <div className="empty-state card">
           <h3>No unrecognized lines</h3>
           <p>All config lines were recognized, or no session loaded yet.</p>
@@ -193,10 +246,10 @@ export default function TrainingView({ api, toast }) {
                   <input
                     type="text"
                     value={pattern}
-                    onChange={e => setPattern(e.target.value)}
-                    required
+                    onChange={e => { setPattern(e.target.value); setTrainErrors(prev => ({ ...prev, pattern: null })) }}
                     style={{ fontFamily: 'var(--mono)', fontSize: 12 }}
                   />
+                  {trainErrors.pattern && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.pattern}</div>}
                 </div>
 
                 <div className="form-group">
@@ -204,10 +257,10 @@ export default function TrainingView({ api, toast }) {
                   <input
                     type="text"
                     value={category}
-                    onChange={e => setCategory(e.target.value)}
+                    onChange={e => { setCategory(e.target.value); setTrainErrors(prev => ({ ...prev, category: null })) }}
                     placeholder="e.g. Access Control, Logging, Encryption"
-                    required
                   />
+                  {trainErrors.category && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.category}</div>}
                 </div>
 
                 <div className="form-group">

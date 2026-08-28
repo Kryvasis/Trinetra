@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import Spinner from '../components/Spinner'
 
 const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'Generic']
+const SESSION_RE = /^[A-Za-z0-9_\-]{1,64}$/
+const DEVICE_RE = /^[A-Za-z0-9._\-]{1,128}$/
+const MAX_FILE_SIZE = 1024 * 1024 // 1MB — matches bridge limit
 
 export default function UploadView({ api, toast }) {
   const [session, setSession] = useState('')
@@ -12,27 +15,53 @@ export default function UploadView({ api, toast }) {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [inputMode, setInputMode] = useState('file')
+  const [errors, setErrors] = useState({})
+  const abortRef = useRef(null)
 
-  const canSubmit = (session.trim() && deviceId.trim() && (file || configText.trim())) && !loading
+  const validate = () => {
+    const e = {}
+    const s = session.trim()
+    const d = deviceId.trim()
+    if (!s) e.session = 'Session name is required'
+    else if (!SESSION_RE.test(s)) e.session = 'Only letters, numbers, hyphens, underscores (max 64)'
+    if (!d) e.deviceId = 'Device ID is required'
+    else if (!DEVICE_RE.test(d)) e.deviceId = 'Only letters, numbers, dots, hyphens, underscores (max 128)'
+    if (inputMode === 'file' && !file) e.config = 'Select a config file'
+    if (inputMode === 'text' && !configText.trim()) e.config = 'Paste config content or switch to file upload'
+    if (inputMode === 'text' && configText.length > MAX_FILE_SIZE) e.config = `Config too large (max ${MAX_FILE_SIZE / 1024}KB)`
+    if (inputMode === 'file' && file && file.size > MAX_FILE_SIZE) e.config = `File too large (max ${MAX_FILE_SIZE / 1024}KB)`
+    setErrors(e)
+    return Object.keys(e).length === 0
+  }
+
+  const canSubmit = !loading && session.trim() && deviceId.trim() && (inputMode === 'file' ? !!file : !!configText.trim())
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!canSubmit) return
+    if (!validate()) return
+
     setLoading(true)
     setResult(null)
+    setErrors({})
+
+    // 60s timeout matching bridge SUBPROCESS_TIMEOUT
+    const controller = new AbortController()
+    abortRef.current = controller
+    const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     try {
       const sessionName = session.trim()
       const devId = deviceId.trim()
       const vendorVal = vendor === 'Auto-detect' ? 'auto' : vendor
 
-      // Step 1: Create session
+      // Step 1: Create session (ignore 409 = already exists)
       const createRes = await fetch(`${api}/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: sessionName, target: devId }),
+        signal: controller.signal,
       })
-      if (!createRes.ok) {
+      if (!createRes.ok && createRes.status !== 409) {
         const err = await createRes.json().catch(() => ({ error: 'session create failed' }))
         throw new Error(err.error || `Session create failed (${createRes.status})`)
       }
@@ -47,6 +76,7 @@ export default function UploadView({ api, toast }) {
         uploadRes = await fetch(`${api}/session/${sessionName}/upload-config`, {
           method: 'POST',
           body: form,
+          signal: controller.signal,
         })
       } else {
         uploadRes = await fetch(`${api}/session/${sessionName}/upload-config`, {
@@ -58,6 +88,7 @@ export default function UploadView({ api, toast }) {
             config_content: configText,
             filename: `${devId}_config.txt`,
           }),
+          signal: controller.signal,
         })
       }
 
@@ -70,8 +101,14 @@ export default function UploadView({ api, toast }) {
       setResult(data)
       toast(`Config ingested: ${data.passed} passed, ${data.failed} failed, ${data.unrecognized_count} unrecognized`, 'success')
     } catch (err) {
-      toast(err.message, 'error')
+      if (err.name === 'AbortError') {
+        toast('Request timed out (60s). The bridge may be unreachable.', 'error')
+      } else {
+        toast(err.message, 'error')
+      }
     } finally {
+      clearTimeout(timeoutId)
+      abortRef.current = null
       setLoading(false)
     }
   }
@@ -90,20 +127,20 @@ export default function UploadView({ api, toast }) {
             <input
               type="text"
               value={session}
-              onChange={e => setSession(e.target.value)}
+              onChange={e => { setSession(e.target.value); setErrors(prev => ({ ...prev, session: null })) }}
               placeholder="e.g. demo, prod-audit-01"
-              required
             />
+            {errors.session && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.session}</div>}
           </div>
           <div className="form-group">
             <label>Device ID</label>
             <input
               type="text"
               value={deviceId}
-              onChange={e => setDeviceId(e.target.value)}
+              onChange={e => { setDeviceId(e.target.value); setErrors(prev => ({ ...prev, deviceId: null })) }}
               placeholder="e.g. cisco-01, 10.0.0.1"
-              required
             />
+            {errors.deviceId && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.deviceId}</div>}
           </div>
         </div>
 
@@ -139,7 +176,7 @@ export default function UploadView({ api, toast }) {
             <label>Config File</label>
             <input
               type="file"
-              onChange={e => setFile(e.target.files[0])}
+              onChange={e => { setFile(e.target.files[0]); setErrors(prev => ({ ...prev, config: null })) }}
               accept=".txt,.cfg,.conf,.log,.xml,.json,.csv"
               style={{ padding: '6px 0' }}
             />
@@ -148,17 +185,19 @@ export default function UploadView({ api, toast }) {
                 Selected: {file.name} ({(file.size / 1024).toFixed(1)} KB)
               </p>
             )}
+            {errors.config && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.config}</div>}
           </div>
         ) : (
           <div className="form-group">
             <label>Configuration Content</label>
             <textarea
               value={configText}
-              onChange={e => setConfigText(e.target.value)}
+              onChange={e => { setConfigText(e.target.value); setErrors(prev => ({ ...prev, config: null })) }}
               rows={10}
               placeholder={`hostname R1\nenable secret 5 $1$...\nline vty 0 4\n no exec-timeout\n logging synchronous\n exit`}
               style={{ fontFamily: 'var(--mono)', fontSize: 13 }}
             />
+            {errors.config && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.config}</div>}
           </div>
         )}
 
@@ -189,9 +228,12 @@ export default function UploadView({ api, toast }) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+          <div style={{ display: 'flex', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
             <a href={`/results?session=${session.trim()}`} className="btn-primary" style={{ display: 'inline-block' }}>
               View Detailed Results
+            </a>
+            <a href={`/devices?session=${session.trim()}`} className="btn-secondary" style={{ display: 'inline-block' }}>
+              View Session Devices
             </a>
             <a href={`/training?session=${session.trim()}`} className="btn-secondary" style={{ display: 'inline-block' }}>
               {result.unrecognized_count > 0 ? `Train Unrecognized (${result.unrecognized_count})` : 'Training View'}

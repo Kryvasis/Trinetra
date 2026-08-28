@@ -1,0 +1,67 @@
+! ============================================================
+! Demo Cisco IOS Config — Trinetra Compliance Scanner
+! Device: cisco-lab-01
+! Vendor: Cisco
+! ============================================================
+hostname cisco-lab-01
+!
+! --- Password & Access ---
+enable secret 5 $1$mERr$hx5rVt7rPNoS4wqbX3X9gm/
+username admin privilege 15 secret 5 $1$xyz$abc123def456
+!
+! --- SSH Configuration ---
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 3
+crypto key generate rsa modulus 2048
+!
+! --- VTY Lines ---
+line vty 0 4
+ transport input ssh
+ exec-timeout 5 0
+ logging synchronous
+ login local
+ exit
+line vty 5 15
+ transport input ssh
+ exec-timeout 5 0
+ exit
+!
+! --- HTTP/HTTPS ---
+no ip http server
+ip http secure-server
+!
+! --- SNMP (weak — should fail) ---
+snmp-server community public RO
+snmp-server community private RW
+!
+! --- Logging ---
+logging host 10.10.1.100
+logging trap informational
+service timestamps log datetime msec
+!
+! --- NTP ---
+ntp server 10.10.1.1
+!
+! --- Interfaces ---
+interface GigabitEthernet0/0
+ ip address 10.10.1.1 255.255.255.0
+ no shutdown
+!
+interface GigabitEthernet0/1
+ ip address 192.168.1.1 255.255.255.0
+ no shutdown
+!
+! --- ACL ---
+access-list 101 permit ip 10.10.0.0 0.0.255.255 any
+access-list 101 deny ip any any
+!
+! --- UNRECOGNIZED LINE (for training demo) ---
+! This line uses a non-standard vendor keyword that Trinetra
+! does not yet recognize. The training loop will teach it.
+custom-vendor-feature enable zone-trust
+!
+! --- Routing ---
+ip route 0.0.0.0 0.0.0.0 10.10.1.254
+!
+end

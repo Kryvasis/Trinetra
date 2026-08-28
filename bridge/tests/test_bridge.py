@@ -440,3 +440,50 @@ def test_distinguishes_test_failure_from_backend_error(client):
     sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
     if sess_dir.exists():
         shutil.rmtree(sess_dir)
+
+# ── (f) devices endpoint ──
+
+def test_devices_endpoint(client):
+    """GET /api/session/<name>/devices returns per-device summary."""
+    sess = unique_session("test_devices")
+    client.post("/api/session", json={"name": sess, "target": "127.0.0.1"})
+    client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "cisco-01",
+        "vendor": "Cisco",
+        "config_content": "hostname R1\nenable secret 5 $1$...\n",
+        "filename": "cisco_config.txt",
+    })
+    client.post(f"/api/session/{sess}/upload-config", json={
+        "device_id": "juniper-01",
+        "vendor": "Juniper",
+        "config_content": "system {\n  host-name switch-a;\n}\n",
+        "filename": "juniper_config.txt",
+    })
+
+    resp = client.get(f"/api/session/{sess}/devices")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+    assert data["session"] == sess
+    assert data["device_count"] == 2
+    devices = {d["device_id"]: d for d in data["devices"]}
+    assert "cisco-01" in devices
+    assert "juniper-01" in devices
+    for did, d in devices.items():
+        assert "vendor" in d
+        assert "ingestion_method" in d
+        assert "pass_count" in d
+        assert "fail_count" in d
+        assert "total_checks" in d
+    assert devices["cisco-01"]["vendor"] == "Cisco"
+    assert devices["juniper-01"]["vendor"] == "Juniper"
+    assert devices["cisco-01"]["ingestion_method"] == "config_upload"
+
+    resp = client.get("/api/session/invalid!name/devices")
+    assert resp.status_code == 400
+    resp = client.get("/api/session/nonexistent_sess_xyz/devices")
+    assert resp.status_code == 404
+
+    import shutil
+    sess_dir = Path(__file__).resolve().parent.parent.parent / "sessions" / sess
+    if sess_dir.exists():
+        shutil.rmtree(sess_dir)
