@@ -74,6 +74,18 @@ public class TrinetraNormalizedResultsTest {
         expect(results.size() == 2,
             "normalized_results persisted with 2 entries (got " + results.size() + ")");
 
+        // Creating the same session again must never reset accumulated audit
+        // evidence. The bridge invokes -new before uploads and expects a
+        // conflict response for an existing session.
+        Map<String, Object> duplicate =
+            TrinetraSession.createSession(name, "replacement-target");
+        expect(duplicate == null, "duplicate session creation is rejected");
+        Map<String, Object> afterDuplicate =
+            TrinetraCommon.readJsonFile(statePath);
+        expect(TrinetraCommon.getList(afterDuplicate,
+            TrinetraSession.NORMALIZED_RESULTS_FIELD).size() == 2,
+            "duplicate creation preserves normalized_results");
+
         boolean allKeysPresent = true;
         boolean timestampsFilled = true;
         Set<String> ids = new HashSet<>();

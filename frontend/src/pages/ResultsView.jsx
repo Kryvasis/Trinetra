@@ -1,16 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 
 const FRAMEWORKS = ['CIS', 'ISO27001', 'NIST_800-53', 'STIG', 'PCI-DSS', 'SOC2']
 const PS_REQUIRED = new Set(['CIS', 'ISO27001', 'NIST_800-53', 'STIG'])
 
 export default function ResultsView({ api, toast }) {
-  const params = new URLSearchParams(window.location.search)
-  const [session, setSession] = useState(params.get('session') || '')
-  const [inputSession, setInputSession] = useState(params.get('session') || '')
+  const [params] = useSearchParams()
+  const sessionParam = params.get('session') || ''
+  const [session, setSession] = useState(sessionParam)
+  const [inputSession, setInputSession] = useState(sessionParam)
   const [loading, setLoading] = useState(false)
   const [score, setScore] = useState(null)
-  const [report, setReport] = useState(null)
+  const [, setReport] = useState(null)
   const [activeFramework, setActiveFramework] = useState(null)
   const [error, setError] = useState(null)
   const [selectedFrameworks, setSelectedFrameworks] = useState(new Set(FRAMEWORKS))
@@ -34,12 +36,11 @@ export default function ResultsView({ api, toast }) {
   }
 
   useEffect(() => {
-    const s = params.get('session')
-    if (s && s !== session) {
-      setSession(s)
-      setInputSession(s)
+    if (sessionParam && sessionParam !== session) {
+      setSession(sessionParam)
+      setInputSession(sessionParam)
     }
-  }, [params.get('session')])
+  }, [sessionParam, session])
 
   const load = async (e) => {
     e?.preventDefault()
@@ -57,8 +58,8 @@ export default function ResultsView({ api, toast }) {
     try {
       const fq = frameworksQuery()
       const [scoreRes, reportRes] = await Promise.all([
-        fetch(`${api}/session/${s}/score${fq}`, { signal: controller.signal }),
-        fetch(`${api}/session/${s}/audit-report${fq}`, { signal: controller.signal }),
+        fetch(`${api}/session/${encodeURIComponent(s)}/score${fq}`, { signal: controller.signal }),
+        fetch(`${api}/session/${encodeURIComponent(s)}/audit-report${fq}`, { signal: controller.signal }),
       ])
       clearTimeout(timeoutId)
 
@@ -261,7 +262,7 @@ export default function ResultsView({ api, toast }) {
           {/* PDF download — respects framework filter */}
           <div style={{ marginTop: 24 }}>
             <a
-              href={`${api}/session/${session}/audit-report/pdf${frameworksQuery()}`}
+              href={`${api}/session/${encodeURIComponent(session)}/audit-report/pdf${frameworksQuery()}`}
               className="btn-primary"
               style={{ display: 'inline-block' }}
               target="_blank"

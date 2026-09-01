@@ -23,5 +23,9 @@ JAVA_LIB = str(_DEFAULT_ROOT / "lib" / "*")
 # Subprocess timeouts (seconds)
 SUBPROCESS_TIMEOUT = int(os.getenv("TRINETRA_SUBPROCESS_TIMEOUT", "60"))
 
+# Reject oversized requests before Flask buffers/parses the complete body.
+# Multipart framing needs headroom above upload_config's 1 MiB content limit.
+MAX_REQUEST_BYTES = int(os.getenv("TRINETRA_MAX_REQUEST_BYTES", str(2 * 1024 * 1024)))
+
 # Flask secret (dev only)
 FLASK_SECRET = os.getenv("FLASK_SECRET", "trinetra-bridge-dev")

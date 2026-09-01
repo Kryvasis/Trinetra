@@ -34,7 +34,16 @@ public class TrinetraSession {
         Path dir = TrinetraCommon.sessionDir(sanitized);
         Path jsonPath = TrinetraCommon.sessionJson(sanitized);
 
-        try { Files.createDirectories(dir); } catch (IOException e) {
+        // Session creation must be non-destructive. The UI calls this before
+        // every upload and treats an existing session as a conflict; silently
+        // reusing the directory here would erase its findings and hash chain.
+        try {
+            Files.createDirectories(TrinetraCommon.SESSIONS_DIR);
+            Files.createDirectory(dir); // atomic existence check
+        } catch (FileAlreadyExistsException e) {
+            TrinetraCommon.logWarn("Session already exists: " + sanitized);
+            return null;
+        } catch (IOException e) {
             TrinetraCommon.logError("Failed to create session dir: " + e.getMessage());
             return null;
         }

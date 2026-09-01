@@ -2,8 +2,8 @@ import { useState, useRef } from 'react'
 import Spinner from '../components/Spinner'
 
 const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'Generic']
-const SESSION_RE = /^[A-Za-z0-9_\-]{1,64}$/
-const DEVICE_RE = /^[A-Za-z0-9._\-]{1,128}$/
+const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/
+const DEVICE_RE = /^[A-Za-z0-9._-]{1,128}$/
 const MAX_FILE_SIZE = 1024 * 1024 // 1MB — matches bridge limit
 
 export default function UploadView({ api, toast }) {
@@ -27,7 +27,7 @@ export default function UploadView({ api, toast }) {
     // filename without extension, sanitized to DEVICE_RE-compatible
     const base = fileName.replace(/\.[^/.]+$/, '').trim()
     // replace spaces/special with hyphen, keep allowed chars
-    const sanitized = base.replace(/[^A-Za-z0-9._\-]/g, '-').slice(0, 64) || 'device-01'
+    const sanitized = base.replace(/[^A-Za-z0-9._-]/g, '-').slice(0, 64) || 'device-01'
     return sanitized
   }
 
@@ -135,7 +135,7 @@ export default function UploadView({ api, toast }) {
           if (hardwareVal) form.append('hardware_model', hardwareVal)
           if (osVal) form.append('os_version', osVal)
           form.append('config', f)
-          const uploadRes = await fetch(`${api}/session/${sessionName}/upload-config`, {
+          const uploadRes = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/upload-config`, {
             method: 'POST',
             body: form,
             signal: controller.signal,
@@ -178,13 +178,13 @@ export default function UploadView({ api, toast }) {
         if (hardwareVal) form.append('hardware_model', hardwareVal)
         if (osVal) form.append('os_version', osVal)
         form.append('config', files[0])
-        uploadRes = await fetch(`${api}/session/${sessionName}/upload-config`, {
+        uploadRes = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/upload-config`, {
           method: 'POST',
           body: form,
           signal: controller.signal,
         })
       } else {
-        uploadRes = await fetch(`${api}/session/${sessionName}/upload-config`, {
+        uploadRes = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/upload-config`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -404,7 +404,7 @@ export default function UploadView({ api, toast }) {
               Training View
             </a>
             <a
-              href={`${api}/session/${session.trim()}/audit-report/pdf`}
+              href={`${api}/session/${encodeURIComponent(session.trim())}/audit-report/pdf`}
               className="btn-secondary"
               style={{ display: 'inline-block' }}
               target="_blank"

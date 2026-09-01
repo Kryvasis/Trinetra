@@ -3,6 +3,7 @@ import subprocess
 import json
 import os
 import shlex
+import threading
 from pathlib import Path
 from flask import Flask, request, jsonify
 
@@ -14,6 +15,7 @@ try:
         JAVA_LIB,
         SUBPROCESS_TIMEOUT,
         FLASK_SECRET,
+        MAX_REQUEST_BYTES,
     )
 except ImportError:
     from config import (
@@ -23,10 +25,16 @@ except ImportError:
         JAVA_LIB,
         SUBPROCESS_TIMEOUT,
         FLASK_SECRET,
+        MAX_REQUEST_BYTES,
     )
 
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET
+app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+
+# Atomic replace protects readers from partial JSON, while this lock also
+# prevents concurrent requests in one bridge process from losing an entry.
+TRAINING_MAP_LOCK = threading.Lock()
 
 # ── Validation regexes (reject before subprocess) ──
 SESSION_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
@@ -723,36 +731,44 @@ def train_vendor(name):
         from pathlib import Path as _P
         import json as _json
         map_path = _P(TRINETRA_ROOT) / "config" / "vendor_training_map.json"
-        # Use file lock via simple read-modify-write (single Flask worker for demo)
-        content = "{}"
-        if map_path.exists():
-            content = map_path.read_text(encoding="utf-8")
-        data_json = _json.loads(content) if content.strip() else {}
-        if "entries" not in data_json or not isinstance(data_json["entries"], list):
-            data_json["entries"] = []
-        # Check duplicate
-        for e in data_json["entries"]:
-            if e.get("vendor","").lower() == vendor.lower() and e.get("pattern","") == pattern:
-                return error_response("training entry already exists for this vendor+pattern", 409)
-        new_entry = {
-            "vendor": vendor,
-            "pattern": pattern,
-            "security_category": category,
-            "control_mapping": controls,
-            "remediation": remediation,
-            "added_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
-            "added_via": f"session:{name}"
-        }
-        if os_version_train and os_version_train.strip():
-            new_entry["os_version"] = os_version_train.strip()
-        data_json["entries"].append(new_entry)
-        map_path.parent.mkdir(parents=True, exist_ok=True)
-        # Atomic write
-        import tempfile as _tf, os as _os
-        with _tf.NamedTemporaryFile(mode="w", delete=False, dir=str(map_path.parent), encoding="utf-8") as tf:
-            _json.dump(data_json, tf, indent=2)
-            tmp = tf.name
-        _os.replace(tmp, str(map_path))
+        with TRAINING_MAP_LOCK:
+            content = "{}"
+            if map_path.exists():
+                content = map_path.read_text(encoding="utf-8")
+            data_json = _json.loads(content) if content.strip() else {}
+            if "entries" not in data_json or not isinstance(data_json["entries"], list):
+                data_json["entries"] = []
+            # Duplicate detection and the write share one critical section.
+            for e in data_json["entries"]:
+                if e.get("vendor","").lower() == vendor.lower() and e.get("pattern","") == pattern:
+                    return error_response("training entry already exists for this vendor+pattern", 409)
+            new_entry = {
+                "vendor": vendor,
+                "pattern": pattern,
+                "security_category": category,
+                "control_mapping": controls,
+                "remediation": remediation,
+                "added_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z"),
+                "added_via": f"session:{name}"
+            }
+            if os_version_train and os_version_train.strip():
+                new_entry["os_version"] = os_version_train.strip()
+            data_json["entries"].append(new_entry)
+            map_path.parent.mkdir(parents=True, exist_ok=True)
+            import tempfile as _tf, os as _os
+            tmp = None
+            try:
+                with _tf.NamedTemporaryFile(mode="w", delete=False, dir=str(map_path.parent), encoding="utf-8") as tf:
+                    _json.dump(data_json, tf, indent=2)
+                    tmp = tf.name
+                _os.replace(tmp, str(map_path))
+                tmp = None
+            finally:
+                if tmp:
+                    try:
+                        _os.unlink(tmp)
+                    except OSError:
+                        pass
         # Invalidate Java cache by touching file (VendorTrainingMap.load checks mtime)
         return jsonify({"message": "training entry added", "entry": new_entry, "total_entries": len(data_json["entries"])}), 201
     except Exception as e:
@@ -792,6 +808,7 @@ def audit_report_pdf(name):
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.units import inch
         from reportlab.lib import colors
+        from xml.sax.saxutils import escape as xml_escape
         import io
 
         # Read session and brain state for device_id and remediation
@@ -831,7 +848,7 @@ def audit_report_pdf(name):
         meta_data = [
             ["Session", name],
             ["Target", sess_target],
-            ["Generated", __import__("datetime").datetime.utcnow().isoformat() + "Z"],
+            ["Generated", __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")],
             ["Chain Status", chain_info.get("detail", "unknown") if isinstance(chain_info, dict) else str(chain_info)],
             ["Ingestion", "Config-file upload (primary) — see device table for per-device method"],
         ]
@@ -913,7 +930,7 @@ def audit_report_pdf(name):
             story.append(Paragraph("Evidence — Per-Device Test Results", heading_style))
             # Use header from markdown directly for PDF header; fallback to old 5-col if header missing new fields
             # Build PDF header cells as Paragraphs for wrapping
-            pdf_header = [Paragraph(f"<b>{h}</b>", header_cell_style) for h in header_row[:10]]
+            pdf_header = [Paragraph(f"<b>{xml_escape(h)}</b>", header_cell_style) for h in header_row[:10]]
             table_data = [pdf_header]
             # Determine indices for verdict/severity/device for remediation extraction
             verdict_idx = col_index.get("verdict", 3)
@@ -923,7 +940,7 @@ def audit_report_pdf(name):
                 while len(row) < len(header_row):
                     row.append("")
                 # Truncate to header length
-                pdf_row = [Paragraph(p[:50], small_style) if len(p) > 35 else Paragraph(p, small_style) for p in row[:len(header_row)]]
+                pdf_row = [Paragraph(xml_escape(p[:50] if len(p) > 35 else p), small_style) for p in row[:len(header_row)]]
                 table_data.append(pdf_row)
             # Column widths: distribute landscape width (~10.5 inch usable) across columns
             ncols = len(header_row)
@@ -1023,7 +1040,7 @@ def audit_report_pdf(name):
                             tm_data = _j.loads(tm_path.read_text())
                             for e in tm_data.get("entries", []):
                                 if test_id in str(e.get("control_mapping",[])):
-                                    remediation = e.get("remediation", "")
+                                    remediation = xml_escape(str(e.get("remediation", "")))
                                     if remediation:
                                         break
                     except:
@@ -1035,7 +1052,7 @@ def audit_report_pdf(name):
                     if is_ai:
                         remediation += " (AI-suggested — verify before use)"
 
-                p_text = f"<b>{test_id} on {device}:</b> {remediation}"
+                p_text = f"<b>{xml_escape(test_id)} on {xml_escape(device)}:</b> {remediation}"
                 if is_ai:
                     p_text += " <i>(AI-suggested — verify before use)</i>"
                 story.append(Paragraph(p_text, normal_style))
@@ -1048,9 +1065,9 @@ def audit_report_pdf(name):
             story.append(Paragraph("Unrecognized Config Lines (Training Needed)", heading_style))
             for dev, lines in unrec.items():
                 if lines:
-                    story.append(Paragraph(f"Device {dev}: {len(lines)} unrecognized line(s)", normal_style))
+                    story.append(Paragraph(f"Device {xml_escape(str(dev))}: {len(lines)} unrecognized line(s)", normal_style))
                     for l in lines[:10]:
-                        story.append(Paragraph(f"&nbsp;&nbsp;&bull; <font face=\"Courier\">{l[:80]}</font>", normal_style))
+                        story.append(Paragraph(f"&nbsp;&nbsp;&bull; <font face=\"Courier\">{xml_escape(str(l)[:80])}</font>", normal_style))
 
         # Footer — note bonus frameworks (now includes STIG as PS-required)
         story.append(Spacer(1, 12))
@@ -1162,6 +1179,12 @@ snmp-server community public RO
 <script>
 const $ = id => document.getElementById(id);
 function getSession(){ return $('session').value.trim() || 'demo'; }
+function escapeHtml(value){
+  return String(value).replace(/[&<>"']/g, ch => ({
+    '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'
+  })[ch]);
+}
+let currentUnrecognizedLines = [];
 
 $('uploadForm').addEventListener('submit', async (e)=>{
   e.preventDefault();
@@ -1210,7 +1233,7 @@ async function getScore(){
     let html='<table><tr><th>Framework</th><th>%</th><th>Passed/Total</th></tr>';
     for(const [fw, v] of Object.entries(j.score.frameworks)){
       const bonus = (fw==='PCI-DSS'||fw==='SOC2') ? ' <span class="small">(bonus)</span>' : '';
-      html+=`<tr><td>${fw}${bonus}</td><td>${v.compliance_percentage}%</td><td>${v.tests_passed}/${v.total_tests_mapped}</td></tr>`;
+      html+=`<tr><td>${escapeHtml(fw)}${bonus}</td><td>${escapeHtml(v.compliance_percentage)}%</td><td>${escapeHtml(v.tests_passed)}/${escapeHtml(v.total_tests_mapped)}</td></tr>`;
     }
     html+='</table><p class="small">PCI-DSS/SOC2 are bonus/additional coverage — PS requires CIS/NIST/ISO.</p>';
     $('scoreView').innerHTML=html;
@@ -1248,24 +1271,28 @@ async function loadUnrecognized(){
   } else if(j.unrecognized_lines){
     lines = j.unrecognized_lines.map(l=>({device:j.device_id||'unknown', line:l}));
   }
+  currentUnrecognizedLines = lines;
   if(!lines.length){ $('unrecView').innerHTML='<p class="small">No unrecognized lines — all parsed via known or trained patterns.</p>'; return; }
   let html='<table><tr><th>Device</th><th>Line</th><th>Category</th><th>Controls</th><th>Action</th></tr>';
-  for(const {device, line} of lines){
-    const esc = line.replace(/"/g,'&quot;');
-    html+=`<tr><td>${device}</td><td><code>${esc.slice(0,60)}</code></td>
-      <td><input id="cat_${btoa(line).slice(0,8)}" placeholder="e.g. SSH Hardening"></td>
-      <td><input id="ctrl_${btoa(line).slice(0,8)}" placeholder="e.g. CIS-IOS-XE-2.1.1.1.4"></td>
-      <td><button onclick="trainLine('${device}','${esc.replace(/'/g,"\\'")}', '${btoa(line).slice(0,8)}')">Label</button></td></tr>`;
+  for(let index=0; index<lines.length; index++){
+    const {device, line} = lines[index];
+    html+=`<tr><td>${escapeHtml(device)}</td><td><code>${escapeHtml(line.slice(0,60))}</code></td>
+      <td><input id="cat_${index}" placeholder="e.g. SSH Hardening"></td>
+      <td><input id="ctrl_${index}" placeholder="e.g. CIS-IOS-XE-2.1.1.1.4"></td>
+      <td><button onclick="trainLine(${index})">Label</button></td></tr>`;
   }
   html+='</table>';
   $('unrecView').innerHTML=html;
   $('trainResult').textContent = JSON.stringify(j,null,2);
 }
 
-async function trainLine(device, line, id){
+async function trainLine(index){
+  const item = currentUnrecognizedLines[index];
+  if(!item) return;
+  const {device, line} = item;
   const session = getSession();
-  const cat = document.getElementById('cat_'+id).value || 'Custom Hardening';
-  const ctrl = document.getElementById('ctrl_'+id).value || 'CIS-v8-4.6';
+  const cat = document.getElementById('cat_'+index).value || 'Custom Hardening';
+  const ctrl = document.getElementById('ctrl_'+index).value || 'CIS-v8-4.6';
   const vendor = document.getElementById('vendor').value || 'Cisco';
   const res = await fetch(`/api/session/${encodeURIComponent(session)}/train`, {
     method:'POST', headers:{'Content-Type':'application/json'},
@@ -1386,6 +1413,10 @@ def not_found(e):
 @app.errorhandler(405)
 def method_not_allowed(e):
     return error_response("method not allowed", 405)
+
+@app.errorhandler(413)
+def request_too_large(e):
+    return error_response(f"request too large (max {MAX_REQUEST_BYTES} bytes)", 413)
 
 @app.errorhandler(500)
 def internal_error(e):
