@@ -53,6 +53,43 @@ def test_create_session_missing_fields(client):
     assert resp.status_code == 400
     assert "error" in resp.get_json()
 
+def test_duplicate_session_is_non_destructive(client):
+    sess = unique_session("test_duplicate")
+    first = client.post("/api/session", json={"name": sess, "target": "original"})
+    assert first.status_code == 201
+
+    root = Path(__file__).resolve().parent.parent.parent
+    session_path = root / "sessions" / sess / f"{sess}.json"
+    original = json.loads(session_path.read_text())
+    original["preservation_marker"] = "keep-me"
+    session_path.write_text(json.dumps(original, indent=2))
+
+    duplicate = client.post("/api/session", json={"name": sess, "target": "replacement"})
+    assert duplicate.status_code == 409, duplicate.get_data(as_text=True)
+    preserved = json.loads(session_path.read_text())
+    assert preserved["target"] == "original"
+    assert preserved["preservation_marker"] == "keep-me"
+
+    import shutil
+    shutil.rmtree(root / "sessions" / sess, ignore_errors=True)
+
+def test_oversized_request_rejected_before_route_processing(client):
+    limit = app.config["MAX_CONTENT_LENGTH"]
+    resp = client.post(
+        "/api/session",
+        data=b"x" * (limit + 1),
+        content_type="application/json",
+    )
+    assert resp.status_code == 413
+    assert "request too large" in resp.get_json()["error"]
+
+def test_fallback_ui_does_not_inline_untrusted_config_text(client):
+    html = client.get("/ui").get_data(as_text=True)
+    assert "function escapeHtml" in html
+    assert "escapeHtml(line.slice(0,60))" in html
+    assert "currentUnrecognizedLines[index]" in html
+    assert "trainLine(device, line" not in html
+
 def test_session_status_real(client):
     sess = unique_session("test_status")
     # Create via bridge

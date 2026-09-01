@@ -1,5 +1,8 @@
 #!/bin/bash
 # Trinetra Beta — global wrapper script
-# Installed to ~/.local/bin/trinetra via `make install`
-TRINETRA_ROOT="/home/kali/Desktop/Trinetra"
+# Installed as a symlink by `make install`, so readlink resolves back to the
+# checkout. TRINETRA_ROOT remains available for tests and custom layouts.
+SCRIPT_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+DEFAULT_ROOT="$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)"
+TRINETRA_ROOT="${TRINETRA_ROOT:-$DEFAULT_ROOT}"
 exec java -Dtrinetra.root="$TRINETRA_ROOT" -cp "$TRINETRA_ROOT/out:$TRINETRA_ROOT/lib/*" Trinetra "$@"

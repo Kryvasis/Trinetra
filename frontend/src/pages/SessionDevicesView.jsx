@@ -46,7 +46,7 @@ export default function SessionDevicesView({ api, toast }) {
       setInputSession(sessionParam)
       fetchDevices(sessionParam)
     }
-  }, [sessionParam, fetchDevices])
+  }, [sessionParam, session, fetchDevices])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -157,9 +157,6 @@ export default function SessionDevicesView({ api, toast }) {
                 </thead>
                 <tbody>
                   {devices.map(d => {
-                    const compliancePct = d.total_checks > 0
-                      ? Math.round((d.pass_count / d.total_checks) * 100)
-                      : 0
                     return (
                       <tr key={d.device_id}>
                         <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{d.device_id}</td>

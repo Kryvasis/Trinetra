@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 
 export default function TrainingView({ api, toast }) {
-  const params = new URLSearchParams(window.location.search)
-  const [session, setSession] = useState(params.get('session') || '')
-  const [inputSession, setInputSession] = useState(params.get('session') || '')
+  const [params] = useSearchParams()
+  const sessionParam = params.get('session') || ''
+  const [session, setSession] = useState(sessionParam)
+  const [inputSession, setInputSession] = useState(sessionParam)
   const [loading, setLoading] = useState(false)
   const [unrecognized, setUnrecognized] = useState([])
   const [totalBefore, setTotalBefore] = useState(0)
@@ -24,12 +26,11 @@ export default function TrainingView({ api, toast }) {
   const abortRef = useRef(null)
 
   useEffect(() => {
-    const s = params.get('session')
-    if (s && s !== session) {
-      setSession(s)
-      setInputSession(s)
+    if (sessionParam && sessionParam !== session) {
+      setSession(sessionParam)
+      setInputSession(sessionParam)
     }
-  }, [params.get('session')])
+  }, [sessionParam, session])
 
   const fetchUnrecognized = async (sessName) => {
     setLoading(true)
@@ -39,7 +40,7 @@ export default function TrainingView({ api, toast }) {
       abortRef.current = controller
       const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-      const res = await fetch(`${api}/session/${sessName}/unrecognized`, { signal: controller.signal })
+      const res = await fetch(`${api}/session/${encodeURIComponent(sessName)}/unrecognized`, { signal: controller.signal })
       clearTimeout(timeoutId)
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -109,7 +110,7 @@ export default function TrainingView({ api, toast }) {
         remediation: remediation.trim() || `Configure ${category.trim()} properly`,
         os_version: osVersionTrain.trim() || undefined,
       }
-      const res = await fetch(`${api}/session/${session}/train`, {
+      const res = await fetch(`${api}/session/${encodeURIComponent(session)}/train`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

@@ -50,8 +50,7 @@ compile:
 install: compile
 	@chmod +x $(CURDIR)/trinetra
 	@mkdir -p $(HOME)/.local/bin
-	@cp $(CURDIR)/trinetra $(HOME)/.local/bin/trinetra
-	@chmod +x $(HOME)/.local/bin/trinetra
+	@ln -sfn $(CURDIR)/trinetra $(HOME)/.local/bin/trinetra
 	@echo "Installed: ~/.local/bin/trinetra"
 	@echo "You can now run: trinetra -help"
 
@@ -122,4 +121,3 @@ test-gemini:
 	echo "API key: found"; \
 	GEMINI_API_KEY="$$GEMINI_API_KEY" ~/.npm-global/bin/gemini -m gemini-2.5-flash-lite -p "say OK" --yolo --skip-trust 2>&1 | \
 		grep -v "YOLO mode" | grep -v "Ripgrep" | grep -v "Approval mode" || echo "ERROR: Gemini CLI failed"
-
