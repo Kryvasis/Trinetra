@@ -9,7 +9,7 @@ Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` +
 
 **Config-upload primary path (PS26155):** `POST /api/session/<name>/upload-config` → `TrinetraConfigIngestor.ingest()` → same `VendorConnector.normalizeCommand` + `VendorConnectorRegistry.resolve` logic as live-target path → `TrinetraStat.DecisionEngine.evaluate` on file content → findings + `normalized_results` appended with `ingestion_method: config_upload` + `device_details` (serial/hardware/os_version) → chain intact. Unrecognized lines tracked per-device via `TrinetraSession.setUnrecognizedLines()`. OS-version lightweight detection (`IOS XE`/`NX-OS`/`JUNOS` header scan) populates `os_version` when caller leaves blank — metadata-level awareness, not parsing branch (honest limited scope).
 
-**Live-fetch additive path (this prompt):** `POST /api/session/<name>/fetch-config` → `bridge/live_fetcher.py:TrinetraLiveFetcher` (thin SSH/URL retrieval, no parsing) → same `TrinetraConfigIngestor.ingest(..., live_fetch)` → identical parsing/training-lookup/scoring/reporting as file upload, tagged `ingestion_method: live_fetch` for honest reporting. Config-file upload remains primary/recommended; fetch is optional auto-sourced convenience requiring network reachability, not a parallel fingerprinting system. Verified mocked and live: fetched text produces same `normalized_results` shape as file upload with same content, appears in multi-device dashboard and PDF.
+**Live-fetch additive path:** `POST /api/session/<name>/fetch-config` → `bridge/live_fetcher.py` (thin SSH/URL retrieval, no parsing) → same `TrinetraConfigIngestor.ingest(..., live_fetch)` → identical parsing/training-lookup/scoring/reporting as file upload, tagged `ingestion_method: live_fetch` for honest reporting. Config-file upload remains primary/recommended; fetch is optional auto-sourced convenience requiring network reachability, not a parallel fingerprinting system. Mocked integration tests prove fetched text produces the same compliance result as file upload and appears in persisted normalized results with the correct provenance.
 
 **Vendor training loop proven:** Upload config → line flagged unrecognized → `POST /train` adds entry to `config/vendor_training_map.json` (now stores optional `os_version` per entry) → re-upload same config → line now recognized → zero `.java` file changes between train and re-parse. `VendorTrainingMap.java` mtime-cache mechanism verified.
 
@@ -116,7 +116,7 @@ Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` +
 **What was gap:** Only file-upload ingestion existed; judges asked for a way to supply IP/URL instead of a file while still using the same compliance pipeline (not a second scanning system).
 
 **Design decision — which module holds fetch logic and why:**
-- **Module:** `bridge/live_fetcher.py` — Python bridge layer, named `TrinetraLiveFetcher` in docs. Contains `VENDOR_COMMANDS` (`show running-config` Cisco, `show configuration | display set` Juniper, generic fallback), `get_vendor_command()`, `fetch_via_ssh()` (paramiko, vendor-aware command, password or PEM `ssh_key` string/path, port/timeout, no credential logging), `fetch_via_url()` (`requests` GET, optional `Authorization: Bearer` / custom header), and `fetch_config()` dispatcher.
+- **Module:** `bridge/live_fetcher.py` — Python bridge layer. Contains vendor-specific configuration commands, strict SSH `known_hosts` verification, password or in-memory PEM authentication, public-address URL validation on every redirect, HTTPS downgrade prevention, cross-origin credential stripping, timeouts, and a 1 MB response cap. Server-side key paths and automatically trusted host keys are intentionally rejected.
 - **Why Python bridge layer, not Java:** (1) Keeps fetch isolated from ingestion/parsing core (Java) — clearly separable, single-responsibility. (2) Reuses existing Python deps `paramiko` + `requests` without adding Java deps (JSch). (3) Credential handling stays in short-lived Python request scope, never crosses to Java persistence layer; Java core remains pure config-text → parsing → scoring → reporting. (4) Matches existing bridge → Java helper pattern (`TrinetraBridgeHelper` shells out to Java).
 
 **Shared pipeline — no duplication (cite exact shared function):**
@@ -126,18 +126,18 @@ Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` +
 
 **New endpoint — request/response shape:**
 - `POST /api/session/<name>/fetch-config` (404 if session not found)
-  - **Request JSON:** `source_type` (`"ip"` or `"url"` required), `target` (IP/hostname or URL required), `vendor` (optional, default `auto`), `device_id` (required), optional `serial_number`/`hardware_model`/`os_version` (same validation as upload), plus credentials: for `ip` → `username` (required) + `password` or `ssh_key` (one required), optional `port` (1–65535) and `vendor_command` override; for `url` → optional `auth_token` + `auth_header` (default `Authorization: Bearer …`).
-  - **Success 200 JSON:** same as `upload-config` — `device_id`, `vendor`, `ingestion_method: "live_fetch"`, `total_checks`, `passed`, `failed`, `unrecognized_lines`, `unrecognized_count`, plus `source_type`, `target`, `vendor_request`, `config_filename` (`<device_id>_live_fetch_config.txt`).
+  - **Request JSON:** `source_type` (`"ip"` or `"url"` required), `target`, `device_id`, optional `vendor`/hardware metadata, plus `username` and a `password` or pasted PEM `ssh_key` for SSH, or optional `auth_token`/`auth_header` for URL collection.
+  - **Success 200 JSON:** same compliance summary as `upload-config`, plus `ingestion_method: "live_fetch"`, `source_type`, `target`, and `config_filename` (`<device_id>_live_fetch.txt`).
   - **Errors:** 400 validation (injection/length/format), 404 session not found, 502 fetch failed (unreachable/auth/timeout — never leaks credential).
 
 **Credential handling — verification results:**
 - **Never persisted:** Unit check in `test_fetch_via_ip_uses_same_ingestion_as_file_upload` reads `sessions/<sess>/<sess>.json` + `brain_state_<sess>.json` raw text and asserts `SuperSecret123!` absent; URL test asserts `BearerToken123_mocked` absent; failure path asserts `UltraSecret999!` not in error JSON nor session file.
-- **Masked in UI:** `frontend/src/pages/UploadView.jsx` fetch mode uses `type="password"` for `fetchPassword`, `fetchSshKey`, `fetchAuthToken` (all masked), plus note "Credentials are used only for the single fetch request and never stored, logged, or written to session JSON."
+- **Masked in UI:** `frontend/src/pages/UploadView.jsx` uses password controls and masked PEM text with explicit Show/Hide actions. Sensitive state is cleared after successful collection or when leaving live-fetch mode.
 - **No log leakage:** `bridge/live_fetcher.py` docstring and `bridge/app.py:fetch-config` comment explicitly forbid logging credentials; error path sanitizes exception string and never interpolates password/token into `error_response`. Grep verification post-test: `grep -R SuperSecret sessions/` → no hits outside test source; `grep -r BearerToken sessions/` → no hits; git-tracked `bridge/app.py` contains no `log.*password` in plaintext; `grep logs/session JSON/git-tracked` for `password` only finds policy findings and docstrings, zero credential values.
 - **Local proxy:** Requests go through existing Vite proxy `frontend/vite.config.js:/api → :5000`; no new exposed surface, no extra CORS or public endpoint.
 
 **React UI — changes:**
-- `frontend/src/pages/UploadView.jsx` adds third input mode `fetch` alongside `file` (primary/pre-selected) and `text` (bulk stays). New state: `fetchSourceType` (`ip`|`url` toggle buttons), `fetchTarget`, `fetchUsername`/`fetchPassword`/`fetchSshKey`/`fetchPort` (ip) and `fetchAuthToken`/`fetchAuthHeader` (url), all validated in `validate()` (IP/host regex, URL `http(s)://`, injection/length checks). Credentials are `type=password`. A distinct card explains "Optional — requires network reachability … Credentials are used only for the single fetch and never stored … Config-file upload remains the PS-recommended primary method." Submit calls `POST /api/session/<name>/fetch-config` with JSON, shows same `loading` + `bulkResults` stat-grid/table and routes to same `ResultsView`/`SessionDevicesView`/PDF — no separate downstream UI, data model unified. Devices now show `ingestion_method: live_fetch` badge.
+- `frontend/src/pages/UploadView.jsx` adds a third `fetch` mode alongside file upload (primary) and pasted text. It provides SSH/HTTPS source switching, labeled and masked credentials, client-side format/length validation, a 45-second request timeout, and the same results flow used by file ingestion—without adding a separate downstream UI.
 
 ## React Frontend (Prompt 22 + 23 + this prompt)
 
@@ -154,7 +154,7 @@ Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` +
 
 **Java:** `make compile` → Build successful. `make test-java` → 11 suites all pass (now includes `ingestion_method` preservation in `normalized_results` and `tool` on UNRECOGNIZED finding for doctor clean). Sample evidence row still `| 10.10.1.10 | Cisco |  |  |  | T-CISCO | pass | medium | ... |`.
 
-**Python:** `python3 -m pytest bridge/tests/test_bridge.py -v` → **20 passed** (~305s). `bridge/tests/test_live_fetch.py` → **4 passed** (~95s, explicitly mocked — state clearly mocked if no real device/URL; asserts fetched text reaches `TrinetraConfigIngestor.ingest(..., live_fetch)` producing same `normalized_results` as file upload, `ingestion_method: live_fetch` appears in `GET /devices` and PDF, credentials absent from session JSON/brain/error). `test_fail_remediation.py` + `test_training_loop.py` → **3 passed**. **Total 27 passed, 0 failed, no regressions.**
+**Python:** `python3 -m pytest bridge/tests -q` → **30 passed**. This includes 4 mocked live-fetch/security tests covering shared ingestion results, provenance persistence, private-URL rejection, server-side key-path rejection, and credential-safe failures. No claim of a real external device connection is made.
 
 **Doctor:** `trinetra -doctor` → 124 definitions, `All sessions valid`, AI integration Gemini CLI installed, GEMINI_API_KEY set, OpenRouter key set, `Chain Status: INTACT`.
 
@@ -169,7 +169,7 @@ Full pipeline verified: Iskabon fingerprinting → per-device `device_vendors` +
 - `grep bridge/app.py` for log of password → docstring only, no `logger.info(password)`
 - Response JSON after fetch never contains credential (asserted in tests).
 
-**Live checks (via Flask test client, mocked fetch):**
+**Integration checks (via Flask test client, mocked fetch):**
 - `POST /fetch-config ip 10.0.0.1 + password` → 200 `live_fetch`, `GET /devices` shows `live_fetch`, `GET /status` `device_ingestion[dev].method == live_fetch`, `brain_state normalized_results` `ingestion_method: live_fetch`, PDF contains device.
 - `POST /fetch-config url https://api.example.com/config + BearerToken` → same, no token in stored JSON.
 - Same `SAMPLE_CONFIG` via fetch vs file → `total_checks/passed/failed/unrecognized` identical, `normalized_results` verdicts identical, only method differs — proves same pipeline.
@@ -191,4 +191,3 @@ Full OS-version-aware parsing branches (IOS vs IOS-XE vs NX-OS producing differe
 ## Next Planned Prompt
 
 Consider: full OS-version parsing branches if time allows, production `frontend/dist` serve via Flask (`/app` static), accessibility audit, or Palo Alto/Fortinet vendor connectors.
-

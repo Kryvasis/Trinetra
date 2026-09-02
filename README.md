@@ -138,7 +138,7 @@ Today, checking whether a network is configured securely means a human reading h
 ```
 
 * `Java core` is authoritative: session JSON (`sessions/<name>/<name>.json`), brain markdown/state (`brain_<name>.md`, `brain_state_<name>.json` with `normalized_results` hash chain), scorer, ingestion, training map, chain verification, SQLite audit log (`trinetra_audit.db`).
-* `Flask bridge` (`bridge/app.py`) is thin: validates inputs (regex `SESSION_RE`, `DEVICE_RE`, `VENDOR_RE`, injection chars), shells out to `trinetra` CLI or `java TrinetraBridgeHelper`, parses markdown to generate landscape PDF via ReportLab, serves Flask HTML fallback at `/`, `/ui`, `/upload` (unlinked, zero-dependency safety net). The new fetch layer `bridge/live_fetcher.py` (`TrinetraLiveFetcher`) is isolated: SSH (`paramiko` — vendor-aware `show running-config` / `show configuration | display set` + generic fallback) and URL (`requests` GET + optional Bearer token) — returns only raw config text, no parsing.
+* `Flask bridge` (`bridge/app.py`) is thin: validates inputs (regex `SESSION_RE`, `DEVICE_RE`, `VENDOR_RE`, injection chars), shells out to `trinetra` CLI or `java TrinetraBridgeHelper`, parses markdown to generate landscape PDF via ReportLab, serves Flask HTML fallback at `/`, `/ui`, `/upload` (unlinked, zero-dependency safety net). The fetch layer `bridge/live_fetcher.py` is isolated: SSH uses strict `known_hosts` verification and in-memory PEM keys; URL collection validates every destination and redirect, blocks private addresses by default, strips credentials across origins, and caps responses at 1 MB. It returns raw config text only—never parsed results.
 * `React frontend` (`frontend/src/*`, Vite) is the polished PS deliverable: 5 views (Upload, Results, Training, Session Devices, System Dashboard) that consume the same bridge endpoints — no response-shape changes. Upload view now has a third mode “Fetch from IP/URL” (additive, not replacement) that calls `POST /fetch-config` and reuses the same Results/Devices/PDF flow.
 
 ### Key file locations
@@ -166,7 +166,7 @@ cd frontend && npm install && npm run dev   # Vite :5173 proxies /api → :5000
 trinetra -doctor      # 124 definitions, chain, AI integration check
 ```
 
-Bridge tests: `python3 -m pytest bridge/tests/test_bridge.py -v` (20 tests, ~300s), plus `test_fail_remediation` + `test_training_loop` + `test_live_fetch` (4 mocked SSH/URL tests, 95s) → 27 total. Live-fetch tests mock `bridge.live_fetcher.fetch_config` and confirm fetched text reaches `TrinetraConfigIngestor.ingest(..., live_fetch)` producing identical `normalized_results` as file upload.
+Bridge tests: `python3 -m pytest bridge/tests -q` → 30 tests passed, including 4 mocked live-fetch/security tests. Live-fetch tests mock `bridge.live_fetcher.fetch_config` and confirm fetched text reaches `TrinetraConfigIngestor.ingest(..., live_fetch)` with the same compliance result as file upload while credentials remain absent from persisted state and error responses.
 
 ---
 
@@ -186,7 +186,7 @@ Bridge tests: `python3 -m pytest bridge/tests/test_bridge.py -v` (20 tests, ~300
 
 * **Full OS-version branches + NCIIPC remain open going into submission** — these are the two explicitly-out-of-scope items from Prompt 24. They are the only honest gaps left; the 6 fixable gaps from the ranked list (DEMO STIG drift, bulk/hardware steps, OS auto-detect, repo cleanup, doctor `latest_score`, ResultsView fallback) are now closed and verified in `DEMO_SCRIPT.md:21-58` and commit `3551a9d`.
 
-* **Live-fetch is thin retrieval, not live scanning.** The new IP/URL fetch (`bridge/live_fetcher.py`) only retrieves raw config text via SSH/HTTP and feeds it into the same `TrinetraConfigIngestor.ingest` pipeline as file uploads — no duplicate normalization, no fingerprinting. Credentials are used only for the single fetch, never persisted to session JSON, brain state, or logs (verified via grep), and the frontend masks them. The system is honest: `ingestion_method: live_fetch` is distinct from `config_upload`, and reports label it as auto-sourced.
+* **Live-fetch is thin retrieval, not live scanning.** The IP/URL fetch (`bridge/live_fetcher.py`) only retrieves raw config text and feeds it into the same `TrinetraConfigIngestor.ingest` pipeline as file uploads—no duplicate normalization or fingerprinting. SSH rejects unknown host keys and server-side key paths; URL collection prevents private-address SSRF by default and validates redirects. Credentials exist only for one request, are never persisted, and remain masked in the frontend. `ingestion_method: live_fetch` stays distinct from `config_upload` for honest reporting.
 
 ---
 

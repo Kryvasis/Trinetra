@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
+import SceneHeader from '../components/SceneHeader'
 
 export default function DashboardView({ api, toast }) {
   const [loading, setLoading] = useState(false)
@@ -45,17 +46,19 @@ export default function DashboardView({ api, toast }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>System Status</h1>
-      <p style={{ color: 'var(--text-dim)', marginBottom: 24, fontSize: 14 }}>
-        System health diagnostics and session overview.
-      </p>
+      <SceneHeader
+        index="05"
+        label="Verify"
+        title="System Status"
+        description="System health diagnostics and session overview."
+      />
 
       <button className="btn-primary" onClick={loadDoctor} disabled={loading} style={{ marginBottom: 24 }}>
-        {loading ? <><Spinner size={14} /> Running Doctor...</> : 'Run trinetra -doctor'}
+        {loading ? <><Spinner size={14} /> Running diagnostics...</> : 'Run system diagnostics'}
       </button>
 
       {error && !loading && (
-        <div className="card" style={{ borderLeft: '3px solid var(--red)', marginBottom: 24 }}>
+        <div className="card" style={{ marginBottom: 24 }}>
           <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Diagnostics failed</h3>
           <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
           <button className="btn-secondary" onClick={loadDoctor} style={{ marginTop: 8 }}>Retry</button>
@@ -175,7 +178,7 @@ export default function DashboardView({ api, toast }) {
       {!doctor && !loading && !error && (
         <div className="empty-state card">
           <h3>System Status</h3>
-          <p>Click "Run trinetra -doctor" to check system health.</p>
+          <p>Run system diagnostics to check service health and configuration readiness.</p>
         </div>
       )}
     </div>

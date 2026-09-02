@@ -5,7 +5,7 @@ import java.util.regex.*;
 /**
  * Config-file ingestion path — repoints VendorConnector parsing at file content.
  * Primary path for PS26155: upload file → parse → compliance checks → score → report.
- * Live-target scanning remains optional (ingestion_method="live_target").
+ * Live collection remains optional (ingestion_method="live_fetch").
  *
  * Keeps core engine (parsing, normalization, scoring, hash-chain, narrative) reusable:
  * same VendorConnector.normalizeCommand and same TrinetraStat.DecisionEngine are used,
@@ -106,22 +106,18 @@ public class TrinetraConfigIngestor {
      * Full ingest with distinct hardware metadata (PS Deliverable 4 + item 8 OS-version).
      * serialNumber, hardwareModel, osVersion are optional free-text; osVersion is also
      * auto-detected via lightweight header scan when blank (metadata-level awareness, not parsing branch).
-     * Defaults ingestion_method to "config_upload" (PS26155 primary path).
      */
     public static IngestResult ingest(String sessionName, String deviceId, String vendorHint, String configContent, String filename,
-                                       String serialNumber, String hardwareModel, String osVersion) {
-        return ingest(sessionName, deviceId, vendorHint, configContent, filename, serialNumber, hardwareModel, osVersion, "config_upload");
+                                      String serialNumber, String hardwareModel, String osVersion) {
+        return ingest(sessionName, deviceId, vendorHint, configContent, filename,
+                      serialNumber, hardwareModel, osVersion, "config_upload");
     }
 
-    /**
-     * Full ingest with explicit ingestion_method — shared pipeline for both file-upload
-     * and live-fetch paths.  The live-fetch path passes ingestionMethod="live_fetch";
-     * file upload passes "config_upload".  No duplication of parsing/normalization logic:
-     * both call this same core.  Device entry is tagged honestly with the supplied method.
-     */
+    /** Full ingest with a constrained provenance tag for upload or live collection. */
     public static IngestResult ingest(String sessionName, String deviceId, String vendorHint, String configContent, String filename,
-                                       String serialNumber, String hardwareModel, String osVersion, String ingestionMethod) {
+                                      String serialNumber, String hardwareModel, String osVersion, String ingestionMethod) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String methodTag = "live_fetch".equals(ingestionMethod) ? "live_fetch" : "config_upload";
         String vendor = vendorHint;
         if (vendor == null || vendor.isBlank() || vendor.equalsIgnoreCase("auto")) {
             vendor = autoDetectVendor(configContent);
@@ -134,9 +130,6 @@ public class TrinetraConfigIngestor {
         VendorConnector connector = VendorConnectorRegistry.resolve(vendor);
         String canonicalVendor = connector.getVendorName();
         // Store device vendor, ingestion method, and distinct metadata
-        String methodTag = (ingestionMethod != null && !ingestionMethod.isBlank()) ? ingestionMethod.trim() : "config_upload";
-        // Normalize live_fetch alias: allow "live_fetch" / "live-fetch" / "fetch"
-        if (methodTag.equalsIgnoreCase("live-fetch") || methodTag.equalsIgnoreCase("fetch")) methodTag = "live_fetch";
         TrinetraSession.setDeviceVendor(sanitized, deviceId, canonicalVendor);
         TrinetraSession.setDeviceIngestion(sanitized, deviceId, methodTag, filename);
         TrinetraSession.setDeviceDetails(sanitized, deviceId, serialNumber, hardwareModel, effectiveOs);
@@ -313,8 +306,8 @@ public class TrinetraConfigIngestor {
             uncFinding.put("device_id", deviceId);
             uncFinding.put("vendor", canonicalVendor);
             uncFinding.put("ingestion_method", methodTag);
-            uncFinding.put("script", "config_ingest:unrecognized");
             uncFinding.put("tool", "config_ingest");
+            uncFinding.put("script", "config_ingest:unrecognized");
             uncFinding.put("started_at", TrinetraCommon.nowIso());
             uncFinding.put("ended_at", TrinetraCommon.nowIso());
             uncFinding.put("exit_code", 0);

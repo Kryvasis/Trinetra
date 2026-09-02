@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
+import SceneHeader from '../components/SceneHeader'
 
 export default function SessionDevicesView({ api, toast }) {
   const [searchParams] = useSearchParams()
@@ -57,12 +58,14 @@ export default function SessionDevicesView({ api, toast }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Session Devices</h1>
-      <p style={{ color: 'var(--text-dim)', marginBottom: 24, fontSize: 14 }}>
-        View all devices within a session, their ingestion method, and per-device compliance results.
-      </p>
+      <SceneHeader
+        index="04"
+        label="Observe"
+        title="Session Devices"
+        description="View all devices within a session, their ingestion method, and per-device compliance results."
+      />
 
-      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         <input
           type="text"
           value={inputSession}
@@ -83,7 +86,7 @@ export default function SessionDevicesView({ api, toast }) {
       )}
 
       {error && !loading && (
-        <div className="card" style={{ borderLeft: '3px solid var(--red)' }}>
+        <div className="card">
           <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load devices</h3>
           <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
           <button className="btn-secondary" onClick={() => fetchDevices(inputSession.trim())} style={{ marginTop: 8 }}>

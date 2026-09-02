@@ -444,11 +444,9 @@ public class TrinetraSession {
             if (v == null && "timestamp".equals(key)) v = TrinetraCommon.nowIso();
             record.put(key, v);
         }
-        // Preserve ingestion_method (live_fetch vs config_upload) for audit honesty — optional, not validated, but hash-chained if present.
-        // Backwards compat: legacy entries without ingestion_method remain valid (hash computed without it).
-        if (entry.containsKey("ingestion_method") && entry.get("ingestion_method") instanceof String) {
-            String im = ((String) entry.get("ingestion_method")).trim();
-            if (!im.isBlank()) record.put("ingestion_method", im);
+        Object ingestionMethod = entry.get("ingestion_method");
+        if (ingestionMethod instanceof String && !((String) ingestionMethod).isBlank()) {
+            record.put("ingestion_method", ingestionMethod);
         }
 
         List<Map<String, Object>> results =
