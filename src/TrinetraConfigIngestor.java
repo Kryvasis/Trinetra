@@ -5,7 +5,7 @@ import java.util.regex.*;
 /**
  * Config-file ingestion path — repoints VendorConnector parsing at file content.
  * Primary path for PS26155: upload file → parse → compliance checks → score → report.
- * Live-target scanning remains optional (ingestion_method="live_target").
+ * Live collection remains optional (ingestion_method="live_fetch").
  *
  * Keeps core engine (parsing, normalization, scoring, hash-chain, narrative) reusable:
  * same VendorConnector.normalizeCommand and same TrinetraStat.DecisionEngine are used,
@@ -109,7 +109,15 @@ public class TrinetraConfigIngestor {
      */
     public static IngestResult ingest(String sessionName, String deviceId, String vendorHint, String configContent, String filename,
                                       String serialNumber, String hardwareModel, String osVersion) {
+        return ingest(sessionName, deviceId, vendorHint, configContent, filename,
+                      serialNumber, hardwareModel, osVersion, "config_upload");
+    }
+
+    /** Full ingest with a constrained provenance tag for upload or live collection. */
+    public static IngestResult ingest(String sessionName, String deviceId, String vendorHint, String configContent, String filename,
+                                      String serialNumber, String hardwareModel, String osVersion, String ingestionMethod) {
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String methodTag = "live_fetch".equals(ingestionMethod) ? "live_fetch" : "config_upload";
         String vendor = vendorHint;
         if (vendor == null || vendor.isBlank() || vendor.equalsIgnoreCase("auto")) {
             vendor = autoDetectVendor(configContent);
@@ -123,7 +131,7 @@ public class TrinetraConfigIngestor {
         String canonicalVendor = connector.getVendorName();
         // Store device vendor, ingestion method, and distinct metadata
         TrinetraSession.setDeviceVendor(sanitized, deviceId, canonicalVendor);
-        TrinetraSession.setDeviceIngestion(sanitized, deviceId, "config_upload", filename);
+        TrinetraSession.setDeviceIngestion(sanitized, deviceId, methodTag, filename);
         TrinetraSession.setDeviceDetails(sanitized, deviceId, serialNumber, hardwareModel, effectiveOs);
 
         // Save config file to artifacts
@@ -247,7 +255,7 @@ public class TrinetraConfigIngestor {
             finding.put("target", deviceId);
             finding.put("device_id", deviceId);
             finding.put("vendor", canonicalVendor);
-            finding.put("ingestion_method", "config_upload");
+            finding.put("ingestion_method", methodTag);
             finding.put("config_filename", filename != null ? filename : deviceId + "_config.txt");
             finding.put("script", "config_ingest:" + vcode);
             finding.put("started_at", TrinetraCommon.nowIso());
@@ -280,7 +288,7 @@ public class TrinetraConfigIngestor {
             norm.put("test_id", vcode);
             norm.put("raw_output", rawForCheck.substring(0, Math.min(2000, rawForCheck.length())));
             norm.put("normalized_result", verdict.name().toLowerCase());
-            norm.put("ingestion_method", "config_upload");
+            norm.put("ingestion_method", methodTag);
             TrinetraSession.appendNormalizedResult(sanitized, norm);
 
             findings.add(finding);
@@ -297,7 +305,8 @@ public class TrinetraConfigIngestor {
             uncFinding.put("target", deviceId);
             uncFinding.put("device_id", deviceId);
             uncFinding.put("vendor", canonicalVendor);
-            uncFinding.put("ingestion_method", "config_upload");
+            uncFinding.put("ingestion_method", methodTag);
+            uncFinding.put("tool", "config_ingest");
             uncFinding.put("script", "config_ingest:unrecognized");
             uncFinding.put("started_at", TrinetraCommon.nowIso());
             uncFinding.put("ended_at", TrinetraCommon.nowIso());
@@ -313,7 +322,7 @@ public class TrinetraConfigIngestor {
 
         TrinetraBrain.updateBrain(sanitized);
 
-        return new IngestResult(deviceId, canonicalVendor, "config_upload", findings.size(), passed, failed, unrecognized, findings);
+        return new IngestResult(deviceId, canonicalVendor, methodTag, findings.size(), passed, failed, unrecognized, findings);
     }
 
     /**

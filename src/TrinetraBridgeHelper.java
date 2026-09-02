@@ -136,7 +136,7 @@ public class TrinetraBridgeHelper {
 
     private static void handleIngestConfig(String[] args) {
         if (args.length < 5) {
-            System.err.println("Usage: TrinetraBridgeHelper ingest-config <session> <device_id> <vendor> <config_file_path> [serial] [hardware_model] [os_version]");
+            System.err.println("Usage: TrinetraBridgeHelper ingest-config <session> <device_id> <vendor> <config_file_path> [serial] [hardware_model] [os_version] [ingestion_method]");
             System.exit(1);
         }
         String session = args[1];
@@ -146,17 +146,23 @@ public class TrinetraBridgeHelper {
         String serialNumber = args.length > 5 ? args[5] : null;
         String hardwareModel = args.length > 6 ? args[6] : null;
         String osVersion = args.length > 7 ? args[7] : null;
+        String ingestionMethod = args.length > 8 ? args[8] : "config_upload";
         // Decode "_" placeholder used for empty optional fields
         if ("_".equals(serialNumber)) serialNumber = "";
         if ("_".equals(hardwareModel)) hardwareModel = "";
         if ("_".equals(osVersion)) osVersion = "";
+        if (ingestionMethod == null || ingestionMethod.isBlank() || "_".equals(ingestionMethod)) {
+            ingestionMethod = "config_upload";
+        }
         String configContent = TrinetraCommon.readFileIfExists(Path.of(configPath));
         if (configContent == null) {
             System.err.println("Config file not found: " + configPath);
             System.exit(1);
         }
         String filename = Path.of(configPath).getFileName().toString();
-        TrinetraConfigIngestor.IngestResult result = TrinetraConfigIngestor.ingest(session, deviceId, vendor, configContent, filename, serialNumber, hardwareModel, osVersion);
+        TrinetraConfigIngestor.IngestResult result = TrinetraConfigIngestor.ingest(
+            session, deviceId, vendor, configContent, filename,
+            serialNumber, hardwareModel, osVersion, ingestionMethod);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("session", TrinetraCommon.sanitizeName(session));
         out.put("device_id", result.deviceId);

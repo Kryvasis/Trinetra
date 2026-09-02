@@ -1,10 +1,44 @@
 import { useState, useRef } from 'react'
 import Spinner from '../components/Spinner'
+import SceneHeader from '../components/SceneHeader'
 
 const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'Generic']
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/
 const DEVICE_RE = /^[A-Za-z0-9._-]{1,128}$/
 const MAX_FILE_SIZE = 1024 * 1024 // 1MB — matches bridge limit
+
+function SecretField({ id, label, value, onChange, placeholder, multiline = false }) {
+  const [visible, setVisible] = useState(false)
+  const controlProps = {
+    id,
+    value,
+    onChange,
+    placeholder,
+    autoComplete: 'off',
+  }
+
+  return (
+    <div className="form-group">
+      <label htmlFor={id}>{label}</label>
+      <div className="secret-control">
+        {multiline ? (
+          <textarea {...controlProps} rows={4} className={visible ? '' : 'secret-masked'} />
+        ) : (
+          <input {...controlProps} type={visible ? 'text' : 'password'} />
+        )}
+        <button
+          type="button"
+          className="secret-toggle"
+          aria-label={`${visible ? 'Hide' : 'Show'} ${label.toLowerCase()}`}
+          aria-pressed={visible}
+          onClick={() => setVisible(current => !current)}
+        >
+          {visible ? 'Hide' : 'Show'}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 export default function UploadView({ api, toast }) {
   const [session, setSession] = useState('')
@@ -18,6 +52,14 @@ export default function UploadView({ api, toast }) {
   const [loading, setLoading] = useState(false)
   const [bulkResults, setBulkResults] = useState([]) // per-file {fileName, deviceId, status, message, data}
   const [inputMode, setInputMode] = useState('file')
+  const [fetchSourceType, setFetchSourceType] = useState('ip')
+  const [fetchTarget, setFetchTarget] = useState('')
+  const [fetchUsername, setFetchUsername] = useState('')
+  const [fetchPassword, setFetchPassword] = useState('')
+  const [fetchSshKey, setFetchSshKey] = useState('')
+  const [fetchPort, setFetchPort] = useState('22')
+  const [fetchAuthToken, setFetchAuthToken] = useState('')
+  const [fetchAuthHeader, setFetchAuthHeader] = useState('Authorization')
   const [errors, setErrors] = useState({})
   const abortRef = useRef(null)
 
@@ -49,12 +91,30 @@ export default function UploadView({ api, toast }) {
         if (!d) e.deviceId = 'Device ID is required for single-file upload'
         else if (!DEVICE_RE.test(d)) e.deviceId = 'Only letters, numbers, dots, hyphens, underscores (max 128)'
       }
-    } else {
+    } else if (inputMode === 'text') {
       if (!configText.trim()) e.config = 'Paste config content or switch to file upload'
       if (configText.length > MAX_FILE_SIZE) e.config = `Config too large (max ${MAX_FILE_SIZE / 1024}KB)`
       const d = deviceId.trim()
       if (!d) e.deviceId = 'Device ID is required'
       else if (!DEVICE_RE.test(d)) e.deviceId = 'Only letters, numbers, dots, hyphens, underscores (max 128)'
+    } else {
+      const d = deviceId.trim()
+      const target = fetchTarget.trim()
+      if (!d) e.deviceId = 'Device ID is required for live collection'
+      else if (!DEVICE_RE.test(d)) e.deviceId = 'Only letters, numbers, dots, hyphens, underscores (max 128)'
+      if (!target) e.fetchTarget = fetchSourceType === 'ip' ? 'IP address or hostname is required' : 'Configuration URL is required'
+      else if (fetchSourceType === 'ip' && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(target)) e.fetchTarget = 'Enter a valid IP address or hostname'
+      else if (fetchSourceType === 'url' && !/^https?:\/\//i.test(target)) e.fetchTarget = 'URL must start with http:// or https://'
+      if (fetchSourceType === 'ip') {
+        if (!fetchUsername.trim()) e.fetchUsername = 'SSH username is required'
+        if (!fetchPassword && !fetchSshKey) e.fetchCredential = 'Enter an SSH password or paste a private key'
+        if (!/^\d+$/.test(fetchPort) || Number(fetchPort) < 1 || Number(fetchPort) > 65535) e.fetchPort = 'Port must be between 1 and 65535'
+        if (fetchPassword.length > 1024) e.fetchCredential = 'Password is too long'
+        if (fetchSshKey.length > 8192) e.fetchCredential = 'Private key is too large'
+      } else {
+        if (fetchAuthToken.length > 2048) e.fetchCredential = 'Authentication token is too long'
+        if (fetchAuthHeader && !/^[A-Za-z][A-Za-z0-9-]{0,127}$/.test(fetchAuthHeader)) e.fetchAuthHeader = 'Enter a valid HTTP header name'
+      }
     }
     // Optional hardware fields validation (no injection, max 128)
     for (const [key, val] of [['serialNumber', serialNumber], ['hardwareModel', hardwareModel], ['osVersion', osVersion]]) {
@@ -72,7 +132,21 @@ export default function UploadView({ api, toast }) {
     setErrors(prev => ({ ...prev, config: null }))
   }
 
-  const canSubmit = !loading && session.trim() && (inputMode === 'file' ? files.length > 0 : !!configText.trim())
+  const canSubmit = !loading && session.trim() && (
+    inputMode === 'file' ? files.length > 0 :
+      inputMode === 'text' ? !!configText.trim() :
+        !!fetchTarget.trim() && !!deviceId.trim()
+  )
+
+  const changeInputMode = mode => {
+    setInputMode(mode)
+    setErrors({})
+    if (mode !== 'fetch') {
+      setFetchPassword('')
+      setFetchSshKey('')
+      setFetchAuthToken('')
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -96,7 +170,12 @@ export default function UploadView({ api, toast }) {
       const createRes = await fetch(`${api}/session`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: sessionName, target: (files[0]?.name ? deriveDeviceId(files[0].name) : deviceId.trim()) || deviceId.trim() }),
+        body: JSON.stringify({
+          name: sessionName,
+          target: inputMode === 'fetch'
+            ? deviceId.trim()
+            : (files[0]?.name ? deriveDeviceId(files[0].name) : deviceId.trim()) || deviceId.trim(),
+        }),
         signal: controller.signal,
       })
       if (!createRes.ok && createRes.status !== 409) {
@@ -111,6 +190,62 @@ export default function UploadView({ api, toast }) {
         setLoading(false)
         return
       }
+    }
+
+    if (inputMode === 'fetch') {
+      const timeoutId = setTimeout(() => controller.abort(), 45000)
+      try {
+        const body = {
+          source_type: fetchSourceType,
+          target: fetchTarget.trim(),
+          vendor: vendorVal,
+          device_id: deviceId.trim(),
+          serial_number: serialVal || undefined,
+          hardware_model: hardwareVal || undefined,
+          os_version: osVal || undefined,
+        }
+        if (fetchSourceType === 'ip') {
+          body.username = fetchUsername.trim()
+          body.port = Number(fetchPort)
+          if (fetchPassword) body.password = fetchPassword
+          if (fetchSshKey) body.ssh_key = fetchSshKey
+        } else {
+          if (fetchAuthToken) body.auth_token = fetchAuthToken
+          if (fetchAuthHeader.trim()) body.auth_header = fetchAuthHeader.trim()
+        }
+
+        const response = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/fetch-config`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({ error: 'Live collection failed' }))
+          throw new Error(detail.error || `Live collection failed (${response.status})`)
+        }
+        const data = await response.json()
+        setBulkResults([{
+          fileName: `${fetchSourceType.toUpperCase()} live collection`,
+          deviceId: data.device_id || deviceId.trim(),
+          status: 'success',
+          message: `${data.passed} passed, ${data.failed} failed, ${data.unrecognized_count} unrecognized`,
+          data,
+        }])
+        setFetchPassword('')
+        setFetchSshKey('')
+        setFetchAuthToken('')
+        toast('Configuration collected and scanned', 'success')
+      } catch (err) {
+        const message = err.name === 'AbortError' ? 'Live collection timed out. Check target reachability.' : err.message
+        setBulkResults([{ fileName: 'Live collection', deviceId: deviceId.trim() || 'unknown', status: 'error', message }])
+        toast(message, 'error')
+      } finally {
+        clearTimeout(timeoutId)
+        abortRef.current = null
+        setLoading(false)
+      }
+      return
     }
 
     // Step 2: Upload — bulk sequential (choice A) to reuse single-upload endpoint and show per-file status
@@ -227,12 +362,14 @@ export default function UploadView({ api, toast }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Upload Device Config</h1>
-      <p style={{ color: 'var(--text-dim)', marginBottom: 24, fontSize: 14 }}>
-        Upload single or bulk device configs. For bulk, select multiple files — each filename becomes a device ID and gets ingested sequentially with per-file status.
-      </p>
+      <SceneHeader
+        index="01"
+        label="Ingest"
+        title="Upload Device Config"
+        description="Upload single or bulk device configs. For bulk, select multiple files — each filename becomes a device ID and gets ingested sequentially with per-file status."
+      />
 
-      <form onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} noValidate>
         <div className="grid-2">
           <div className="form-group">
             <label>Session Name</label>
@@ -258,14 +395,27 @@ export default function UploadView({ api, toast }) {
           </div>
         </div>
 
-        <div className="form-group">
-          <label>Vendor</label>
-          <select value={vendor} onChange={e => setVendor(e.target.value)}>
-            {VENDORS.map(v => <option key={v} value={v}>{v}</option>)}
-          </select>
-        </div>
+        <fieldset className="form-group choice-fieldset">
+          <legend>Vendor</legend>
+          <div className="vendor-options">
+            {VENDORS.map(v => (
+              <label className={`vendor-option${vendor === v ? ' is-selected' : ''}`} key={v}>
+                <input
+                  type="radio"
+                  name="vendor"
+                  value={v}
+                  checked={vendor === v}
+                  onChange={e => setVendor(e.target.value)}
+                />
+                <span className="choice-control" aria-hidden="true" />
+                <span className="vendor-name">{v}</span>
+              </label>
+            ))}
+          </div>
+          <p className="field-help">Use auto-detect unless the configuration source is already known.</p>
+        </fieldset>
 
-        <div className="card" style={{ background: 'var(--surface2)', padding: 16, marginBottom: 16 }}>
+        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
           <label style={{ fontWeight: 600, marginBottom: 8 }}>Distinct Hardware Fields (optional, per PS Deliverable 4)</label>
           <div className="grid-2">
             <div className="form-group">
@@ -288,22 +438,30 @@ export default function UploadView({ api, toast }) {
 
         <div className="form-group">
           <label>Input Method</label>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <div className="input-mode-switch">
             <button
               type="button"
               className={`btn-secondary ${inputMode === 'file' ? 'btn-primary' : ''}`}
-              onClick={() => setInputMode('file')}
+              onClick={() => changeInputMode('file')}
             >
               File Upload {files.length > 1 ? `(${files.length} files)` : ''}
             </button>
             <button
               type="button"
               className={`btn-secondary ${inputMode === 'text' ? 'btn-primary' : ''}`}
-              onClick={() => setInputMode('text')}
+              onClick={() => changeInputMode('text')}
             >
               Paste Config
             </button>
+            <button
+              type="button"
+              className={`btn-secondary ${inputMode === 'fetch' ? 'btn-primary' : ''}`}
+              onClick={() => changeInputMode('fetch')}
+            >
+              Collect from Network
+            </button>
           </div>
+          <p className="field-help">File upload is recommended. Live collection requires direct network access from the Cortex bridge.</p>
         </div>
 
         {inputMode === 'file' ? (
@@ -314,7 +472,6 @@ export default function UploadView({ api, toast }) {
               onChange={handleFilesChange}
               accept=".txt,.cfg,.conf,.log,.xml,.json,.csv"
               multiple
-              style={{ padding: '6px 0' }}
             />
             {files.length > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 6 }}>
@@ -324,7 +481,7 @@ export default function UploadView({ api, toast }) {
             )}
             {errors.config && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.config}</div>}
           </div>
-        ) : (
+        ) : inputMode === 'text' ? (
           <div className="form-group">
             <label>Configuration Content</label>
             <textarea
@@ -336,10 +493,128 @@ export default function UploadView({ api, toast }) {
             />
             {errors.config && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.config}</div>}
           </div>
+        ) : (
+          <section className="fetch-panel" aria-labelledby="fetch-heading">
+            <div className="fetch-heading-row">
+              <div>
+                <span className="benchmark-eyebrow">Optional source</span>
+                <h2 id="fetch-heading">Live configuration collection</h2>
+              </div>
+              <span className="fetch-security-note">Credentials are never stored</span>
+            </div>
+
+            <div className="source-type-switch" aria-label="Collection source">
+              <button
+                type="button"
+                className={fetchSourceType === 'ip' ? 'is-selected' : ''}
+                aria-pressed={fetchSourceType === 'ip'}
+                onClick={() => { setFetchSourceType('ip'); setErrors({}) }}
+              >
+                SSH device
+              </button>
+              <button
+                type="button"
+                className={fetchSourceType === 'url' ? 'is-selected' : ''}
+                aria-pressed={fetchSourceType === 'url'}
+                onClick={() => { setFetchSourceType('url'); setErrors({}) }}
+              >
+                HTTPS endpoint
+              </button>
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="fetch-target">{fetchSourceType === 'ip' ? 'IP address or hostname' : 'Configuration URL'}</label>
+              <input
+                id="fetch-target"
+                type={fetchSourceType === 'url' ? 'url' : 'text'}
+                value={fetchTarget}
+                onChange={e => { setFetchTarget(e.target.value); setErrors(prev => ({ ...prev, fetchTarget: null })) }}
+                placeholder={fetchSourceType === 'ip' ? '10.0.0.1 or edge-router.local' : 'https://example.com/export/config'}
+                aria-invalid={Boolean(errors.fetchTarget)}
+                aria-describedby={errors.fetchTarget ? 'fetch-target-error' : undefined}
+              />
+              {errors.fetchTarget && <div id="fetch-target-error" className="field-error">{errors.fetchTarget}</div>}
+            </div>
+
+            {fetchSourceType === 'ip' ? (
+              <>
+                <div className="grid-2">
+                  <div className="form-group">
+                    <label htmlFor="fetch-username">SSH username</label>
+                    <input
+                      id="fetch-username"
+                      type="text"
+                      value={fetchUsername}
+                      onChange={e => { setFetchUsername(e.target.value); setErrors(prev => ({ ...prev, fetchUsername: null })) }}
+                      placeholder="admin"
+                      autoComplete="username"
+                      aria-invalid={Boolean(errors.fetchUsername)}
+                    />
+                    {errors.fetchUsername && <div className="field-error">{errors.fetchUsername}</div>}
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="fetch-port">SSH port</label>
+                    <input
+                      id="fetch-port"
+                      type="number"
+                      min="1"
+                      max="65535"
+                      inputMode="numeric"
+                      value={fetchPort}
+                      onChange={e => { setFetchPort(e.target.value); setErrors(prev => ({ ...prev, fetchPort: null })) }}
+                      aria-invalid={Boolean(errors.fetchPort)}
+                    />
+                    {errors.fetchPort && <div className="field-error">{errors.fetchPort}</div>}
+                  </div>
+                </div>
+                <div className="grid-2">
+                  <SecretField
+                    id="fetch-password"
+                    label="SSH password"
+                    value={fetchPassword}
+                    onChange={e => { setFetchPassword(e.target.value); setErrors(prev => ({ ...prev, fetchCredential: null })) }}
+                    placeholder="Enter password"
+                  />
+                  <SecretField
+                    id="fetch-key"
+                    label="Private key (PEM)"
+                    value={fetchSshKey}
+                    onChange={e => { setFetchSshKey(e.target.value); setErrors(prev => ({ ...prev, fetchCredential: null })) }}
+                    placeholder="Paste private key content"
+                    multiline
+                  />
+                </div>
+                {errors.fetchCredential && <div className="field-error">{errors.fetchCredential}</div>}
+                <p className="fetch-detail">SSH host-key verification uses the bridge machine’s known_hosts file. Cortex will not automatically trust an unknown device.</p>
+              </>
+            ) : (
+              <div className="grid-2">
+                <SecretField
+                  id="fetch-token"
+                  label="Authentication token (optional)"
+                  value={fetchAuthToken}
+                  onChange={e => { setFetchAuthToken(e.target.value); setErrors(prev => ({ ...prev, fetchCredential: null })) }}
+                  placeholder="Bearer token"
+                />
+                <div className="form-group">
+                  <label htmlFor="fetch-header">Authentication header</label>
+                  <input
+                    id="fetch-header"
+                    type="text"
+                    value={fetchAuthHeader}
+                    onChange={e => { setFetchAuthHeader(e.target.value); setErrors(prev => ({ ...prev, fetchAuthHeader: null })) }}
+                    placeholder="Authorization"
+                    aria-invalid={Boolean(errors.fetchAuthHeader)}
+                  />
+                  {errors.fetchAuthHeader && <div className="field-error">{errors.fetchAuthHeader}</div>}
+                </div>
+              </div>
+            )}
+          </section>
         )}
 
         <button type="submit" className="btn-primary" disabled={!canSubmit} style={{ marginTop: 8 }}>
-          {loading ? <><Spinner size={14} /> {isBulk ? `Uploading bulk (${bulkResults.filter(r=>r.status==='success').length}/${files.length})...` : 'Processing...'} </> : isBulk ? `Run Bulk Compliance Scan (${files.length} files)` : 'Run Compliance Scan'}
+          {loading ? <><Spinner size={14} /> {isBulk ? `Uploading bulk (${bulkResults.filter(r=>r.status==='success').length}/${files.length})...` : inputMode === 'fetch' ? 'Collecting & scanning...' : 'Processing...'} </> : isBulk ? `Run Bulk Compliance Scan (${files.length} files)` : inputMode === 'fetch' ? 'Collect & Scan' : 'Run Compliance Scan'}
         </button>
       </form>
 

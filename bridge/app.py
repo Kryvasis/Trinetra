@@ -4,8 +4,15 @@ import json
 import os
 import shlex
 import threading
+import ipaddress
 from pathlib import Path
+from urllib.parse import urlsplit
 from flask import Flask, request, jsonify
+
+try:
+    from bridge import live_fetcher
+except ImportError:
+    import live_fetcher
 
 try:
     from bridge.config import (
@@ -42,6 +49,8 @@ TEST_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")  # e.g. V-003, T-SHARED, T_CI
 # device_id: allow IP, hostname, simple identifiers; reject shell metachars
 DEVICE_RE = re.compile(r"^[A-Za-z0-9._\-]{1,128}$")
 VENDOR_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")
+HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]{0,254}[A-Za-z0-9])?$")
+HEADER_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,127}$")
 
 # Block obvious injection characters even if regex would allow (defense in depth)
 INJECTION_CHARS = set(';|&$`><\\\'"*\n\r')
@@ -554,6 +563,135 @@ def upload_config(name):
             try:
                 os.unlink(tmp_path)
             except:
+                pass
+
+# ── POST /api/session/<name>/fetch-config — transient network collection ──
+@app.route("/api/session/<name>/fetch-config", methods=["POST"])
+def fetch_config(name):
+    if not validate_session(name):
+        return error_response("invalid session name", 400)
+    session_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"{name}.json")
+    if not os.path.exists(session_path):
+        return error_response("session not found", 404)
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return error_response("JSON request body required", 400)
+
+    source_type = data.get("source_type")
+    target = data.get("target")
+    device_id = data.get("device_id") or data.get("deviceId")
+    vendor = data.get("vendor") or data.get("vendor_hint") or "auto"
+    if source_type not in ("ip", "url"):
+        return error_response("source_type must be 'ip' or 'url'", 400)
+    if not isinstance(target, str) or not target.strip() or len(target) > 2048:
+        return error_response("invalid collection target", 400)
+    target = target.strip()
+    if not validate_device(device_id):
+        return error_response("invalid or missing device_id", 400)
+    if not validate_vendor(vendor):
+        return error_response("invalid vendor", 400)
+
+    serial_number = data.get("serial_number") or data.get("serialNumber") or ""
+    hardware_model = data.get("hardware_model") or data.get("hardwareModel") or ""
+    os_version = data.get("os_version") or data.get("osVersion") or ""
+    for field_name, field_value in (
+        ("serial_number", serial_number),
+        ("hardware_model", hardware_model),
+        ("os_version", os_version),
+    ):
+        if not isinstance(field_value, str) or len(field_value) > 128 or contains_injection(field_value):
+            return error_response(f"invalid {field_name}", 400)
+
+    fetch_args = {"source_type": source_type, "target": target, "vendor": vendor}
+    if source_type == "ip":
+        try:
+            ipaddress.ip_address(target)
+        except ValueError:
+            if not HOST_RE.fullmatch(target):
+                return error_response("invalid SSH hostname or IP address", 400)
+        username = data.get("username")
+        password = data.get("password")
+        ssh_key = data.get("ssh_key")
+        port = data.get("port", 22)
+        if not isinstance(username, str) or not username.strip() or len(username) > 128 or any(ord(c) < 32 for c in username):
+            return error_response("invalid or missing SSH username", 400)
+        if not password and not ssh_key:
+            return error_response("SSH password or private key is required", 400)
+        if password is not None and (not isinstance(password, str) or len(password) > 1024):
+            return error_response("invalid SSH password", 400)
+        if ssh_key is not None and (not isinstance(ssh_key, str) or len(ssh_key) > 8192):
+            return error_response("invalid SSH private key", 400)
+        if isinstance(port, bool):
+            return error_response("invalid SSH port", 400)
+        try:
+            port = int(port)
+        except (TypeError, ValueError):
+            return error_response("invalid SSH port", 400)
+        if not 1 <= port <= 65535:
+            return error_response("SSH port must be between 1 and 65535", 400)
+        fetch_args.update(
+            username=username.strip(), password=password, ssh_key=ssh_key, port=port,
+        )
+    else:
+        parsed = urlsplit(target)
+        if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
+            return error_response("URL must use http:// or https:// and include a hostname", 400)
+        auth_token = data.get("auth_token")
+        auth_header = data.get("auth_header") or "Authorization"
+        if auth_token is not None and (not isinstance(auth_token, str) or len(auth_token) > 2048):
+            return error_response("invalid authentication token", 400)
+        if not isinstance(auth_header, str) or not HEADER_NAME_RE.fullmatch(auth_header):
+            return error_response("invalid authentication header", 400)
+        fetch_args.update(auth_token=auth_token, auth_header=auth_header)
+
+    try:
+        config_content = live_fetcher.fetch_config(**fetch_args)
+    except ValueError:
+        return error_response("collection target rejected by security policy", 400)
+    except Exception:
+        return error_response(
+            "Unable to collect configuration. Verify reachability, credentials, and trust settings.",
+            502,
+        )
+
+    if not isinstance(config_content, str) or not config_content.strip():
+        return error_response("the target returned no configuration data", 502)
+    if len(config_content.encode("utf-8")) > 1024 * 1024:
+        return error_response("collected configuration exceeds the 1 MB limit", 413)
+
+    tmp_path = None
+    try:
+        import tempfile
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as temp_file:
+            temp_file.write(config_content)
+            tmp_path = temp_file.name
+
+        serial_arg = serial_number.strip() or "_"
+        hardware_arg = hardware_model.strip() or "_"
+        os_arg = os_version.strip() or "_"
+        args = [
+            "ingest-config", name, device_id, vendor, tmp_path,
+            serial_arg, hardware_arg, os_arg, "live_fetch",
+        ]
+        rc, out, _ = run_java_helper("TrinetraBridgeHelper", args, timeout=120)
+        if rc != 0:
+            return error_response("collected configuration could not be ingested", 500)
+        try:
+            result = json.loads(out.strip())
+        except (TypeError, json.JSONDecodeError):
+            return error_response("configuration ingestion returned an invalid response", 500)
+        result.update({
+            "source_type": source_type,
+            "target": target,
+            "config_filename": f"{device_id}_live_fetch.txt",
+        })
+        return jsonify(result), 200
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
                 pass
 
 # ── GET /api/session/<name>/unrecognized — list unrecognized config lines ──

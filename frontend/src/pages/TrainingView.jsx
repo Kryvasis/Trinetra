@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
+import SceneHeader from '../components/SceneHeader'
 
 export default function TrainingView({ api, toast }) {
   const [params] = useSearchParams()
@@ -159,12 +160,14 @@ export default function TrainingView({ api, toast }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Training Loop</h1>
-      <p style={{ color: 'var(--text-dim)', marginBottom: 24, fontSize: 14 }}>
-        Label unrecognized config lines to teach Trinetra new patterns — no code changes required.
-      </p>
+      <SceneHeader
+        index="03"
+        label="Learn"
+        title="Training Loop"
+        description="Label unrecognized config lines to teach Cortex new patterns — no code changes required."
+      />
 
-      <form onSubmit={load} style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      <form onSubmit={load} noValidate style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         <input
           type="text"
           value={inputSession}
@@ -185,7 +188,7 @@ export default function TrainingView({ api, toast }) {
       )}
 
       {error && !loading && (
-        <div className="card" style={{ borderLeft: '3px solid var(--red)' }}>
+        <div className="card">
           <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load</h3>
           <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
           <button className="btn-secondary" onClick={() => fetchUnrecognized(inputSession.trim())} style={{ marginTop: 8 }}>
@@ -210,7 +213,8 @@ export default function TrainingView({ api, toast }) {
               <span className="badge badge-review">{unrecognized.length}</span>
             </div>
             {unrecognized.map((u, i) => (
-              <div
+              <button
+                type="button"
                 key={i}
                 className="line-item"
                 style={{
@@ -222,7 +226,7 @@ export default function TrainingView({ api, toast }) {
               >
                 <span style={{ fontSize: 11, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{u.device}</span>
                 <span className="line-text">{u.line}</span>
-              </div>
+              </button>
             ))}
           </div>
 
@@ -232,8 +236,8 @@ export default function TrainingView({ api, toast }) {
               {selectedLine ? 'Label Selected Line' : 'Select a line to label'}
             </h2>
             {selectedLine && (
-              <form onSubmit={handleTrain}>
-                <div className="card" style={{ background: 'var(--surface2)', marginBottom: 16, padding: 12 }}>
+              <form onSubmit={handleTrain} noValidate>
+                <div className="card" style={{ marginBottom: 16, padding: 12 }}>
                   <code style={{ fontSize: 12, wordBreak: 'break-all' }}>{selectedLine}</code>
                 </div>
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
+import SceneHeader from '../components/SceneHeader'
 
 const FRAMEWORKS = ['CIS', 'ISO27001', 'NIST_800-53', 'STIG', 'PCI-DSS', 'SOC2']
 const PS_REQUIRED = new Set(['CIS', 'ISO27001', 'NIST_800-53', 'STIG'])
@@ -101,28 +102,35 @@ export default function ResultsView({ api, toast }) {
 
   return (
     <div>
-      <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Results &amp; Score</h1>
-      <p style={{ color: 'var(--text-dim)', marginBottom: 24, fontSize: 14 }}>
-        View compliance scores per framework and detailed test results.
-      </p>
+      <SceneHeader
+        index="02"
+        label="Evaluate"
+        title="Results & Score"
+        description="View compliance scores per framework and detailed test results."
+      />
 
-      <div className="card" style={{ marginBottom: 16, padding: 16 }}>
-        <label style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 8 }}>Benchmarks to evaluate (user-selected, per PS)</label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+      <section className="benchmark-panel" aria-labelledby="benchmark-heading">
+        <div className="benchmark-heading-row">
+          <div>
+            <span className="benchmark-eyebrow">Scan scope</span>
+            <h2 id="benchmark-heading">Benchmarks to evaluate</h2>
+          </div>
+          <span className="benchmark-count">{selectedFrameworks.size} / {FRAMEWORKS.length} selected</span>
+        </div>
+        <div className="benchmark-grid">
           {FRAMEWORKS.map(fw => (
-            <label key={fw} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+            <label className={`benchmark-option${selectedFrameworks.has(fw) ? ' is-selected' : ''}`} key={fw}>
               <input type="checkbox" checked={selectedFrameworks.has(fw)} onChange={() => toggleFramework(fw)} />
-              <span style={{ fontFamily: 'var(--mono)', fontWeight: selectedFrameworks.has(fw) ? 700 : 400 }}>{fw.replace(/_/g, ' ')}</span>
-              {PS_REQUIRED.has(fw) ? <span className="badge badge-info" style={{ fontSize: 10 }}>PS</span> : <span className="badge badge-bonus" style={{ fontSize: 10 }}>bonus</span>}
+              <span className="choice-control" aria-hidden="true" />
+              <span className="benchmark-name">{fw.replace(/_/g, ' ')}</span>
+              <span className="benchmark-tier">{PS_REQUIRED.has(fw) ? 'Core' : 'Extended'}</span>
             </label>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>
-          Default: all frameworks. Uncheck to filter scoring/reports/PDF to only selected benchmarks.
-        </div>
-      </div>
+        <p className="benchmark-help">At least one benchmark remains active. Your selection filters scoring, reports, and PDF exports.</p>
+      </section>
 
-      <form onSubmit={load} style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      <form onSubmit={load} noValidate style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
         <input
           type="text"
           value={inputSession}
@@ -143,7 +151,7 @@ export default function ResultsView({ api, toast }) {
       )}
 
       {error && !loading && (
-        <div className="card" style={{ borderLeft: '3px solid var(--red)' }}>
+        <div className="card">
           <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load results</h3>
           <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
           <button className="btn-secondary" onClick={load} style={{ marginTop: 8 }}>Retry</button>
@@ -174,6 +182,7 @@ export default function ResultsView({ api, toast }) {
             {FRAMEWORKS.map(fw => (
               <button
                 key={fw}
+                type="button"
                 className={`framework-tab ${activeFramework === fw ? 'active' : ''}`}
                 onClick={() => setActiveFramework(fw)}
               >

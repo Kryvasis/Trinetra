@@ -444,6 +444,10 @@ public class TrinetraSession {
             if (v == null && "timestamp".equals(key)) v = TrinetraCommon.nowIso();
             record.put(key, v);
         }
+        Object ingestionMethod = entry.get("ingestion_method");
+        if (ingestionMethod instanceof String && !((String) ingestionMethod).isBlank()) {
+            record.put("ingestion_method", ingestionMethod);
+        }
 
         List<Map<String, Object>> results =
             TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);
