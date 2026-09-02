@@ -68,25 +68,27 @@ Today, checking whether a network is configured securely means a human reading h
 
 *No code, just the flow a stakeholder can follow:*
 
-1. **Upload a config** — You pick a session name and drag in one config file or many at once (for example, `cisco-lab-01.txt` and `juniper-lab-01.txt`). You can also add the device's serial number, hardware model, and OS version if you have them; if you leave OS blank, the system reads it from the config header itself.
+1. **Upload a config** — You pick a session name and drag in one config file or many at once (for example, `cisco-lab-01.txt` and `juniper-lab-01.txt`). You can also add the device's serial number, hardware model, and OS version if you have them; if you leave OS blank, the system reads it from the config header itself. **Config-file upload is the PS-recommended primary method.**
 
-2. **System reads it** — The system figures out which vendor it is, breaks the config into lines, and checks each line against what it already knows.
+2. **Fetch from IP/URL (optional, additive)** — Alternatively, supply an IP/hostname (SSH) or URL (HTTP GET) and credentials; the system fetches the raw config text and feeds it into the *exact same* ingestion pipeline as a file upload — no second parsing path. This is an auto-sourced convenience (requires network reachability), not a replacement for offline upload, and not a live-scanning/fingerprinting system.
 
-3. **Compare against security frameworks** — For every recognized setting, it decides pass/fail using the same rule a human auditor would apply, then maps that result to the controls in the frameworks you selected — CIS, NIST 800-53, ISO 27001, and STIG. You can choose to score all four or just the ones you care about.
+3. **System reads it** — The system figures out which vendor it is, breaks the config into lines, and checks each line against what it already knows.
 
-4. **Flag what it doesn't know** — Any line it has never seen before is listed as "unrecognized," grouped by device.
+4. **Compare against security frameworks** — For every recognized setting, it decides pass/fail using the same rule a human auditor would apply, then maps that result to the controls in the frameworks you selected — CIS, NIST 800-53, ISO 27001, and STIG. You can choose to score all four or just the ones you care about.
 
-5. **A human teaches it** — In a simple form, you tell it what that new line means: which vendor it belongs to, what security category it is, which standard it maps to, and how to fix it if it's wrong. You can also note which OS version you saw it on.
+5. **Flag what it doesn't know** — Any line it has never seen before is listed as "unrecognized," grouped by device.
 
-6. **It remembers** — That teaching is saved as a pattern. The next time you upload the same kind of config, the line is recognized automatically — no code change, no redeploy.
+6. **A human teaches it** — In a simple form, you tell it what that new line means: which vendor it belongs to, what security category it is, which standard it maps to, and how to fix it if it's wrong. You can also note which OS version you saw it on.
 
-7. **Produce a report with fixes** — For any failures, it shows a risk level (critical/high/medium/low) and a numbered, device-specific list of commands to type to fix it. The whole thing is packaged into a report where every result is hash-chained, so anyone can verify afterward that the evidence hasn't been altered.
+7. **It remembers** — That teaching is saved as a pattern. The next time you upload the same kind of config, the line is recognized automatically — no code change, no redeploy.
+
+8. **Produce a report with fixes** — For any failures, it shows a risk level (critical/high/medium/low) and a numbered, device-specific list of commands to type to fix it. The whole thing is packaged into a report where every result is hash-chained, so anyone can verify afterward that the evidence hasn't been altered. Fetch-sourced devices appear identically but tagged `ingestion_method: live_fetch` for honest reporting.
 
 ---
 
-## 4. Final Scorecard — submission-facing audit (28 Aug 2026, cited, live-tested)
+## 4. Final Scorecard — submission-facing audit (28 Aug 2026, cited, live-tested — updated 28 Aug post 6-gap closure `3551a9d`)
 
-*This single table answers "does this meet the PS?" — no verdict without evidence. Detailed design per row is in §5–§6; plain-language reading is in the right-most column of the same table in the previous revision (preserved in git history `1f5322c`). Status freshly re-derived from code + live bridge tests on 28 Aug 2026.*
+*This single table answers "does this meet the PS?" — no verdict without evidence. Detailed design per row is in §5–§6; plain-language reading is in the right-most column of the same table in the previous revision (preserved in git history `1f5322c`). Status freshly re-derived from code + live bridge tests on 28 Aug 2026 and re-verified after `DEMO_SCRIPT.md` rewrite, `doctor` clean, and `ResultsView` canonical fix (see §7–§8, commit `3551a9d`).*
 
 | PS Deliverable | Verdict | Evidence-based justification (1 sentence, with citation + live proof) |
 |---|---|---|
@@ -136,14 +138,15 @@ Today, checking whether a network is configured securely means a human reading h
 ```
 
 * `Java core` is authoritative: session JSON (`sessions/<name>/<name>.json`), brain markdown/state (`brain_<name>.md`, `brain_state_<name>.json` with `normalized_results` hash chain), scorer, ingestion, training map, chain verification, SQLite audit log (`trinetra_audit.db`).
-* `Flask bridge` (`bridge/app.py`) is thin: validates inputs (regex `SESSION_RE`, `DEVICE_RE`, `VENDOR_RE`, injection chars), shells out to `trinetra` CLI or `java TrinetraBridgeHelper`, parses markdown to generate landscape PDF via ReportLab, serves Flask HTML fallback at `/`, `/ui`, `/upload` (unlinked, zero-dependency safety net).
-* `React frontend` (`frontend/src/*`, Vite) is the polished PS deliverable: 5 views (Upload, Results, Training, Session Devices, System Dashboard) that consume the same bridge endpoints — no response-shape changes.
+* `Flask bridge` (`bridge/app.py`) is thin: validates inputs (regex `SESSION_RE`, `DEVICE_RE`, `VENDOR_RE`, injection chars), shells out to `trinetra` CLI or `java TrinetraBridgeHelper`, parses markdown to generate landscape PDF via ReportLab, serves Flask HTML fallback at `/`, `/ui`, `/upload` (unlinked, zero-dependency safety net). The fetch layer `bridge/live_fetcher.py` is isolated: SSH uses strict `known_hosts` verification and in-memory PEM keys; URL collection validates every destination and redirect, blocks private addresses by default, strips credentials across origins, and caps responses at 1 MB. It returns raw config text only—never parsed results.
+* `React frontend` (`frontend/src/*`, Vite) is the polished PS deliverable: 5 views (Upload, Results, Training, Session Devices, System Dashboard) that consume the same bridge endpoints — no response-shape changes. Upload view now has a third mode “Fetch from IP/URL” (additive, not replacement) that calls `POST /fetch-config` and reuses the same Results/Devices/PDF flow.
 
 ### Key file locations
 
 | Capability | Files |
 |---|---|
-| Config ingestion | `src/TrinetraConfigIngestor.java:100` (ingest + OS detection `detectOsVersion:320`), `src/TrinetraSession.java:757` (device_details), `bridge/app.py:450` (`POST /upload-config`), `src/TrinetraBridgeHelper.java:136` (helper) |
+| Config ingestion | `src/TrinetraConfigIngestor.java:100` (ingest + OS detection `detectOsVersion:320`, now `ingest(..., ingestionMethod)` shared for `config_upload` + `live_fetch:110`), `src/TrinetraSession.java:757` (device_details + `device_ingestion` `live_fetch` tag), `bridge/app.py:450` (`POST /upload-config`) + `bridge/app.py:551` (`POST /fetch-config` → same `TrinetraConfigIngestor.ingest`), `src/TrinetraBridgeHelper.java:137` (helper now `ingest-config ... [ingestion_method]`), `bridge/live_fetcher.py:1` (isolated `TrinetraLiveFetcher` — SSH/URL thin retrieval, no parsing) |
+| Live-fetch (auto-sourced) | `bridge/live_fetcher.py:17` `VENDOR_COMMANDS` + `get_vendor_command` + `fetch_via_ssh`/`fetch_via_url`/`fetch_config` (why Python bridge layer: separable from Java core, reuses `paramiko`/`requests`, credentials never cross to Java persistence), `bridge/app.py:551` `POST /fetch-config` (validates, calls fetcher, then same `ingest-config … live_fetch`), `frontend/src/pages/UploadView.jsx:290` third mode “Fetch from IP/URL” (primary stays file upload) |
 | Vendor/training | `src/VendorTrainingMap.java:20`, `src/VendorConnectorRegistry.java:39`, `bridge/app.py:681` (`POST /train`), `frontend/src/pages/TrainingView.jsx` |
 | Scoring | `src/TrinetraComplianceScorer.java:41` (filtered overload), `config/compliance_manifest.json`, `src/TrinetraCompliance.java:64` |
 | Reporting | `src/TrinetraAuditReportBuilder.java:258` (10-col evidence + severity + displayName fallback), `src/TrinetraNarrativeGenerator.java:515` (practicalImpact fallback), `bridge/app.py:761` (PDF landscape, hardware, severity, step-by-step remediation) |
@@ -163,7 +166,7 @@ cd frontend && npm install && npm run dev   # Vite :5173 proxies /api → :5000
 trinetra -doctor      # 124 definitions, chain, AI integration check
 ```
 
-Bridge tests: `python3 -m pytest bridge/tests/test_bridge.py -v` (20 tests, ~240s), plus `test_fail_remediation` + `test_training_loop` → 23 total.
+Bridge tests: `python3 -m pytest bridge/tests -q` → 30 tests passed, including 4 mocked live-fetch/security tests. Live-fetch tests mock `bridge.live_fetcher.fetch_config` and confirm fetched text reaches `TrinetraConfigIngestor.ingest(..., live_fetch)` with the same compliance result as file upload while credentials remain absent from persisted state and error responses.
 
 ---
 
@@ -179,15 +182,19 @@ Bridge tests: `python3 -m pytest bridge/tests/test_bridge.py -v` (20 tests, ~240
 
 * **Remediation step-by-step is now 15/15 but still manually curated.** Numbered CLI sequences now exist for **all 15 manifest V-codes** (`V-003` through `V-144`, including newly added `V-005`, `V-070`, `V-087`, `V-105`, `V-106` (cloud `aws s3api`/`gsutil`), `V-107`, `V-144`) in both `bridge/app.py:990` and `src/TrinetraAgr.java:32` — each verified as real multi-step where applicable (e.g., `V-070: show version → compare to advisory → copy tftp → install add → verify`). Single-command fixes remain 1 step honestly (not padded). They are not auto-generated per new training entry — a new `V-999` taught via training still falls back to the generic `Review V-999 for device X and apply vendor hardening guide. (AI-suggested — verify before use)` until someone curates its steps. *Keep that fallback label visible.*
 
-* **Full OS-version branches + NCIIPC remain open going into submission** — these are the two explicitly-out-of-scope items from Prompt 24. They are the only honest gaps left; everything else in the 7-item audit is closed.
+* **Doctor + ResultsView fixable gaps now closed (28 Aug follow-up).** `src/TrinetraSession.java:175` `bootstrapBrainState()` now initializes `latest_score: null` — new sessions validate clean; 4 legacy `sessions/*/brain_state_*.json` (`demo`, `ses27_07_26`, `e2e_smoke2`, `e2e_wire`) patched; `trinetra -doctor` now reports `All sessions valid` (was `Missing latest_score`). `frontend/src/pages/ResultsView.jsx:163,192,210` now uses canonical `compliance_percentage` (scorer `TrinetraComplianceScorer.java:132`, bridge passthrough) — redundant `total_percentage`/`percentage` fallback removed with inline comment. `.gitignore:45-62` now broadly ignores ephemeral `sessions/audit_*/`, `pdf_quick_*`, `demo-judge*`, `test_audit_*` etc., so `git status` stays clean.
+
+* **Full OS-version branches + NCIIPC remain open going into submission** — these are the two explicitly-out-of-scope items from Prompt 24. They are the only honest gaps left; the 6 fixable gaps from the ranked list (DEMO STIG drift, bulk/hardware steps, OS auto-detect, repo cleanup, doctor `latest_score`, ResultsView fallback) are now closed and verified in `DEMO_SCRIPT.md:21-58` and commit `3551a9d`.
+
+* **Live-fetch is thin retrieval, not live scanning.** The IP/URL fetch (`bridge/live_fetcher.py`) only retrieves raw config text and feeds it into the same `TrinetraConfigIngestor.ingest` pipeline as file uploads—no duplicate normalization or fingerprinting. SSH rejects unknown host keys and server-side key paths; URL collection prevents private-address SSRF by default and validates redirects. Credentials exist only for one request, are never persisted, and remain masked in the frontend. `ingestion_method: live_fetch` stays distinct from `config_upload` for honest reporting.
 
 ---
 
 ## 8. Demo flow reference
 
-Full script is `DEMO_SCRIPT.md` (Prompt 23, 8–10 minutes). Quick reference for the table:
+Full script is `DEMO_SCRIPT.md` (Prompt 23, 8–10 minutes, **rewritten 28 Aug to match live UI**). Quick reference for the table:
 
-`Upload (single or bulk with serial/hardware/OS) → Results (pick CIS/STIG/etc., see %`+`bars) → Training (click unrecognized → fill category/controls → Add) → Re-upload same file → show count drops → Session Devices (per-device pass/fail + Serial/Hardware/OS) → Download PDF (landscape, Severity + Hardware columns + numbered remediation) → System → Run trinetra -doctor (124 defs, chain INTACT)`.
+`Upload (single with Serial `FTX999`/Hardware `C9300`/OS `IOS XE 17.6.5` — or blank for auto-detect from banner — then bulk 2 files in one action `cisco-lab-01.txt`+`juniper-lab-01.txt` → per-file Bulk Results table `pending→uploading→success`) → Results (pick CIS/NIST/ISO27001/STIG — STIG enabled 14/15 `CISC-ND`/`JUSX-ND`, `V-106` gap honest — + bonus PCI-DSS/SOC2, filter `?frameworks=CIS` → `Frameworks scored:1`) → Training (click unrecognized `custom-vendor-feature enable zone-trust` → fill category/controls → Add) → Re-upload same file → show count drops → Session Devices (per-device pass/fail + Serial/Hardware/OS) → Download PDF (ReportLab `landscape`, Serial/Hardware/OS/Severity distinct columns + numbered `1. configure terminal …` remediation) → System → Run `trinetra -doctor` (124 defs, `All sessions valid`, `INTACT`)`.
 
 Point the judge to `demo/sample_configs/cisco-lab-01.txt` (contains `custom-vendor-feature enable zone-trust` unrecognized line + `IOS XE 17.6.5` banner) and `juniper-lab-01.txt`.
 
@@ -217,7 +224,7 @@ Point the judge to `demo/sample_configs/cisco-lab-01.txt` (contains `custom-vend
 
 9. **Team / why us** — *Content:* who did what (Java core, Flask bridge, React frontend, STIG research, training loop), and that the system is CLI-first and runs on Kali Linux (the target environment).
 
-10. **Close** — *Content:* one number: `124 test definitions, 23 bridge tests passing, tamper chain INTACT`, plus QR/link to the repo and the line "Ask us to audit *your* config."
+ 10. **Close** — *Content:* one number: `124 test definitions, 27 bridge tests passing (incl. 4 mocked live-fetch), tamper chain INTACT`, plus QR/link to the repo and the line "Ask us to audit *your* config — file or live-fetch."
 
 ### Per-slide content bullets
 
@@ -262,7 +269,7 @@ trinetra -audit-report <session> [--frameworks CIS,ISO27001]  # final deliverabl
 trinetra -doctor                           # system diagnostics
 ```
 
-Bridge API (React or curl): `POST /api/session`, `POST /api/session/<name>/upload-config` (multipart `config` + `serial_number`/`hardware_model`/`os_version` or JSON `config_content`), `GET /api/session/<name>/devices`, `GET /api/session/<name>/score?frameworks=CIS,STIG`, `POST /api/session/<name>/train`, `GET /api/session/<name>/audit-report/pdf?frameworks=CIS` (landscape PDF).
+Bridge API (React or curl): `POST /api/session`, `POST /api/session/<name>/upload-config` (multipart `config` + `serial_number`/`hardware_model`/`os_version` or JSON `config_content`), `POST /api/session/<name>/fetch-config` (`source_type: ip|url`, `target`, `device_id`, `vendor`, optional `serial_number`/`hardware_model`/`os_version`, plus `username`/`password`/`ssh_key` for ip or `auth_token`/`auth_header` for url — thin fetch → same `TrinetraConfigIngestor.ingest(..., live_fetch)`), `GET /api/session/<name>/devices` (shows `ingestion_method: live_fetch` vs `config_upload`), `GET /api/session/<name>/score?frameworks=CIS,STIG`, `POST /api/session/<name>/train`, `GET /api/session/<name>/audit-report/pdf?frameworks=CIS` (landscape PDF, includes live-fetch devices).
 
 ## Tests
 
