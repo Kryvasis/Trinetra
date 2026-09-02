@@ -49,6 +49,8 @@ sessions/err_test_*/
 sessions/bridge_test_*/
 sessions/nonexistent_*/
 sessions/this_session_*/
+sessions/tmp_*/
+sessions/live_fetch_*/
 # Audit/demo ephemeral sessions (created by live audit scripts / manual demo runs)
 sessions/audit_*/
 sessions/audit_d*/

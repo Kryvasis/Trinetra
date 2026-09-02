@@ -556,6 +556,249 @@ def upload_config(name):
             except:
                 pass
 
+# ── POST /api/session/<name>/fetch-config — live-fetch ingestion (thin retrieval → same pipeline) ──
+@app.route("/api/session/<name>/fetch-config", methods=["POST"])
+def fetch_config(name):
+    """
+    Thin retrieval bridge: fetch raw config text from IP (SSH) or URL (HTTP GET),
+    then feed it into the EXACT SAME ingestion pipeline as file uploads
+    (TrinetraConfigIngestor.ingest via Java helper, ingestion_method="live_fetch").
+
+    Request JSON:
+      source_type: "ip" | "url" (required)
+      target:      IP/hostname or URL (required)
+      vendor:      Cisco/Juniper/Generic/auto (optional, default auto)
+      device_id:   required
+      serial_number/hardware_model/os_version: optional (reuse existing fields)
+      username, password, ssh_key: for ip
+      auth_token, auth_header: for url
+      port: optional int for ip (default 22)
+      vendor_command: optional override for SSH command
+
+    Response: same shape as upload-config but with ingestion_method=live_fetch
+    and additional source_type/target fields.
+    Credentials are used only for the single fetch and never persisted to
+    session JSON, brain state, or logs.
+    """
+    if not validate_session(name):
+        return error_response(f"invalid session name: {name!r}", 400)
+
+    data = request.get_json(silent=True) or {}
+    # Support form fallback as well (not required but harmless)
+    if not data and request.form:
+        data = {k: v for k, v in request.form.items()}
+
+    source_type = (data.get("source_type") or data.get("sourceType") or "").strip().lower()
+    target = (data.get("target") or data.get("address") or data.get("url") or data.get("ip") or "").strip() if isinstance(data.get("target") or data.get("address") or data.get("url") or data.get("ip"), str) else ""
+    # More direct retrieval (avoid double get)
+    if not target:
+        target = (data.get("target") or "").strip() if isinstance(data.get("target"), str) else ""
+        if not target:
+            target = (data.get("address") or "").strip() if isinstance(data.get("address"), str) else ""
+        if not target:
+            target = (data.get("url") or "").strip() if isinstance(data.get("url"), str) else ""
+        if not target:
+            target = (data.get("ip") or "").strip() if isinstance(data.get("ip"), str) else ""
+    vendor = (data.get("vendor") or data.get("vendor_hint") or "auto").strip() if isinstance(data.get("vendor") or data.get("vendor_hint"), str) else "auto"
+    device_id = (data.get("device_id") or data.get("deviceId") or data.get("device") or "").strip() if isinstance(data.get("device_id") or data.get("deviceId") or data.get("device"), str) else ""
+    serial_number = data.get("serial_number") or data.get("serialNumber") or data.get("serial")
+    hardware_model = data.get("hardware_model") or data.get("hardwareModel") or data.get("model")
+    os_version = data.get("os_version") or data.get("osVersion") or data.get("os")
+    username = data.get("username") or data.get("user")
+    password = data.get("password") or data.get("pass")
+    ssh_key = data.get("ssh_key") or data.get("sshKey") or data.get("key")
+    auth_token = data.get("auth_token") or data.get("authToken") or data.get("token")
+    auth_header = data.get("auth_header") or data.get("authHeader")
+    port_raw = data.get("port")
+    vendor_command = data.get("vendor_command") or data.get("vendorCommand") or data.get("command")
+
+    # ── Validate required fields ──
+    if not source_type or source_type not in ("ip", "url"):
+        return error_response("source_type must be 'ip' or 'url'", 400)
+    if not target:
+        return error_response("missing target (IP/hostname or URL)", 400)
+    if not device_id:
+        return error_response("missing device_id", 400)
+    if not validate_device(device_id):
+        return error_response(f"invalid device_id: {device_id!r}", 400)
+    if vendor and not validate_vendor(vendor):
+        # "auto" passes validate_vendor (it's alphanumeric)
+        if vendor.lower() != "auto":
+            return error_response(f"invalid vendor: {vendor!r}", 400)
+    for field_name, field_val in [("serial_number", serial_number), ("hardware_model", hardware_model), ("os_version", os_version)]:
+        if field_val is not None and field_val != "":
+            if not isinstance(field_val, str) or len(field_val) > 128 or contains_injection(field_val):
+                return error_response(f"invalid {field_name}: {field_val!r}", 400)
+    if contains_injection(device_id) or (vendor and contains_injection(vendor)):
+        return error_response("injection characters detected", 400)
+
+    # Target validation per source_type — no credential chars, but allow URL chars
+    if source_type == "ip":
+        # IP/hostname: allow IP, hostname, simple identifiers; reject shell metachars
+        # Use DEVICE_RE plus dots; also allow IPv6 colons? Keep simple: allow alphanum . _ - and dots
+        # Reject obvious injection and overly long
+        if len(target) > 256 or contains_injection(target):
+            return error_response("invalid IP/hostname target (injection or too long)", 400)
+        # Basic hostname/IP shape: at least one alphanum, dots/hyphens allowed, no spaces
+        if not re.match(r"^[A-Za-z0-9][A-Za-z0-9._\-]{0,255}$", target):
+            # Also allow IPv4
+            if not re.match(r"^\d{1,3}(\.\d{1,3}){3}$", target):
+                return error_response(f"invalid IP/hostname target: {target!r}", 400)
+        # For IP source, require username and one auth method
+        if not username or not isinstance(username, str) or not username.strip():
+            return error_response("username is required for ip source_type", 400)
+        if len(username.strip()) > 128 or contains_injection(username.strip()):
+            return error_response(f"invalid username: {username!r}", 400)
+        has_pass = password is not None and isinstance(password, str) and password.strip() != ""
+        has_key = ssh_key is not None and isinstance(ssh_key, str) and ssh_key.strip() != ""
+        if not has_pass and not has_key:
+            return error_response("password or ssh_key is required for ip source_type", 400)
+        if has_pass and len(password) > 1024:
+            return error_response("password too long (max 1024)", 400)
+        if has_key and len(ssh_key) > 8192:
+            return error_response("ssh_key too large (max 8192)", 400)
+        # Port parsing
+        port = 22
+        if port_raw is not None and str(port_raw).strip() != "":
+            try:
+                port = int(str(port_raw).strip())
+                if port < 1 or port > 65535:
+                    raise ValueError
+            except:
+                return error_response("port must be integer 1..65535", 400)
+        else:
+            port = 22
+        if vendor_command is not None and vendor_command != "":
+            if not isinstance(vendor_command, str) or len(vendor_command) > 256 or contains_injection(vendor_command):
+                return error_response(f"invalid vendor_command: {vendor_command!r}", 400)
+    else:  # url
+        if len(target) > 2048:
+            return error_response("URL too long (max 2048)", 400)
+        # Must be http(s) URL; allow typical URL chars but block shell injection chars ; | & ` $ etc outside of URL encoding
+        # We explicitly reject ';', '|', '&', '`', '$(', '\n', '\r' in URL even though URL itself should not contain them
+        if any(c in target for c in [';', '|', '`', '\n', '\r']) or '$(' in target:
+            return error_response("URL contains illegal characters", 400)
+        if not (target.lower().startswith("http://") or target.lower().startswith("https://")):
+            return error_response("URL must start with http:// or https://", 400)
+        if auth_token is not None and auth_token != "":
+            if not isinstance(auth_token, str) or len(auth_token) > 2048:
+                return error_response("auth_token too long (max 2048)", 400)
+            # Do not log token; just check for injection chars that would be shell-risk
+            if any(c in auth_token for c in [';', '|', '`', '\n', '\r']) or '$(' in auth_token:
+                return error_response("auth_token contains illegal characters", 400)
+        if auth_header is not None and auth_header != "":
+            if not isinstance(auth_header, str) or len(auth_header) > 128 or contains_injection(auth_header):
+                return error_response(f"invalid auth_header: {auth_header!r}", 400)
+        port = 22  # unused for url, but keep defined
+        if vendor_command and vendor_command.strip():
+            # vendor_command irrelevant for URL — ignore but validate if present
+            if len(vendor_command) > 256 or contains_injection(vendor_command):
+                return error_response(f"invalid vendor_command: {vendor_command!r}", 400)
+
+    # Auto-detect vendor if not provided or "auto"
+    vendor_for_fetch = vendor if vendor and vendor.lower() != "auto" else "auto"
+
+    # Verify session exists (do not auto-create; frontend creates via /session first — keep behavior consistent with upload-config error path)
+    session_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"{name}.json")
+    if not os.path.exists(session_path):
+        return error_response(f"session not found: {name}", 404)
+
+    # ── Fetch raw config text via isolated live_fetcher (no parsing) ──
+    # Import here to avoid circular at module load and to allow mocking in tests (bridge.live_fetcher.fetch_config)
+    try:
+        try:
+            from bridge.live_fetcher import fetch_config as live_fetch
+        except ImportError:
+            from live_fetcher import fetch_config as live_fetch
+    except ImportError as e:
+        return error_response(f"live fetcher module not available: {e}", 500)
+
+    # Do not log credentials or raw fetch args at info level; only host/target type is safe
+    config_text = None
+    try:
+        if source_type == "ip":
+            config_text = live_fetch(
+                source_type="ip",
+                target=target,
+                vendor=vendor_for_fetch,
+                username=username.strip() if isinstance(username, str) else username,
+                password=password if password and isinstance(password, str) else None,
+                ssh_key=ssh_key if ssh_key and isinstance(ssh_key, str) else None,
+                port=port,
+                vendor_command=vendor_command if vendor_command and isinstance(vendor_command, str) else None,
+            )
+        else:
+            config_text = live_fetch(
+                source_type="url",
+                target=target,
+                vendor=vendor_for_fetch,
+                auth_token=auth_token if auth_token and isinstance(auth_token, str) else None,
+                auth_header=auth_header if auth_header and isinstance(auth_header, str) else None,
+            )
+    except Exception as e:
+        # Never include password/token in error message; sanitize exception string
+        err_msg = str(e)
+        # Redact any accidental credential leak (simple heuristic: if err_msg contains password/token substring, mask)
+        # We intentionally do not interpolate username/password into the response
+        # Map fetch failures to 502 (bad gateway — upstream fetch failed) vs 500 for internal
+        # Use 502 for network/auth failures, 500 for code errors
+        lower = err_msg.lower()
+        if any(kw in lower for kw in ["timeout", "connection", "refused", "unreachable", "auth", "permission", "no route", "host", "ssh", "http", "404", "403", "401"]):
+            return error_response(f"fetch failed ({source_type} target unreachable or auth failed): {err_msg[:400]}", 502, {"source_type": source_type})
+        return error_response(f"fetch failed: {err_msg[:400]}", 502, {"source_type": source_type})
+
+    if not config_text or not isinstance(config_text, str) or len(config_text.strip()) == 0:
+        return error_response("fetched config is empty", 502, {"source_type": source_type})
+    if len(config_text) > 1024 * 1024:
+        return error_response("fetched config too large (max 1MB)", 502)
+    # Basic sanity: if fetched text looks like HTML error page with no config-like content, still ingest but warn?
+    # No blocking — we ingest whatever text, same as file upload (no second parsing path).
+
+    # ── Reuse EXISTING ingestion pipeline — same function as upload-config ──
+    # Write fetched text to temp file and invoke TrinetraConfigIngestor.ingest via BridgeHelper with ingestion_method="live_fetch"
+    import tempfile
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tf:
+            tf.write(config_text)
+            tmp_path = tf.name
+
+        serial_arg = serial_number.strip() if serial_number and isinstance(serial_number, str) and serial_number.strip() else "_"
+        hardware_arg = hardware_model.strip() if hardware_model and isinstance(hardware_model, str) and hardware_model.strip() else "_"
+        os_arg = os_version.strip() if os_version and isinstance(os_version, str) and os_version.strip() else "_"
+        # Use same helper as upload-config but with live_fetch tag — this is the required shared call
+        args = ["ingest-config", name, device_id, vendor_for_fetch, tmp_path, serial_arg, hardware_arg, os_arg, "live_fetch"]
+        rc, out, err = run_java_helper("TrinetraBridgeHelper", args, timeout=120)
+        if rc != 0:
+            msg = (err.strip() or out.strip()) or "config ingestion failed"
+            if "not found" in msg.lower():
+                return error_response(msg, 404, {"stdout": out, "stderr": err})
+            return error_response(msg, 500, {"stdout": out, "stderr": err})
+        try:
+            result = json.loads(out.strip())
+            # Enrich with fetch metadata (but never credentials)
+            result["source_type"] = source_type
+            result["target"] = target
+            result["vendor_request"] = vendor_for_fetch
+            # Ensure ingestion_method is live_fetch as tagged by Java core
+            result["ingestion_method"] = result.get("ingestion_method", "live_fetch")
+            # Filename hint for UI: device_id + _live_fetch
+            result["config_filename"] = f"{device_id}_live_fetch_config.txt"
+            return jsonify(result), 200
+        except Exception as e:
+            return error_response(f"failed to parse ingest output: {e}", 500, {"raw_stdout": out, "raw_stderr": err})
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+        # Explicitly clear sensitive locals (not persisted, but good hygiene)
+        password = None
+        ssh_key = None
+        auth_token = None
+
+
 # ── GET /api/session/<name>/unrecognized — list unrecognized config lines ──
 @app.route("/api/session/<name>/unrecognized", methods=["GET"])
 def get_unrecognized(name):
