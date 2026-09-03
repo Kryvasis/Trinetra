@@ -103,11 +103,17 @@ The Upload workspace treats file upload as the recommended path and live collect
 
 ### Data regions
 
+All evidence intake lives in Upload & collect. Input-method and network-source buttons
+precede the device form. Public website observations use their own form and results
+inside this flow, with no device metadata or compliance scoring. Existing `/website`
+links redirect to the website source. Selected buttons expose `aria-pressed`; collection
+source controls lock while requests are pending. Visual tokens and motion are unchanged.
+
 Legacy `card` classes render as flat ruled sections for compatibility; they must not look like cards. Statistics share one ruled row with dividers. Tables own horizontal scrolling and use native semantic markup. Badges are underlined status words rather than pills.
 
 ### Motion
 
-The Canvas globe runs at a maximum of roughly 24 FPS, caps device pixel ratio at 1.25, pauses when the tab is hidden, and stores pointer movement outside React state. Intro elements arrive in one orchestrated sequence; the circular action rotates slowly to signal interactivity. Opening the workspace uses a 760ms solid-color wipe with a clear beginning and end. Workspace routes use one restrained fade-and-rise entrance. Reduced-motion mode freezes ambient animation and opens the workspace immediately while preserving state feedback.
+The Canvas globe runs at a maximum of roughly 24 FPS, caps device pixel ratio at 1.25, pauses when the tab is hidden, and stores pointer movement outside React state. Intro elements arrive in one orchestrated sequence; the circular action rotates slowly to signal interactivity. Opening the workspace uses a 760ms top-to-bottom vertical solid-color wipe with a clear beginning and end, owned by `.intro-wipe` and `workspace-wipe` in `frontend/src/scene.css`. Workspace routes use one restrained fade-and-rise entrance. Reduced-motion mode freezes ambient animation and opens the workspace immediately while preserving state feedback.
 
 ## Do's and Don'ts
 

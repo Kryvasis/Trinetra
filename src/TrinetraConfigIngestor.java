@@ -116,6 +116,11 @@ public class TrinetraConfigIngestor {
     /** Full ingest with a constrained provenance tag for upload or live collection. */
     public static IngestResult ingest(String sessionName, String deviceId, String vendorHint, String configContent, String filename,
                                       String serialNumber, String hardwareModel, String osVersion, String ingestionMethod) {
+        // Reject web documents before changing session metadata or writing artifacts.
+        if (configContent != null && Pattern.compile("(?is)^\\s*\\ufeff?\\s*(?:<\\?xml[^>]*>\\s*)?(?:<!--.*?-->\\s*)*(?:<!doctype\\s+html\\b|<html\\b|<head\\b|<body\\b)")
+                .matcher(configContent.substring(0, Math.min(configContent.length(), 65536))).find()) {
+            throw new IllegalArgumentException("Webpages are not device configurations. Use Website analysis or provide a device export.");
+        }
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
         String methodTag = "live_fetch".equals(ingestionMethod) ? "live_fetch" : "config_upload";
         String vendor = vendorHint;
@@ -240,7 +245,11 @@ public class TrinetraConfigIngestor {
             String rawForCheck = configContent != null ? configContent : "";
             // For training-mapped lines, we could inject the security_category into rawForCheck to influence decision
             // But for now, just use the raw config
-            TrinetraStat.Verdict verdict = TrinetraStat.DecisionEngine.evaluate(def.decisionRule, rawForCheck, 0);
+            boolean requiresRuntime = "exit_code_zero".equals(def.decisionRule.evalMethod)
+                || "numeric_threshold".equals(def.decisionRule.evalMethod);
+            TrinetraStat.Verdict verdict = requiresRuntime
+                ? TrinetraStat.Verdict.MANUAL_REVIEW
+                : TrinetraStat.DecisionEngine.evaluate(def.decisionRule, rawForCheck, 0);
             // If manual review, try to infer from lineToVcode: if we had a matching line for this V-code, then it's relevant
             // For config, we want deterministic PASS/FAIL, not manual_review, so we can use the line presence as signal
             // For demo: if V-code was triggered by a line, use that line's presence to decide
@@ -262,7 +271,9 @@ public class TrinetraConfigIngestor {
             finding.put("ended_at", TrinetraCommon.nowIso());
             finding.put("exit_code", 0);
             finding.put("verdict", verdict.name().toLowerCase());
-            finding.put("verdict_detail", def.decisionRule.evalMethod + " -> " + verdict + " (config-file)");
+            finding.put("verdict_detail", requiresRuntime
+                ? "Runtime evidence required; an uploaded configuration cannot establish a command exit code or runtime numeric measurement."
+                : def.decisionRule.evalMethod + " -> " + verdict + " (config-file; verify full configuration and applicability)");
             finding.put("eval_method", def.decisionRule.evalMethod);
             finding.put("pass_criteria", def.decisionRule.passCriteria);
             finding.put("fail_criteria", def.decisionRule.failCriteria);

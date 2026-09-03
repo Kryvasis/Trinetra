@@ -285,6 +285,7 @@ export default function TrainingView({ api, toast }) {
                 <div className="form-group">
                   <label>Remediation (optional)</label>
                   <textarea
+                    className="resize-none"
                     value={remediation}
                     onChange={e => setRemediation(e.target.value)}
                     rows={3}

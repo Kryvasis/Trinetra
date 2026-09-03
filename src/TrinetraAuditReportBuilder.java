@@ -67,49 +67,19 @@ public class TrinetraAuditReportBuilder {
             return null;
         }
 
-        // ── Plane 2: scorer output (generate if absent) ──
-        // When a filter is active, always regenerate filtered score rather than
-        // reusing canonical file (which contains all frameworks).
-        Map<String, Object> score;
-        Path scorePath;
-        if (frameworkFilter != null && !frameworkFilter.isEmpty()) {
-            score = TrinetraComplianceScorer.score(sanitized, frameworkFilter);
-            scorePath = TrinetraComplianceScorer.scoreAndWrite(sanitized, frameworkFilter);
-            TrinetraCommon.logInfo("Generated filtered scorer output: " + scorePath);
-        } else {
-            scorePath = TrinetraCommon.sessionDir(sanitized)
-                .resolve("compliance_score_" + sanitized + ".json");
-            if (Files.exists(scorePath)) {
-                score = TrinetraCommon.readJsonFile(scorePath);
-                if (score.isEmpty()) {
-                    TrinetraComplianceScorer.scoreAndWrite(sanitized);
-                    score = TrinetraCommon.readJsonFile(scorePath);
-                }
-                TrinetraCommon.logInfo("Reusing existing scorer output: " + scorePath);
-            } else {
-                scorePath = TrinetraComplianceScorer.scoreAndWrite(sanitized);
-                score = TrinetraCommon.readJsonFile(scorePath);
-            }
-        }
+        // Rebuild on explicit export: file existence is not a freshness check.
+        Path scorePath = TrinetraComplianceScorer.scoreAndWrite(sanitized, frameworkFilter);
+        Map<String, Object> score = TrinetraCommon.readJsonFile(scorePath);
 
         // ── Plane 3: narrative (generate if absent) ──
         Path narrPath = TrinetraCommon.sessionDir(sanitized)
             .resolve("compliance_narrative_" + sanitized + ".md");
         String narrative;
         String narrativeSource;
-        if (Files.exists(narrPath)) {
-            narrative = orEmpty(TrinetraCommon.readFileIfExists(narrPath));
-            narrativeSource = narrative.contains(TEMPLATE_MARKER)
-                ? TrinetraNarrativeGenerator.SOURCE_TEMPLATE
-                : TrinetraNarrativeGenerator.SOURCE_LLM;
-            TrinetraCommon.logInfo("Reusing existing narrative: " + narrPath);
-        } else {
-            Map<String, Object> meta =
-                TrinetraNarrativeGenerator.generateReport(sanitized, score);
-            narrativeSource = TrinetraCommon.getString(meta, "source",
-                TrinetraNarrativeGenerator.SOURCE_TEMPLATE);
-            narrative = orEmpty(TrinetraCommon.readFileIfExists(narrPath));
-        }
+        Map<String, Object> meta = TrinetraNarrativeGenerator.generateReport(sanitized, score);
+        narrativeSource = TrinetraCommon.getString(meta, "source",
+            TrinetraNarrativeGenerator.SOURCE_TEMPLATE);
+        narrative = orEmpty(TrinetraCommon.readFileIfExists(narrPath));
         boolean templateMode =
             TrinetraNarrativeGenerator.SOURCE_TEMPLATE.equals(narrativeSource);
 
@@ -223,12 +193,16 @@ public class TrinetraAuditReportBuilder {
           .append(" |\n\n");
 
         sb.append("## Compliance Score\n\n");
-        sb.append("- **Compliance percentage: ")
+        sb.append("Mapped-check pass rate is not a compliance certification. Unresolved outcomes are not confirmed failures.\n\n");
+        sb.append("- **Mapped-check pass rate: ")
           .append(pctOf(fwScore)).append("%**\n");
         sb.append("- Mapped tests passed: ").append(intOf(fwScore, "tests_passed"))
           .append("\n");
         sb.append("- Mapped tests failed: ").append(intOf(fwScore, "tests_failed"))
           .append("\n");
+        sb.append("- Manual review: ").append(intOf(fwScore, "tests_manual_review"))
+          .append("; errors: ").append(intOf(fwScore, "tests_errors"))
+          .append("; not tested: ").append(intOf(fwScore, "tests_not_tested")).append("\n");
         sb.append("- Total mapped tests: ").append(intOf(fwScore, "total_tests_mapped"))
           .append("\n\n");
 
@@ -336,11 +310,11 @@ public class TrinetraAuditReportBuilder {
             maxPct = Math.max(maxPct, pct);
         }
 
-        sb.append("**Overall posture (derived aggregate): ");
+        sb.append("**Average mapped-check pass rate (derived aggregate): ");
         if (frameworks.isEmpty()) {
             sb.append("N/A — no compliance-mapped frameworks were exercised");
         } else {
-            sb.append(round1(aggregate)).append("% average compliance");
+            sb.append(round1(aggregate)).append("% (not a compliance certification)");
         }
         sb.append(".**\n\n");
         sb.append("The figure above is a **derived aggregate computed deterministically ")
@@ -373,11 +347,15 @@ public class TrinetraAuditReportBuilder {
                 continue;
             }
             Map<String, Object> fwScore = (Map<String, Object>) e.getValue();
-            sb.append("- Compliance percentage: **").append(pctOf(fwScore)).append("%**\n");
+            sb.append("- Mapped-check pass rate: **").append(pctOf(fwScore)).append("%**\n");
             sb.append("- Passed/failed/total mapped: ")
               .append(intOf(fwScore, "tests_passed")).append("/")
               .append(intOf(fwScore, "tests_failed")).append("/")
               .append(intOf(fwScore, "total_tests_mapped")).append("\n");
+            sb.append("- Manual review/errors/not tested: ")
+              .append(intOf(fwScore, "tests_manual_review")).append("/")
+              .append(intOf(fwScore, "tests_errors")).append("/")
+              .append(intOf(fwScore, "tests_not_tested")).append("\n");
             List<String> covered = strList(fwScore.get("controls_covered"));
             List<String> gaps = strList(fwScore.get("coverage_gaps"));
             sb.append("- Controls covered (").append(covered.size()).append("): ")

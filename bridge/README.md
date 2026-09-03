@@ -1,6 +1,6 @@
 # Trinetra Flask Bridge
 
-Python Flask bridge exposing the Java `trinetra` CLI as REST endpoints for the future React UI. **No business logic is reimplemented in Python** — the Java backend remains the single source of truth; the bridge only shells out to the CLI via `subprocess` (no shell, argument list) and relays structured output.
+Python Flask bridge exposing the Java `trinetra` CLI as REST endpoints for the React UI. Java remains the source of truth for **device configuration auditing and compliance scoring**. The separate Website mode runs bounded HTTP/TLS observations in Python, never through the Java scorer. See [Website analysis](../WEBSITE-ANALYSIS.md) for scope, endpoints, report lifetime and operational limits.
 
 ## Architecture
 

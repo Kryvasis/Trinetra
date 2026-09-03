@@ -1,0 +1,105 @@
+{
+  "session_name": "aaa",
+  "target": "aa",
+  "state": "brain_updated",
+  "last_updated": "2026-09-03T19:21:55.954950764Z",
+  "brain_md_path": "/home/mystic/Trinetra/sessions/aaa/brain_aaa.md",
+  "brain_backup_path": "/home/mystic/Trinetra/sessions/aaa/brain_aaa.bak.md",
+  "byte_size": 272,
+  "estimated_tokens": 68,
+  "compression_count": 0,
+  "already_run_v_codes": [
+    "V-058",
+    "V-013",
+    "V-071",
+    "V-006",
+    "V-007",
+    "V-057",
+    "V-003",
+    "UNRECOGNIZED"
+  ],
+  "confirmed_findings": [],
+  "suspected_findings": [],
+  "counts": {
+    "total_runs": "8",
+    "success_runs": "0",
+    "failed_runs": "8",
+    "unsummarized": "7"
+  },
+  "latest_suggestion": null,
+  "suggestion_history": [],
+  "latest_score": null,
+  "normalized_results": [
+    {
+      "device_id": "aa",
+      "vendor": "Cisco",
+      "test_id": "V-058",
+      "raw_output": "<!DOCTYPE html><html style=\"font-size: 62.5%;font-family: Roboto, Arial, sans-serif;\" lang=\"en-GB\" darker-dark-theme darker-dark-theme-deprecate system-icons color-version=\"v2_0\" typography typography-spacing><head><script data-id=\"_gd\" nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">window.WIZ_global_data = {\"AfY8Hf\":true,\"FL1an\":false,\"HiPsbb\":0,\"MUE6Ne\":\"youtube_web\",\"MuJWjd\":false,\"TSDtV\":\"%.@.]\",\"UUFaWc\":\"%.@.null,1000,2]\",\"cfb2h\":\"youtube.web-front-end-critical_20260831.09_p0\",\"fPDxwd\":[],\"hsFLT\":\"%.@.null,10,3]\",\"iCzhFc\":false,\"nQyAE\":{},\"oxN3nb\":{\"1\":false,\"0\":false,\"610401301\":false,\"899588437\":false,\"772657768\":true,\"513659523\":false,\"568333945\":true,\"1331761403\":true,\"651175828\":false,\"722764542\":false,\"748402145\":false,\"748402146\":false,\"748402147\":true,\"1602613185\":true,\"861377723\":false,\"861377724\":false,\"869336903\":false,\"882674507\":false,\"869336904\":false,\"869336905\":false,\"283953155\":false,\"919444824\":true,\"928875398\":true,\"683749201\":false},\"u4g7r\":\"%.@.null,1,3]\",\"xnI9P\":true,\"xwAfE\":true,\"yFnxrf\":2486};</script><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><meta http-equiv=\"origin-trial\" content=\"ApvK67ociHgr2egd6c2ZjrfPuRs8BHcvSggogIOPQNH7GJ3cVlyJ1NOq/COCdj0+zxskqHt9HgLLETc8qqD+vwsAAABteyJvcmlnaW4iOiJodHRwczovL3lvdXR1YmUuY29tOjQ0MyIsImZlYXR1cmUiOiJQcml2YWN5U2FuZGJveEFkc0FQSXMiLCJleHBpcnkiOjE2OTUxNjc5OTksImlzU3ViZG9tYWluIjp0cnVlfQ==\"/><meta name=\"apple-itunes-app\" content=\"app-id=544007664, app-argument=https://www.youtube.com/?referring_app=com.apple.mobilesafari-smartbanner, affiliate-data=ct=smart_app_banner_polymer&amp;pt=9008\"><script nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">var ytcfg={d:function(){return window.yt&&yt.config_||ytcfg.data_||(ytcfg.data_={})},get:function(k,o){return k in ytcfg.d()?ytcfg.d()[k]:o},set:function(){var a=arguments;if(a.length>1)ytcfg.d()[a[0]]=a[1];else{var k;for(k in a[0])ytcfg.d()[k]=a[0][k]}}};\nwindow.ytcfg.set('EMERGENCY_BASE_URL', '\\/error_204?t\\x3djserror\\x26level\\x3dERROR\\x26client.name\\x3d1\\x26client.version\\x3d2.20260903.",
+      "normalized_result": "pass",
+      "timestamp": "2026-09-03T19:21:55.748201898Z",
+      "ingestion_method": "live_fetch",
+      "chain_hash": "a2ce9fd8a1c15347a322bf745ffaf6905749269138f776145bbf0462394854a9"
+    },
+    {
+      "device_id": "aa",
+      "vendor": "Cisco",
+      "test_id": "V-013",
+      "raw_output": "<!DOCTYPE html><html style=\"font-size: 62.5%;font-family: Roboto, Arial, sans-serif;\" lang=\"en-GB\" darker-dark-theme darker-dark-theme-deprecate system-icons color-version=\"v2_0\" typography typography-spacing><head><script data-id=\"_gd\" nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">window.WIZ_global_data = {\"AfY8Hf\":true,\"FL1an\":false,\"HiPsbb\":0,\"MUE6Ne\":\"youtube_web\",\"MuJWjd\":false,\"TSDtV\":\"%.@.]\",\"UUFaWc\":\"%.@.null,1000,2]\",\"cfb2h\":\"youtube.web-front-end-critical_20260831.09_p0\",\"fPDxwd\":[],\"hsFLT\":\"%.@.null,10,3]\",\"iCzhFc\":false,\"nQyAE\":{},\"oxN3nb\":{\"1\":false,\"0\":false,\"610401301\":false,\"899588437\":false,\"772657768\":true,\"513659523\":false,\"568333945\":true,\"1331761403\":true,\"651175828\":false,\"722764542\":false,\"748402145\":false,\"748402146\":false,\"748402147\":true,\"1602613185\":true,\"861377723\":false,\"861377724\":false,\"869336903\":false,\"882674507\":false,\"869336904\":false,\"869336905\":false,\"283953155\":false,\"919444824\":true,\"928875398\":true,\"683749201\":false},\"u4g7r\":\"%.@.null,1,3]\",\"xnI9P\":true,\"xwAfE\":true,\"yFnxrf\":2486};</script><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><meta http-equiv=\"origin-trial\" content=\"ApvK67ociHgr2egd6c2ZjrfPuRs8BHcvSggogIOPQNH7GJ3cVlyJ1NOq/COCdj0+zxskqHt9HgLLETc8qqD+vwsAAABteyJvcmlnaW4iOiJodHRwczovL3lvdXR1YmUuY29tOjQ0MyIsImZlYXR1cmUiOiJQcml2YWN5U2FuZGJveEFkc0FQSXMiLCJleHBpcnkiOjE2OTUxNjc5OTksImlzU3ViZG9tYWluIjp0cnVlfQ==\"/><meta name=\"apple-itunes-app\" content=\"app-id=544007664, app-argument=https://www.youtube.com/?referring_app=com.apple.mobilesafari-smartbanner, affiliate-data=ct=smart_app_banner_polymer&amp;pt=9008\"><script nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">var ytcfg={d:function(){return window.yt&&yt.config_||ytcfg.data_||(ytcfg.data_={})},get:function(k,o){return k in ytcfg.d()?ytcfg.d()[k]:o},set:function(){var a=arguments;if(a.length>1)ytcfg.d()[a[0]]=a[1];else{var k;for(k in a[0])ytcfg.d()[k]=a[0][k]}}};\nwindow.ytcfg.set('EMERGENCY_BASE_URL', '\\/error_204?t\\x3djserror\\x26level\\x3dERROR\\x26client.name\\x3d1\\x26client.version\\x3d2.20260903.",
+      "normalized_result": "pass",
+      "timestamp": "2026-09-03T19:21:55.779010166Z",
+      "ingestion_method": "live_fetch",
+      "chain_hash": "eb54a6d0686ef432b4992bd408aa0fe44933f9515f2e7042fd7189a896f96716"
+    },
+    {
+      "device_id": "aa",
+      "vendor": "Cisco",
+      "test_id": "V-071",
+      "raw_output": "<!DOCTYPE html><html style=\"font-size: 62.5%;font-family: Roboto, Arial, sans-serif;\" lang=\"en-GB\" darker-dark-theme darker-dark-theme-deprecate system-icons color-version=\"v2_0\" typography typography-spacing><head><script data-id=\"_gd\" nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">window.WIZ_global_data = {\"AfY8Hf\":true,\"FL1an\":false,\"HiPsbb\":0,\"MUE6Ne\":\"youtube_web\",\"MuJWjd\":false,\"TSDtV\":\"%.@.]\",\"UUFaWc\":\"%.@.null,1000,2]\",\"cfb2h\":\"youtube.web-front-end-critical_20260831.09_p0\",\"fPDxwd\":[],\"hsFLT\":\"%.@.null,10,3]\",\"iCzhFc\":false,\"nQyAE\":{},\"oxN3nb\":{\"1\":false,\"0\":false,\"610401301\":false,\"899588437\":false,\"772657768\":true,\"513659523\":false,\"568333945\":true,\"1331761403\":true,\"651175828\":false,\"722764542\":false,\"748402145\":false,\"748402146\":false,\"748402147\":true,\"1602613185\":true,\"861377723\":false,\"861377724\":false,\"869336903\":false,\"882674507\":false,\"869336904\":false,\"869336905\":false,\"283953155\":false,\"919444824\":true,\"928875398\":true,\"683749201\":false},\"u4g7r\":\"%.@.null,1,3]\",\"xnI9P\":true,\"xwAfE\":true,\"yFnxrf\":2486};</script><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><meta http-equiv=\"origin-trial\" content=\"ApvK67ociHgr2egd6c2ZjrfPuRs8BHcvSggogIOPQNH7GJ3cVlyJ1NOq/COCdj0+zxskqHt9HgLLETc8qqD+vwsAAABteyJvcmlnaW4iOiJodHRwczovL3lvdXR1YmUuY29tOjQ0MyIsImZlYXR1cmUiOiJQcml2YWN5U2FuZGJveEFkc0FQSXMiLCJleHBpcnkiOjE2OTUxNjc5OTksImlzU3ViZG9tYWluIjp0cnVlfQ==\"/><meta name=\"apple-itunes-app\" content=\"app-id=544007664, app-argument=https://www.youtube.com/?referring_app=com.apple.mobilesafari-smartbanner, affiliate-data=ct=smart_app_banner_polymer&amp;pt=9008\"><script nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">var ytcfg={d:function(){return window.yt&&yt.config_||ytcfg.data_||(ytcfg.data_={})},get:function(k,o){return k in ytcfg.d()?ytcfg.d()[k]:o},set:function(){var a=arguments;if(a.length>1)ytcfg.d()[a[0]]=a[1];else{var k;for(k in a[0])ytcfg.d()[k]=a[0][k]}}};\nwindow.ytcfg.set('EMERGENCY_BASE_URL', '\\/error_204?t\\x3djserror\\x26level\\x3dERROR\\x26client.name\\x3d1\\x26client.version\\x3d2.20260903.",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-03T19:21:55.805843222Z",
+      "ingestion_method": "live_fetch",
+      "chain_hash": "64ab894334c9818a624f3dbdbe9075d231c89e021e92c3390b26d4b07b2ab481"
+    },
+    {
+      "device_id": "aa",
+      "vendor": "Cisco",
+      "test_id": "V-006",
+      "raw_output": "<!DOCTYPE html><html style=\"font-size: 62.5%;font-family: Roboto, Arial, sans-serif;\" lang=\"en-GB\" darker-dark-theme darker-dark-theme-deprecate system-icons color-version=\"v2_0\" typography typography-spacing><head><script data-id=\"_gd\" nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">window.WIZ_global_data = {\"AfY8Hf\":true,\"FL1an\":false,\"HiPsbb\":0,\"MUE6Ne\":\"youtube_web\",\"MuJWjd\":false,\"TSDtV\":\"%.@.]\",\"UUFaWc\":\"%.@.null,1000,2]\",\"cfb2h\":\"youtube.web-front-end-critical_20260831.09_p0\",\"fPDxwd\":[],\"hsFLT\":\"%.@.null,10,3]\",\"iCzhFc\":false,\"nQyAE\":{},\"oxN3nb\":{\"1\":false,\"0\":false,\"610401301\":false,\"899588437\":false,\"772657768\":true,\"513659523\":false,\"568333945\":true,\"1331761403\":true,\"651175828\":false,\"722764542\":false,\"748402145\":false,\"748402146\":false,\"748402147\":true,\"1602613185\":true,\"861377723\":false,\"861377724\":false,\"869336903\":false,\"882674507\":false,\"869336904\":false,\"869336905\":false,\"283953155\":false,\"919444824\":true,\"928875398\":true,\"683749201\":false},\"u4g7r\":\"%.@.null,1,3]\",\"xnI9P\":true,\"xwAfE\":true,\"yFnxrf\":2486};</script><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><meta http-equiv=\"origin-trial\" content=\"ApvK67ociHgr2egd6c2ZjrfPuRs8BHcvSggogIOPQNH7GJ3cVlyJ1NOq/COCdj0+zxskqHt9HgLLETc8qqD+vwsAAABteyJvcmlnaW4iOiJodHRwczovL3lvdXR1YmUuY29tOjQ0MyIsImZlYXR1cmUiOiJQcml2YWN5U2FuZGJveEFkc0FQSXMiLCJleHBpcnkiOjE2OTUxNjc5OTksImlzU3ViZG9tYWluIjp0cnVlfQ==\"/><meta name=\"apple-itunes-app\" content=\"app-id=544007664, app-argument=https://www.youtube.com/?referring_app=com.apple.mobilesafari-smartbanner, affiliate-data=ct=smart_app_banner_polymer&amp;pt=9008\"><script nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">var ytcfg={d:function(){return window.yt&&yt.config_||ytcfg.data_||(ytcfg.data_={})},get:function(k,o){return k in ytcfg.d()?ytcfg.d()[k]:o},set:function(){var a=arguments;if(a.length>1)ytcfg.d()[a[0]]=a[1];else{var k;for(k in a[0])ytcfg.d()[k]=a[0][k]}}};\nwindow.ytcfg.set('EMERGENCY_BASE_URL', '\\/error_204?t\\x3djserror\\x26level\\x3dERROR\\x26client.name\\x3d1\\x26client.version\\x3d2.20260903.",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-03T19:21:55.822391388Z",
+      "ingestion_method": "live_fetch",
+      "chain_hash": "8bc81d2b60bfc13eea90d50dceec4864938baac571b3c1cacca064c357f57b25"
+    },
+    {
+      "device_id": "aa",
+      "vendor": "Cisco",
+      "test_id": "V-007",
+      "raw_output": "<!DOCTYPE html><html style=\"font-size: 62.5%;font-family: Roboto, Arial, sans-serif;\" lang=\"en-GB\" darker-dark-theme darker-dark-theme-deprecate system-icons color-version=\"v2_0\" typography typography-spacing><head><script data-id=\"_gd\" nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">window.WIZ_global_data = {\"AfY8Hf\":true,\"FL1an\":false,\"HiPsbb\":0,\"MUE6Ne\":\"youtube_web\",\"MuJWjd\":false,\"TSDtV\":\"%.@.]\",\"UUFaWc\":\"%.@.null,1000,2]\",\"cfb2h\":\"youtube.web-front-end-critical_20260831.09_p0\",\"fPDxwd\":[],\"hsFLT\":\"%.@.null,10,3]\",\"iCzhFc\":false,\"nQyAE\":{},\"oxN3nb\":{\"1\":false,\"0\":false,\"610401301\":false,\"899588437\":false,\"772657768\":true,\"513659523\":false,\"568333945\":true,\"1331761403\":true,\"651175828\":false,\"722764542\":false,\"748402145\":false,\"748402146\":false,\"748402147\":true,\"1602613185\":true,\"861377723\":false,\"861377724\":false,\"869336903\":false,\"882674507\":false,\"869336904\":false,\"869336905\":false,\"283953155\":false,\"919444824\":true,\"928875398\":true,\"683749201\":false},\"u4g7r\":\"%.@.null,1,3]\",\"xnI9P\":true,\"xwAfE\":true,\"yFnxrf\":2486};</script><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><meta http-equiv=\"origin-trial\" content=\"ApvK67ociHgr2egd6c2ZjrfPuRs8BHcvSggogIOPQNH7GJ3cVlyJ1NOq/COCdj0+zxskqHt9HgLLETc8qqD+vwsAAABteyJvcmlnaW4iOiJodHRwczovL3lvdXR1YmUuY29tOjQ0MyIsImZlYXR1cmUiOiJQcml2YWN5U2FuZGJveEFkc0FQSXMiLCJleHBpcnkiOjE2OTUxNjc5OTksImlzU3ViZG9tYWluIjp0cnVlfQ==\"/><meta name=\"apple-itunes-app\" content=\"app-id=544007664, app-argument=https://www.youtube.com/?referring_app=com.apple.mobilesafari-smartbanner, affiliate-data=ct=smart_app_banner_polymer&amp;pt=9008\"><script nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">var ytcfg={d:function(){return window.yt&&yt.config_||ytcfg.data_||(ytcfg.data_={})},get:function(k,o){return k in ytcfg.d()?ytcfg.d()[k]:o},set:function(){var a=arguments;if(a.length>1)ytcfg.d()[a[0]]=a[1];else{var k;for(k in a[0])ytcfg.d()[k]=a[0][k]}}};\nwindow.ytcfg.set('EMERGENCY_BASE_URL', '\\/error_204?t\\x3djserror\\x26level\\x3dERROR\\x26client.name\\x3d1\\x26client.version\\x3d2.20260903.",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-03T19:21:55.836729216Z",
+      "ingestion_method": "live_fetch",
+      "chain_hash": "339a64658e4ded44c0a2c1d0c51babdedd2c10f936c5e25326c9244803095f70"
+    },
+    {
+      "device_id": "aa",
+      "vendor": "Cisco",
+      "test_id": "V-057",
+      "raw_output": "<!DOCTYPE html><html style=\"font-size: 62.5%;font-family: Roboto, Arial, sans-serif;\" lang=\"en-GB\" darker-dark-theme darker-dark-theme-deprecate system-icons color-version=\"v2_0\" typography typography-spacing><head><script data-id=\"_gd\" nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">window.WIZ_global_data = {\"AfY8Hf\":true,\"FL1an\":false,\"HiPsbb\":0,\"MUE6Ne\":\"youtube_web\",\"MuJWjd\":false,\"TSDtV\":\"%.@.]\",\"UUFaWc\":\"%.@.null,1000,2]\",\"cfb2h\":\"youtube.web-front-end-critical_20260831.09_p0\",\"fPDxwd\":[],\"hsFLT\":\"%.@.null,10,3]\",\"iCzhFc\":false,\"nQyAE\":{},\"oxN3nb\":{\"1\":false,\"0\":false,\"610401301\":false,\"899588437\":false,\"772657768\":true,\"513659523\":false,\"568333945\":true,\"1331761403\":true,\"651175828\":false,\"722764542\":false,\"748402145\":false,\"748402146\":false,\"748402147\":true,\"1602613185\":true,\"861377723\":false,\"861377724\":false,\"869336903\":false,\"882674507\":false,\"869336904\":false,\"869336905\":false,\"283953155\":false,\"919444824\":true,\"928875398\":true,\"683749201\":false},\"u4g7r\":\"%.@.null,1,3]\",\"xnI9P\":true,\"xwAfE\":true,\"yFnxrf\":2486};</script><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><meta http-equiv=\"origin-trial\" content=\"ApvK67ociHgr2egd6c2ZjrfPuRs8BHcvSggogIOPQNH7GJ3cVlyJ1NOq/COCdj0+zxskqHt9HgLLETc8qqD+vwsAAABteyJvcmlnaW4iOiJodHRwczovL3lvdXR1YmUuY29tOjQ0MyIsImZlYXR1cmUiOiJQcml2YWN5U2FuZGJveEFkc0FQSXMiLCJleHBpcnkiOjE2OTUxNjc5OTksImlzU3ViZG9tYWluIjp0cnVlfQ==\"/><meta name=\"apple-itunes-app\" content=\"app-id=544007664, app-argument=https://www.youtube.com/?referring_app=com.apple.mobilesafari-smartbanner, affiliate-data=ct=smart_app_banner_polymer&amp;pt=9008\"><script nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">var ytcfg={d:function(){return window.yt&&yt.config_||ytcfg.data_||(ytcfg.data_={})},get:function(k,o){return k in ytcfg.d()?ytcfg.d()[k]:o},set:function(){var a=arguments;if(a.length>1)ytcfg.d()[a[0]]=a[1];else{var k;for(k in a[0])ytcfg.d()[k]=a[0][k]}}};\nwindow.ytcfg.set('EMERGENCY_BASE_URL', '\\/error_204?t\\x3djserror\\x26level\\x3dERROR\\x26client.name\\x3d1\\x26client.version\\x3d2.20260903.",
+      "normalized_result": "pass",
+      "timestamp": "2026-09-03T19:21:55.859139776Z",
+      "ingestion_method": "live_fetch",
+      "chain_hash": "5e5da2f4fbab121d947d30f478dfde8aeb086d29af3c06db9bed7e6c28a2129f"
+    },
+    {
+      "device_id": "aa",
+      "vendor": "Cisco",
+      "test_id": "V-003",
+      "raw_output": "<!DOCTYPE html><html style=\"font-size: 62.5%;font-family: Roboto, Arial, sans-serif;\" lang=\"en-GB\" darker-dark-theme darker-dark-theme-deprecate system-icons color-version=\"v2_0\" typography typography-spacing><head><script data-id=\"_gd\" nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">window.WIZ_global_data = {\"AfY8Hf\":true,\"FL1an\":false,\"HiPsbb\":0,\"MUE6Ne\":\"youtube_web\",\"MuJWjd\":false,\"TSDtV\":\"%.@.]\",\"UUFaWc\":\"%.@.null,1000,2]\",\"cfb2h\":\"youtube.web-front-end-critical_20260831.09_p0\",\"fPDxwd\":[],\"hsFLT\":\"%.@.null,10,3]\",\"iCzhFc\":false,\"nQyAE\":{},\"oxN3nb\":{\"1\":false,\"0\":false,\"610401301\":false,\"899588437\":false,\"772657768\":true,\"513659523\":false,\"568333945\":true,\"1331761403\":true,\"651175828\":false,\"722764542\":false,\"748402145\":false,\"748402146\":false,\"748402147\":true,\"1602613185\":true,\"861377723\":false,\"861377724\":false,\"869336903\":false,\"882674507\":false,\"869336904\":false,\"869336905\":false,\"283953155\":false,\"919444824\":true,\"928875398\":true,\"683749201\":false},\"u4g7r\":\"%.@.null,1,3]\",\"xnI9P\":true,\"xwAfE\":true,\"yFnxrf\":2486};</script><meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\"/><meta http-equiv=\"origin-trial\" content=\"ApvK67ociHgr2egd6c2ZjrfPuRs8BHcvSggogIOPQNH7GJ3cVlyJ1NOq/COCdj0+zxskqHt9HgLLETc8qqD+vwsAAABteyJvcmlnaW4iOiJodHRwczovL3lvdXR1YmUuY29tOjQ0MyIsImZlYXR1cmUiOiJQcml2YWN5U2FuZGJveEFkc0FQSXMiLCJleHBpcnkiOjE2OTUxNjc5OTksImlzU3ViZG9tYWluIjp0cnVlfQ==\"/><meta name=\"apple-itunes-app\" content=\"app-id=544007664, app-argument=https://www.youtube.com/?referring_app=com.apple.mobilesafari-smartbanner, affiliate-data=ct=smart_app_banner_polymer&amp;pt=9008\"><script nonce=\"xa9S5JTO54bI9_z3_k5kUQ\">var ytcfg={d:function(){return window.yt&&yt.config_||ytcfg.data_||(ytcfg.data_={})},get:function(k,o){return k in ytcfg.d()?ytcfg.d()[k]:o},set:function(){var a=arguments;if(a.length>1)ytcfg.d()[a[0]]=a[1];else{var k;for(k in a[0])ytcfg.d()[k]=a[0][k]}}};\nwindow.ytcfg.set('EMERGENCY_BASE_URL', '\\/error_204?t\\x3djserror\\x26level\\x3dERROR\\x26client.name\\x3d1\\x26client.version\\x3d2.20260903.",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-03T19:21:55.886944637Z",
+      "ingestion_method": "live_fetch",
+      "chain_hash": "caace5187f172180a46c557d6aa98ef8128825b07e1d2acfb6d278f4d230e111"
+    }
+  ],
+  "previous_chain_hash": "caace5187f172180a46c557d6aa98ef8128825b07e1d2acfb6d278f4d230e111"
+}
