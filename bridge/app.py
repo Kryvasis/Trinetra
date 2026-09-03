@@ -11,8 +11,14 @@ from flask import Flask, request, jsonify
 
 try:
     from bridge import live_fetcher
+    from bridge.request_boundary import install_request_boundary
+    from bridge.website import bp as website_bp
+    from bridge.config_validation import is_web_document, HTML_ERROR
 except ImportError:
     import live_fetcher
+    from request_boundary import install_request_boundary
+    from website import bp as website_bp
+    from config_validation import is_web_document, HTML_ERROR
 
 try:
     from bridge.config import (
@@ -38,6 +44,8 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = FLASK_SECRET
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
+app.register_blueprint(website_bp)
+install_request_boundary(app)
 
 # Atomic replace protects readers from partial JSON, while this lock also
 # prevents concurrent requests in one bridge process from losing an entry.
@@ -155,6 +163,11 @@ def error_response(message, status=400, details=None):
     if details:
         body["details"] = details
     return jsonify(body), status
+
+
+def markdown_cells(line):
+    """Preserve empty metadata columns and escaped pipes in evidence tables."""
+    return [cell.strip().replace("\\|", "|") for cell in re.split(r"(?<!\\)\|", line.strip().removeprefix("|").removesuffix("|"))]
 
 # ── Health ──
 @app.route("/api/health", methods=["GET"])
@@ -522,8 +535,10 @@ def upload_config(name):
                 return error_response(f"invalid {field_name}: {field_val!r}", 400)
     if not config_content or not isinstance(config_content, str) or len(config_content.strip()) == 0:
         return error_response("missing or empty config file content", 400)
-    if len(config_content) > 1024 * 1024:  # 1MB limit
-        return error_response("config file too large (max 1MB)", 400)
+    if len(config_content.encode("utf-8")) > 1024 * 1024:  # 1 MiB, not characters
+        return error_response("config file too large (max 1MB)", 413)
+    if is_web_document(config_content):
+        return error_response(HTML_ERROR, 422)
     if contains_injection(device_id) or (vendor and contains_injection(vendor)):
         return error_response("injection characters detected", 400)
 
@@ -634,7 +649,11 @@ def fetch_config(name):
             username=username.strip(), password=password, ssh_key=ssh_key, port=port,
         )
     else:
-        parsed = urlsplit(target)
+        try:
+            parsed = urlsplit(target)
+            parsed.port  # Validate malformed/out-of-range ports before collection.
+        except ValueError:
+            return error_response("invalid configuration URL", 400)
         if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
             return error_response("URL must use http:// or https:// and include a hostname", 400)
         auth_token = data.get("auth_token")
@@ -643,6 +662,10 @@ def fetch_config(name):
             return error_response("invalid authentication token", 400)
         if not isinstance(auth_header, str) or not HEADER_NAME_RE.fullmatch(auth_header):
             return error_response("invalid authentication header", 400)
+        if auth_header.lower() != "authorization" and not auth_header.lower().startswith("x-"):
+            return error_response("authentication headers must be Authorization or an X- prefixed header", 400)
+        if auth_token and parsed.scheme.lower() != "https":
+            return error_response("authentication tokens require HTTPS", 400)
         fetch_args.update(auth_token=auth_token, auth_header=auth_header)
 
     try:
@@ -659,6 +682,8 @@ def fetch_config(name):
         return error_response("the target returned no configuration data", 502)
     if len(config_content.encode("utf-8")) > 1024 * 1024:
         return error_response("collected configuration exceeds the 1 MB limit", 413)
+    if is_web_document(config_content):
+        return error_response(HTML_ERROR, 422)
 
     tmp_path = None
     try:
@@ -977,7 +1002,8 @@ def audit_report_pdf(name):
         story = []
 
         # Title
-        story.append(Paragraph(f"Trinetra Audit Report — {name}", title_style))
+        story.append(Paragraph(f"Cortex Audit Report — {name}", title_style))
+        story.append(Paragraph("Configuration evidence assessment, not a compliance certification. Manual review, errors, and untested checks are unresolved evidence, not confirmed failures. Review scope and applicability before acting.", normal_style))
         story.append(Spacer(1, 12))
 
         # Session metadata table
@@ -1036,12 +1062,24 @@ def audit_report_pdf(name):
         import re as _re
         header_row = None
         evidence_rows = []
+        # Include each selected framework's score summary in the export.
+        story.append(Paragraph("Mapped-check outcomes", heading_style))
+        current_framework = ""
+        for line in md_content.splitlines():
+            if line.startswith("### "):
+                current_framework = line[4:].strip()
+            elif line.startswith("- Mapped-check pass rate:"):
+                story.append(Paragraph(xml_escape(current_framework + ": " + line[2:].replace("**", "")), normal_style))
+            elif line.startswith(("- Passed/failed/total mapped:", "- Manual review/errors/not tested:")):
+                story.append(Paragraph(xml_escape(line[2:]), normal_style))
+        story.append(Spacer(1, 12))
         in_evidence = False
+        seen_evidence = set()
         col_index = {}
         for line in md_content.splitlines():
             if "| Device" in line and "Vendor" in line:
                 # Header line — capture column names for dynamic indexing
-                header_cells = [p.strip() for p in line.split("|") if p.strip()]
+                header_cells = markdown_cells(line)
                 header_row = header_cells
                 # Build case-insensitive index map
                 col_index = {c.lower(): i for i, c in enumerate(header_cells)}
@@ -1054,15 +1092,15 @@ def audit_report_pdf(name):
                     continue
                 if stripped.startswith("|--------") or stripped.startswith("|---"):
                     continue
-                parts = [p.strip() for p in line.split("|") if p.strip() != ""]
+                parts = markdown_cells(line)
                 # Ignore header repeated
                 if parts and parts[0].lower() == "device" and "vendor" in " ".join(parts).lower():
                     continue
-                if len(parts) >= 2:
+                if len(parts) >= 2 and tuple(parts) not in seen_evidence:
                     evidence_rows.append(parts)
+                    seen_evidence.add(tuple(parts))
             elif in_evidence and not line.strip().startswith("|"):
-                if evidence_rows:
-                    break
+                in_evidence = False
 
         if evidence_rows and header_row:
             story.append(Paragraph("Evidence — Per-Device Test Results", heading_style))
@@ -1078,12 +1116,12 @@ def audit_report_pdf(name):
                 while len(row) < len(header_row):
                     row.append("")
                 # Truncate to header length
-                pdf_row = [Paragraph(xml_escape(p[:50] if len(p) > 35 else p), small_style) for p in row[:len(header_row)]]
+                pdf_row = [Paragraph(xml_escape(p.replace("_", " ") if i == verdict_idx else p), small_style) for i, p in enumerate(row[:len(header_row)])]
                 table_data.append(pdf_row)
             # Column widths: distribute landscape width (~10.5 inch usable) across columns
             ncols = len(header_row)
             # Heuristic widths: Device 1.1, Vendor 0.9, Serial 0.9, Hardware 1.0, OS 1.0, Test 0.8, Verdict 0.7, Severity 0.8, Timestamp 1.2, Controls 1.3
-            width_map = {"device":1.0, "vendor":0.9, "serial":0.9, "hardware":1.0, "os version":1.0, "os":1.0, "test id":0.8, "verdict":0.7, "severity":0.8, "timestamp":1.3, "controls":1.4}
+            width_map = {"device":1.0, "vendor":0.9, "serial":0.9, "hardware":1.0, "os version":1.0, "os":1.0, "test id":0.8, "verdict":1.1, "severity":0.8, "timestamp":1.4, "controls":1.4}
             col_widths = []
             for h in header_row:
                 w = width_map.get(h.lower(), 0.9) * inch
@@ -1106,6 +1144,8 @@ def audit_report_pdf(name):
                 ('RIGHTPADDING', (0,0), (-1,-1), 3),
             ]))
             story.append(et)
+            if len(evidence_rows) > 60:
+                story.append(Paragraph(f"Showing 60 of {len(evidence_rows)} evidence rows. The generated Markdown audit report contains the complete table.", normal_style))
             story.append(Spacer(1, 12))
         elif evidence_rows:
             # Fallback old 5-col
@@ -1211,7 +1251,7 @@ def audit_report_pdf(name):
         story.append(Spacer(1, 12))
         story.append(Paragraph("Note: PCI-DSS and SOC2 are shown as <b>bonus/additional coverage</b> only. PS-required frameworks are CIS, NIST 800-53, ISO 27001, and STIG (STIG controls: CISC-ND/JUSX-ND via DISA STIG Viewer).", normal_style))
         story.append(Spacer(1, 6))
-        story.append(Paragraph("Generated by Trinetra — static config-file auditor (live SSH optional). Ingestion method per device is recorded honestly in the report.", normal_style))
+        story.append(Paragraph("Generated by Cortex — configuration evidence assessment (live SSH optional). Collection method is recorded per device. Review findings before remediation.", normal_style))
 
         doc.build(story)
         pdf_bytes = buffer.getvalue()

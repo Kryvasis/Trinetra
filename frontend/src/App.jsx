@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import UploadView from './pages/UploadView'
 import ResultsView from './pages/ResultsView'
 import TrainingView from './pages/TrainingView'
@@ -19,7 +19,8 @@ const NAV_ITEMS = [
 ]
 
 const TITLES = {
-  '/': 'Upload Config',
+  '/': 'Upload & collect',
+  '/website': 'Website Analysis',
   '/results': 'Results & Score',
   '/training': 'Training Loop',
   '/devices': 'Session Devices',
@@ -93,6 +94,7 @@ function WorkspaceShell({ addToast }) {
         <div key={location.pathname} className="route-stage">
           <Routes>
             <Route path="/" element={<UploadView api={API} toast={addToast} />} />
+            <Route path="/website" element={<Navigate to="/?source=website" replace />} />
             <Route path="/results" element={<ResultsView api={API} toast={addToast} />} />
             <Route path="/training" element={<TrainingView api={API} toast={addToast} />} />
             <Route path="/devices" element={<SessionDevicesView api={API} toast={addToast} />} />
@@ -106,7 +108,7 @@ function WorkspaceShell({ addToast }) {
 
 function Experience({ addToast }) {
   const location = useLocation()
-  const [workspaceOpen, setWorkspaceOpen] = useState(location.pathname !== '/')
+  const [workspaceOpen, setWorkspaceOpen] = useState(location.pathname !== '/' || new URLSearchParams(location.search).has('source'))
   const [entering, setEntering] = useState(false)
 
   useEffect(() => {

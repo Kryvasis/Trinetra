@@ -15,7 +15,7 @@ import java.util.*;
  *      and a complete unmapped-tests appendix, no per-framework files,
  *  (c) executive-summary aggregate equals manual calculation from scorer data,
  *  (d) template-fallback provenance carried visibly into the report
- *      (and a pre-existing LLM narrative keeps its provenance + content),
+ *      (stale narratives are regenerated on explicit export),
  *  (e) chain verification status in the appendix matches the actual
  *      TrinetraSession.verifyChain() result — intact AND tampered cases.
  *
@@ -55,7 +55,7 @@ public class TrinetraAuditReportBuilderTest {
         testAggregateMatchesManualCalc(root);
 
         System.out.println("\n(d) provenance labels: template fallback visible; "
-            + "pre-existing LLM narrative preserved");
+            + "stale narrative refreshed");
         testProvenance(root);
 
         System.out.println("\n(e) appendix chain status matches actual verifyChain() "
@@ -107,8 +107,8 @@ public class TrinetraAuditReportBuilderTest {
             .resolve("audit_report_" + session + ".md"));
 
         // Executive summary aggregation (see also test (c))
-        expect(combined.contains("68.8% average compliance"),
-            "combined contains derived aggregate '68.8% average compliance'");
+        expect(combined.contains("68.8% (not a compliance certification)"),
+            "combined labels the derived pass-rate aggregate without a certification claim");
         expect(combined.contains("NOT a scorer-native field"),
             "aggregate clearly labeled as derived, not scorer-native");
 
@@ -203,7 +203,7 @@ public class TrinetraAuditReportBuilderTest {
         expect(TrinetraNarrativeGenerator.SOURCE_TEMPLATE.equals(r1.get("narrative_source")),
             "result metadata reports template_fallback source");
 
-        // (d2) pre-existing LLM narrative on disk -> reused as-is, LLM provenance
+        // (d2) pre-existing narrative has no freshness proof: rebuild on export.
         String preSession = "arb_prellm";
         seedSession(preSession, entry("V-003", "pass"));
         String fakeSection = "### ISO27001\n"
@@ -222,15 +222,15 @@ public class TrinetraAuditReportBuilderTest {
         byte[] narrBefore = Files.readAllBytes(narrPath);
 
         Map<String, Object> r2 = TrinetraAuditReportBuilder.buildAuditReport(preSession);
-        expect(TrinetraNarrativeGenerator.SOURCE_LLM.equals(r2.get("narrative_source")),
-            "pre-existing non-template narrative detected as LLM source");
-        expect(Arrays.equals(narrBefore, Files.readAllBytes(narrPath)),
-            "pre-existing narrative file not modified/regenerated");
+        expect(TrinetraNarrativeGenerator.SOURCE_TEMPLATE.equals(r2.get("narrative_source")),
+            "export regenerates narrative from current evidence, using offline fallback in this test");
+        expect(!Arrays.equals(narrBefore, Files.readAllBytes(narrPath)),
+            "unverifiable cached narrative is regenerated on explicit export");
         String combined2 = Files.readString(Paths.get((String) r2.get("combined_path")));
-        expect(combined2.contains("ARB-PRELLM-MARKER"),
-            "narrative section extracted into combined report");
-        expect(!combined2.contains("TEMPLATE-GENERATED"),
-            "no template label when narrative came from the LLM path");
+        expect(!combined2.contains("ARB-PRELLM-MARKER"),
+            "stale narrative never enters the new report");
+        expect(combined2.contains("TEMPLATE-GENERATED"),
+            "regenerated narrative retains honest provenance");
     }
 
     // ── (e) ──────────────────────────────────────────────────────────

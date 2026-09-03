@@ -6,10 +6,13 @@ import ipaddress
 import os
 import re
 import socket
+import ssl
 from io import StringIO
 from urllib.parse import urljoin, urlsplit
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3 import HTTPConnectionPool, HTTPSConnectionPool
 
 
 MAX_CONFIG_BYTES = 1024 * 1024
@@ -101,7 +104,7 @@ def fetch_via_ssh(
         if len(raw) > MAX_CONFIG_BYTES:
             raise LiveFetchError("collected configuration exceeds the 1 MB limit")
         exit_code = stdout.channel.recv_exit_status()
-        if exit_code != 0 and not raw.strip():
+        if exit_code != 0:
             stderr.read(512)
             raise LiveFetchError("the remote configuration command failed")
         text = raw.decode("utf-8", errors="replace")
@@ -147,6 +150,48 @@ def _validate_url(url: str) -> str:
     return value
 
 
+class _PinnedAdapter(HTTPAdapter):
+    """Connect only to a validated address while retaining the original TLS identity."""
+
+    def __init__(self, parsed, address):
+        super().__init__()
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if parsed.scheme == "https":
+            self.pinned_pool = HTTPSConnectionPool(address, port,
+                assert_hostname=parsed.hostname, server_hostname=parsed.hostname,
+                ssl_context=ssl.create_default_context())
+        else:
+            self.pinned_pool = HTTPConnectionPool(address, port)
+
+    def get_connection(self, url, proxies=None):
+        return self.pinned_pool
+
+    def get_connection_with_tls_context(self, request, verify, proxies=None, cert=None):
+        return self.pinned_pool
+
+    def close(self):
+        self.pinned_pool.close()
+        super().close()
+
+
+def _pin_destination(session, url):
+    parsed = urlsplit(url)
+    try:
+        addresses = list(dict.fromkeys(item[4][0] for item in socket.getaddrinfo(
+            parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80),
+            type=socket.SOCK_STREAM)))
+    except socket.gaierror as exc:
+        raise LiveFetchError("the URL hostname could not be resolved") from exc
+    if not addresses:
+        raise LiveFetchError("the URL hostname could not be resolved")
+    if not _private_urls_allowed() and any(not ipaddress.ip_address(ip).is_global for ip in addresses):
+        raise ValueError("URL targets must resolve to public network addresses")
+    # urllib3 receives an IP, so no second hostname lookup can change the target.
+    adapter = _PinnedAdapter(parsed, addresses[0])
+    session.mount(parsed.scheme + "://", adapter)
+    return adapter, parsed.netloc
+
+
 def fetch_via_url(
     url: str,
     auth_token: str | None = None,
@@ -157,20 +202,31 @@ def fetch_via_url(
     header_name = (auth_header or "Authorization").strip()
     if not HEADER_NAME_RE.fullmatch(header_name):
         raise ValueError("invalid authentication header name")
+    if header_name.lower() != "authorization" and not header_name.lower().startswith("x-"):
+        raise ValueError("authentication headers must be Authorization or an X- prefixed header")
 
     headers = {
         "Accept": "text/plain, application/json, application/xml;q=0.9, */*;q=0.5",
         "User-Agent": "Cortex-Bridge/1.0",
     }
     if auth_token:
+        if urlsplit(current_url).scheme.lower() != "https":
+            raise ValueError("authentication tokens require HTTPS")
         token = auth_token.strip()
+        if any(ord(c) < 32 or ord(c) == 127 for c in token):
+            raise ValueError("authentication token contains control characters")
         headers[header_name] = f"Bearer {token}" if header_name.lower() == "authorization" and " " not in token else token
 
     session = requests.Session()
     session.trust_env = False
     try:
         for redirect_count in range(MAX_REDIRECTS + 1):
-            response = session.get(current_url, headers=headers, timeout=timeout, stream=True, allow_redirects=False)
+            adapter, host_header = _pin_destination(session, current_url)
+            try:
+                response = session.get(current_url, headers={**headers, "Host": host_header}, timeout=timeout, stream=True, allow_redirects=False)
+            except Exception:
+                adapter.close()
+                raise
             try:
                 if response.is_redirect or response.is_permanent_redirect:
                     if redirect_count == MAX_REDIRECTS:
@@ -207,6 +263,7 @@ def fetch_via_url(
                 return text
             finally:
                 response.close()
+                adapter.close()
     except (ValueError, LiveFetchError):
         raise
     except requests.RequestException as exc:

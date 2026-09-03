@@ -1,6 +1,8 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
+import WebsiteView from './WebsiteView'
 
 const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'Generic']
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/
@@ -22,7 +24,7 @@ function SecretField({ id, label, value, onChange, placeholder, multiline = fals
       <label htmlFor={id}>{label}</label>
       <div className="secret-control">
         {multiline ? (
-          <textarea {...controlProps} rows={4} className={visible ? '' : 'secret-masked'} />
+          <textarea {...controlProps} rows={4} className={`resize-none ${visible ? '' : 'secret-masked'}`} />
         ) : (
           <input {...controlProps} type={visible ? 'text' : 'password'} />
         )}
@@ -41,6 +43,9 @@ function SecretField({ id, label, value, onChange, placeholder, multiline = fals
 }
 
 export default function UploadView({ api, toast }) {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const initialWebsite = searchParams.get('source') === 'website'
+  const [websiteBusy, setWebsiteBusy] = useState(false)
   const [session, setSession] = useState('')
   const [deviceId, setDeviceId] = useState('')
   const [vendor, setVendor] = useState('Auto-detect')
@@ -51,8 +56,8 @@ export default function UploadView({ api, toast }) {
   const [configText, setConfigText] = useState('')
   const [loading, setLoading] = useState(false)
   const [bulkResults, setBulkResults] = useState([]) // per-file {fileName, deviceId, status, message, data}
-  const [inputMode, setInputMode] = useState('file')
-  const [fetchSourceType, setFetchSourceType] = useState('ip')
+  const [inputMode, setInputMode] = useState(initialWebsite ? 'fetch' : 'file')
+  const [fetchSourceType, setFetchSourceType] = useState(initialWebsite ? 'website' : 'ip')
   const [fetchTarget, setFetchTarget] = useState('')
   const [fetchUsername, setFetchUsername] = useState('')
   const [fetchPassword, setFetchPassword] = useState('')
@@ -62,6 +67,20 @@ export default function UploadView({ api, toast }) {
   const [fetchAuthHeader, setFetchAuthHeader] = useState('Authorization')
   const [errors, setErrors] = useState({})
   const abortRef = useRef(null)
+  useEffect(() => () => abortRef.current?.abort(), [])
+  const isWebsite = inputMode === 'fetch' && fetchSourceType === 'website'
+
+  function changeSource(source) {
+    if (source === fetchSourceType) return
+    setFetchSourceType(source)
+    setSearchParams(source === 'website' ? { source: 'website' } : {}, { replace: true })
+    setFetchPassword('')
+    setFetchSshKey('')
+    setFetchAuthToken('')
+    setFetchTarget('')
+    setErrors({})
+    setBulkResults([])
+  }
 
   const isBulk = inputMode === 'file' && files.length > 1
 
@@ -81,6 +100,8 @@ export default function UploadView({ api, toast }) {
     if (inputMode === 'file') {
       if (files.length === 0) e.config = 'Select at least one config file'
       else {
+        const ids = files.map(f => deriveDeviceId(f.name))
+        if (new Set(ids).size !== ids.length) e.config = 'Some filenames produce the same device ID. Rename them before a bulk upload.'
         for (const f of files) {
           if (f.size > MAX_FILE_SIZE) { e.config = `File ${f.name} too large (max ${MAX_FILE_SIZE / 1024}KB)`; break }
         }
@@ -113,7 +134,9 @@ export default function UploadView({ api, toast }) {
         if (fetchSshKey.length > 8192) e.fetchCredential = 'Private key is too large'
       } else {
         if (fetchAuthToken.length > 2048) e.fetchCredential = 'Authentication token is too long'
+        if (fetchAuthToken && !/^https:\/\//i.test(target)) e.fetchTarget = 'Authentication tokens require an HTTPS configuration URL'
         if (fetchAuthHeader && !/^[A-Za-z][A-Za-z0-9-]{0,127}$/.test(fetchAuthHeader)) e.fetchAuthHeader = 'Enter a valid HTTP header name'
+        else if (fetchAuthHeader && !/^(authorization|x-.+)$/i.test(fetchAuthHeader)) e.fetchAuthHeader = 'Use Authorization or an X-prefixed header'
       }
     }
     // Optional hardware fields validation (no injection, max 128)
@@ -140,6 +163,7 @@ export default function UploadView({ api, toast }) {
 
   const changeInputMode = mode => {
     setInputMode(mode)
+    setSearchParams(mode === 'fetch' && fetchSourceType === 'website' ? { source: 'website' } : {}, { replace: true })
     setErrors({})
     if (mode !== 'fetch') {
       setFetchPassword('')
@@ -150,7 +174,7 @@ export default function UploadView({ api, toast }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!validate()) return
+    if (loading || isWebsite || !validate()) return
 
     setLoading(true)
     setBulkResults([])
@@ -166,6 +190,7 @@ export default function UploadView({ api, toast }) {
     const osVal = osVersion.trim()
 
     // Step 1: Create session (ignore 409 = already exists)
+    const createTimeout = setTimeout(() => controller.abort(), 60000)
     try {
       const createRes = await fetch(`${api}/session`, {
         method: 'POST',
@@ -190,6 +215,8 @@ export default function UploadView({ api, toast }) {
         setLoading(false)
         return
       }
+    } finally {
+      clearTimeout(createTimeout)
     }
 
     if (inputMode === 'fetch') {
@@ -261,8 +288,8 @@ export default function UploadView({ api, toast }) {
         // Mark uploading
         results[idx] = { ...results[idx], status: 'uploading', message: 'Uploading...' }
         setBulkResults([...results])
+        const timeoutId = setTimeout(() => controller.abort(), 60000)
         try {
-          const timeoutId = setTimeout(() => controller.abort(), 60000)
           const form = new FormData()
           form.append('device_id', did)
           form.append('vendor', vendorVal)
@@ -275,7 +302,6 @@ export default function UploadView({ api, toast }) {
             body: form,
             signal: controller.signal,
           })
-          clearTimeout(timeoutId)
           if (!uploadRes.ok) {
             const err = await uploadRes.json().catch(() => ({ error: 'upload failed' }))
             throw new Error(err.error || `Upload failed (${uploadRes.status})`)
@@ -289,6 +315,16 @@ export default function UploadView({ api, toast }) {
           results[idx] = { fileName: f.name, deviceId: did, status: 'error', message: msg }
           failCount++
           toast(`[${f.name}] failed: ${msg}`, 'error')
+        } finally {
+          clearTimeout(timeoutId)
+        }
+        if (controller.signal.aborted) {
+          for (let pending = idx + 1; pending < results.length; pending++) {
+            results[pending] = { ...results[pending], status: 'error', message: 'Not submitted: collection stopped after cancellation or timeout.' }
+            failCount++
+          }
+          setBulkResults([...results])
+          break
         }
         setBulkResults([...results])
       }
@@ -365,15 +401,31 @@ export default function UploadView({ api, toast }) {
       <SceneHeader
         index="01"
         label="Ingest"
-        title="Upload Device Config"
-        description="Upload single or bulk device configs. For bulk, select multiple files — each filename becomes a device ID and gets ingested sequentially with per-file status."
+        title="Upload & collect"
+        description="Choose your evidence source. Device exports support mapped configuration checks; public websites receive a separate, limited surface observation."
       />
 
-      <form onSubmit={handleSubmit} noValidate>
+      <fieldset className="form-group choice-fieldset" disabled={loading || websiteBusy}>
+        <legend>Input method</legend>
+        <div className="input-mode-switch">
+          {[['file', 'File Upload'], ['text', 'Paste Config'], ['fetch', 'Collect from Network']].map(([mode, label]) => (
+            <button key={mode} type="button" aria-pressed={inputMode === mode} className={`btn-secondary ${inputMode === mode ? 'btn-primary' : ''}`} onClick={() => { changeInputMode(mode); setBulkResults([]) }}>{label}</button>
+          ))}
+        </div>
+        {inputMode === 'fetch' && <div className="source-type-switch" role="group" aria-label="Collection source">
+          {[['ip', 'SSH device'], ['url', 'Configuration URL'], ['website', 'Public website']].map(([source, label]) => (
+            <button key={source} type="button" className={fetchSourceType === source ? 'is-selected' : ''} aria-pressed={fetchSourceType === source} onClick={() => changeSource(source)}>{label}</button>
+          ))}
+        </div>}
+        <p className="field-help">Only collect from systems you are authorized to assess. Switching sources clears collection credentials and website results; download your report before switching.</p>
+      </fieldset>
+
+      {isWebsite ? <WebsiteView api={api} toast={toast} onBusyChange={setWebsiteBusy} /> : <form onSubmit={handleSubmit} noValidate>
         <div className="grid-2">
           <div className="form-group">
-            <label>Session Name</label>
+            <label htmlFor="upload-session">Session Name</label>
             <input
+              id="upload-session"
               type="text"
               value={session}
               onChange={e => { setSession(e.target.value); setErrors(prev => ({ ...prev, session: null })) }}
@@ -382,8 +434,9 @@ export default function UploadView({ api, toast }) {
             {errors.session && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.session}</div>}
           </div>
           <div className="form-group">
-            <label>Device ID {isBulk && <span style={{ fontWeight: 400, color: 'var(--text-dim)' }}>(auto-derived from filenames in bulk)</span>}</label>
+            <label htmlFor="upload-device">Device ID {isBulk && <span style={{ fontWeight: 400, color: 'var(--text-dim)' }}>(auto-derived from filenames in bulk)</span>}</label>
             <input
+              id="upload-device"
               type="text"
               value={deviceId}
               onChange={e => { setDeviceId(e.target.value); setErrors(prev => ({ ...prev, deviceId: null })) }}
@@ -436,34 +489,6 @@ export default function UploadView({ api, toast }) {
           </div>
         </div>
 
-        <div className="form-group">
-          <label>Input Method</label>
-          <div className="input-mode-switch">
-            <button
-              type="button"
-              className={`btn-secondary ${inputMode === 'file' ? 'btn-primary' : ''}`}
-              onClick={() => changeInputMode('file')}
-            >
-              File Upload {files.length > 1 ? `(${files.length} files)` : ''}
-            </button>
-            <button
-              type="button"
-              className={`btn-secondary ${inputMode === 'text' ? 'btn-primary' : ''}`}
-              onClick={() => changeInputMode('text')}
-            >
-              Paste Config
-            </button>
-            <button
-              type="button"
-              className={`btn-secondary ${inputMode === 'fetch' ? 'btn-primary' : ''}`}
-              onClick={() => changeInputMode('fetch')}
-            >
-              Collect from Network
-            </button>
-          </div>
-          <p className="field-help">File upload is recommended. Live collection requires direct network access from the Cortex bridge.</p>
-        </div>
-
         {inputMode === 'file' ? (
           <div className="form-group">
             <label>Config File(s) — bulk supported (select multiple)</label>
@@ -485,6 +510,7 @@ export default function UploadView({ api, toast }) {
           <div className="form-group">
             <label>Configuration Content</label>
             <textarea
+              className="resize-none"
               value={configText}
               onChange={e => { setConfigText(e.target.value); setErrors(prev => ({ ...prev, config: null })) }}
               rows={10}
@@ -500,26 +526,7 @@ export default function UploadView({ api, toast }) {
                 <span className="benchmark-eyebrow">Optional source</span>
                 <h2 id="fetch-heading">Live configuration collection</h2>
               </div>
-              <span className="fetch-security-note">Credentials are never stored</span>
-            </div>
-
-            <div className="source-type-switch" aria-label="Collection source">
-              <button
-                type="button"
-                className={fetchSourceType === 'ip' ? 'is-selected' : ''}
-                aria-pressed={fetchSourceType === 'ip'}
-                onClick={() => { setFetchSourceType('ip'); setErrors({}) }}
-              >
-                SSH device
-              </button>
-              <button
-                type="button"
-                className={fetchSourceType === 'url' ? 'is-selected' : ''}
-                aria-pressed={fetchSourceType === 'url'}
-                onClick={() => { setFetchSourceType('url'); setErrors({}) }}
-              >
-                HTTPS endpoint
-              </button>
+              <span className="fetch-security-note">Collection credentials are not saved</span>
             </div>
 
             <div className="form-group">
@@ -596,6 +603,7 @@ export default function UploadView({ api, toast }) {
                   onChange={e => { setFetchAuthToken(e.target.value); setErrors(prev => ({ ...prev, fetchCredential: null })) }}
                   placeholder="Bearer token"
                 />
+                {errors.fetchCredential && <div className="field-error">{errors.fetchCredential}</div>}
                 <div className="form-group">
                   <label htmlFor="fetch-header">Authentication header</label>
                   <input
@@ -607,6 +615,7 @@ export default function UploadView({ api, toast }) {
                     aria-invalid={Boolean(errors.fetchAuthHeader)}
                   />
                   {errors.fetchAuthHeader && <div className="field-error">{errors.fetchAuthHeader}</div>}
+                  <p className="field-help">Tokens require HTTPS. Use Authorization or an X-prefixed header. Configuration exports may contain secrets and are stored as evidence.</p>
                 </div>
               </div>
             )}
@@ -616,7 +625,7 @@ export default function UploadView({ api, toast }) {
         <button type="submit" className="btn-primary" disabled={!canSubmit} style={{ marginTop: 8 }}>
           {loading ? <><Spinner size={14} /> {isBulk ? `Uploading bulk (${bulkResults.filter(r=>r.status==='success').length}/${files.length})...` : inputMode === 'fetch' ? 'Collecting & scanning...' : 'Processing...'} </> : isBulk ? `Run Bulk Compliance Scan (${files.length} files)` : inputMode === 'fetch' ? 'Collect & Scan' : 'Run Compliance Scan'}
         </button>
-      </form>
+      </form>}
 
       {hasResults && (
         <div className="card" style={{ marginTop: 24 }}>
@@ -633,7 +642,7 @@ export default function UploadView({ api, toast }) {
               </div>
               <div className="stat-card">
                 <div className="stat-value">{bulkResults[0].data.total_checks}</div>
-                <div className="stat-label">Total Checks</div>
+                <div className="stat-label">Total checks · {Math.max(0, bulkResults[0].data.total_checks - bulkResults[0].data.passed - bulkResults[0].data.failed)} unresolved</div>
               </div>
               <div className="stat-card">
                 <div className="stat-value" style={{ color: 'var(--yellow)' }}>{bulkResults[0].data.unrecognized_count}</div>

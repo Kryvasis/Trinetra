@@ -106,7 +106,7 @@ export default function ResultsView({ api, toast }) {
         index="02"
         label="Evaluate"
         title="Results & Score"
-        description="View compliance scores per framework and detailed test results."
+        description="Review mapped-check pass rates and evidence. These are not compliance certifications: unresolved checks remain in the denominator and are not confirmed failures."
       />
 
       <section className="benchmark-panel" aria-labelledby="benchmark-heading">
@@ -208,13 +208,16 @@ export default function ResultsView({ api, toast }) {
                     )}
                     {activeFramework === 'STIG' && fwScore.compliance_percentage != null && (
                       <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                        STIG coverage: {fwScore.tests_passed}/{fwScore.total_tests_mapped} controls mapped
+                        Mapped checks passed: {fwScore.tests_passed}/{fwScore.total_tests_mapped}
                       </span>
                     )}
                   </div>
               </div>
 
               {/* Progress bar */}
+              <p className="field-help">
+                Passed: {fwScore.tests_passed ?? 0} · Failed: {fwScore.tests_failed ?? 0} · Manual review: {fwScore.tests_manual_review ?? '—'} · Errors: {fwScore.tests_errors ?? '—'} · Not tested: {fwScore.tests_not_tested ?? '—'}
+              </p>
               <div className="progress">
                 <div
                   className="progress-bar"

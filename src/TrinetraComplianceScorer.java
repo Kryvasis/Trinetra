@@ -83,9 +83,13 @@ public class TrinetraComplianceScorer {
                 if (isPassed) {
                     acc.testsPassed++;
                 } else {
-                    // fail, manual_review, error — all count as "not passed"
-                    // for compliance percentage purposes
-                    acc.testsFailed++;
+                    // Unresolved evidence remains in the denominator, but is not a failure.
+                    switch (verdict.trim().toLowerCase(Locale.ROOT)) {
+                        case "fail": acc.testsFailed++; break;
+                        case "error": acc.testsErrors++; break;
+                        case "not_tested": acc.testsNotTested++; break;
+                        default: acc.testsManualReview++;
+                    }
                 }
             }
         }
@@ -115,6 +119,7 @@ public class TrinetraComplianceScorer {
         // ── Build output ──
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("session_name", sanitized);
+        output.put("score_basis", "Mapped-check pass rate, not framework compliance or certification. Unresolved checks remain in the denominator; mappings do not prove control effectiveness.");
 
         Map<String, Object> frameworks = new LinkedHashMap<>();
         for (Map.Entry<String, FrameworkAccumulator> e : accumulators.entrySet()) {
@@ -125,6 +130,10 @@ public class TrinetraComplianceScorer {
             fw.put("controls_covered", sortedControls);
             fw.put("tests_passed", acc.testsPassed);
             fw.put("tests_failed", acc.testsFailed);
+            fw.put("tests_manual_review", acc.testsManualReview);
+            fw.put("tests_errors", acc.testsErrors);
+            fw.put("tests_not_tested", acc.testsNotTested);
+            fw.put("tests_not_passed", acc.totalMapped - acc.testsPassed);
             fw.put("total_tests_mapped", acc.totalMapped);
             double pct = acc.totalMapped > 0
                 ? Math.round(acc.testsPassed * 1000.0 / acc.totalMapped) / 10.0
@@ -274,6 +283,9 @@ public class TrinetraComplianceScorer {
         final Set<String> controlsCovered = new LinkedHashSet<>();
         int testsPassed = 0;
         int testsFailed = 0;
+        int testsManualReview = 0;
+        int testsErrors = 0;
+        int testsNotTested = 0;
         int totalMapped = 0;
     }
 }

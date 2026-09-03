@@ -174,6 +174,7 @@ public class TrinetraNarrativeGenerator {
             boolean passing = "pass".equalsIgnoreCase(verdict)
                 || "success".equalsIgnoreCase(verdict);
             for (String fw : mappings.keySet()) {
+                if (!passing && !"fail".equalsIgnoreCase(verdict)) continue;
                 (passing ? passedByFw : failedByFw)
                     .computeIfAbsent(fw, k -> new ArrayList<>())
                     .add(testId);
@@ -247,7 +248,8 @@ public class TrinetraNarrativeGenerator {
                                           String allowedList,
                                           List<String> perTestLines) {
         StringBuilder p = new StringBuilder();
-        p.append("You are a compliance reporting assistant for the Trinetra pentest framework.\n\n");
+        p.append("You are an evidence reporting assistant for Cortex, a configuration assessment prototype.\n\n");
+        p.append("SCOPE: compliance_percentage is a mapped-check pass rate, NOT framework compliance or certification. Only verdict fail is a failed check. manual_review, error, and not_tested are unresolved evidence, never failures. Mappings do not establish effectiveness, a framework violation, legal liability, or authorization to operate. Do not infer facts not present in the evidence.\n\n");
         p.append("SCORER OUTPUT (deterministic, EXACT and FINAL — the authoritative data):\n");
         p.append(TrinetraJson.prettyJson(scoreData)).append("\n\n");
         p.append("PER-TEST SUPPORTING CONTEXT (reference test IDs verbatim; do NOT derive any new numbers from this section):\n");
@@ -262,7 +264,7 @@ public class TrinetraNarrativeGenerator {
         p.append("REQUIRED STRUCTURE (plain markdown, no code fences):\n");
         p.append("For EACH framework present under \"frameworks\" in the scorer output, one section:\n");
         p.append("### <Framework name>\n");
-        p.append("- Compliance posture: short plain-language summary using that framework's compliance_percentage exactly.\n");
+        p.append("- Mapped-check pass rate: short summary using compliance_percentage exactly, with the scope limitation.\n");
         p.append("- Failed tests: name the failing test_ids for this framework from the supporting context and explain practically what failing them means for this framework's controls. If none failed, say so plainly.\n");
         p.append("- Coverage gaps: state how many controls were not exercised (use coverage_gaps_count exactly) and what that means for assurance.\n");
         p.append("Then ONE short paragraph interpreting unmapped_tests: these tests were executed but are not yet mapped in the compliance manifest, so they are NOT counted as compliance failures — they are mapping backlog only.\n");
@@ -480,18 +482,18 @@ public class TrinetraNarrativeGenerator {
             int gaps = listSize(fm.get("coverage_gaps"));
 
             sb.append("### ").append(fw).append("\n");
-            sb.append("**Compliance posture:** ").append(fmtPct(pct))
-              .append("% compliance — ").append(passed).append(" of ").append(mapped)
-              .append(" mapped tests passed (").append(failed).append(" failed), covering ")
-              .append(controls).append(" distinct controls.\n");
+            sb.append("**Mapped-check pass rate:** ").append(fmtPct(pct))
+              .append("% — ").append(passed).append(" of ").append(mapped)
+              .append(" mapped tests passed (").append(failed).append(" failed). Remaining outcomes are unresolved, not confirmed failures. Mappings reference ")
+              .append(controls).append(" distinct controls; they do not establish control effectiveness or certification.\n");
 
             List<String> failedTests = failedByFw.getOrDefault(fw, new ArrayList<>());
             sb.append("**Failed tests:** ");
             if (failedTests.isEmpty()) {
-                sb.append("None — all tests mapped to this framework passed.\n");
+                sb.append("No confirmed failed checks. Review unresolved outcomes and scope before drawing conclusions.\n");
             } else {
                 sb.append(String.join(", ", failedTests)).append(".\n");
-                sb.append("**Practical impact:** ").append(practicalImpact(fw)).append("\n");
+                sb.append("**Practical impact:** Validate each finding against the complete device configuration, vendor guidance, and control applicability before remediation. A mapped check alone does not establish a framework violation.\n");
             }
 
             sb.append("**Coverage gaps:** ").append(gaps)
