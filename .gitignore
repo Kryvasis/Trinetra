@@ -1,4 +1,5 @@
 # Compiled Java output
+.venv/
 out/
 
 # C++ build artifacts

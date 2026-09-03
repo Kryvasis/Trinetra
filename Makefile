@@ -5,9 +5,13 @@
 # -- Configuration -----------------------------------------------
 SRC_DIR       := src
 OUT_DIR       := out
+.DEFAULT_GOAL := help
 
 # -- Phony targets ------------------------------------------------
-.PHONY: compile clean rebuild install uninstall doctor test-gemini help test-java test-cpp test
+.PHONY: start compile clean rebuild install uninstall doctor test-gemini help test-java test-cpp test
+
+start:
+	python3 start_backend.py
 
 # -- Java unit tests ----------------------------------------------
 # Test classes with a main() entry point.  TrinetraChainStressWorker is
@@ -26,6 +30,7 @@ RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 # ================================================================
 help:
 	@echo "Trinetra Beta -- Available targets:"
+	@echo "  make start        Set up and start backend (Linux/WSL)"
 	@echo ""
 	@echo "  make compile      Build Java classes to $(OUT_DIR)/"
 	@echo "  make clean        Remove $(OUT_DIR)/ directory"

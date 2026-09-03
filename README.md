@@ -271,6 +271,22 @@ trinetra -doctor                           # system diagnostics
 
 Bridge API (React or curl): `POST /api/session`, `POST /api/session/<name>/upload-config` (multipart `config` + `serial_number`/`hardware_model`/`os_version` or JSON `config_content`), `POST /api/session/<name>/fetch-config` (`source_type: ip|url`, `target`, `device_id`, `vendor`, optional `serial_number`/`hardware_model`/`os_version`, plus `username`/`password`/`ssh_key` for ip or `auth_token`/`auth_header` for url — thin fetch → same `TrinetraConfigIngestor.ingest(..., live_fetch)`), `GET /api/session/<name>/devices` (shows `ingestion_method: live_fetch` vs `config_upload`), `GET /api/session/<name>/score?frameworks=CIS,STIG`, `POST /api/session/<name>/train`, `GET /api/session/<name>/audit-report/pdf?frameworks=CIS` (landscape PDF, includes live-fetch devices).
 
+## One-command backend startup (Linux / WSL)
+
+From the repository root, run `make start` (or `python3 start_backend.py`).
+The launcher creates an isolated `.venv`, installs pinned backend dependencies on
+the first run or when requirements change, compiles Java, and starts the API at
+`http://127.0.0.1:5000`. Stop it with Ctrl+C. First-time setup needs internet.
+
+Prerequisites: Python 3.10+, its venv module, a JDK compatible with the Java
+engine (Java 21 is tested), and Make. On Ubuntu, install these once with
+`sudo apt install python3 python3-venv default-jdk make`.
+
+The React frontend still starts separately with `cd frontend && npm run dev`.
+This is a local development launcher, not a production deployment server.
+Optional C++ network-probing tools are not started by the configuration-upload
+API launcher. Existing sessions and configuration are left intact.
+
 ## Tests
 
 ```bash
