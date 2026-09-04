@@ -159,6 +159,16 @@ public class TrinetraBridgeHelper {
             System.err.println("Config file not found: " + configPath);
             System.exit(1);
         }
+        // Defense in depth: reject HTML/web documents before ingestion (mirrors bridge/config_validation)
+        if (looksLikeHtml(configContent)) {
+            System.err.println("Webpages are not device configurations. This is a webpage, not a device configuration. Use Website analysis for public URLs, or provide a real device configuration export.");
+            System.exit(2);
+        }
+        // Additional config sanity: reject content that is overwhelmingly non-config (e.g. JS error pages)
+        if (!isPlausibleConfig(configContent)) {
+            System.err.println("Fetched content does not appear to be a device configuration — check the target and try again.");
+            System.exit(2);
+        }
         String filename = Path.of(configPath).getFileName().toString();
         TrinetraConfigIngestor.IngestResult result = TrinetraConfigIngestor.ingest(
             session, deviceId, vendor, configContent, filename,
@@ -209,5 +219,58 @@ public class TrinetraBridgeHelper {
         out.put("device_vendors", TrinetraSession.getAllDeviceVendors(sanitized));
         out.put("device_details", TrinetraSession.getAllDeviceDetails(sanitized));
         System.out.println(TrinetraJson.prettyJson(out));
+    }
+
+    // ── Content sanity (mirrors bridge/config_validation.py) ──
+    private static boolean looksLikeHtml(String content) {
+        if (content == null || content.isBlank()) return false;
+        String head = content.length() > 65536 ? content.substring(0, 65536) : content;
+        String lower = head.toLowerCase();
+        if (lower.contains("<!doctype html") || lower.contains("<html") || lower.contains("<head") || lower.contains("<body") || lower.contains("<script")) return true;
+        if (lower.contains("window.ytcfg") || lower.contains("emergency_base_url") || lower.contains("ytinitialdata")) return true;
+        String stripped = head.strip();
+        if (stripped.startsWith("{") && stripped.toLowerCase().contains("\"error\"")) {
+            // JSON error response
+            if (stripped.contains("{") && stripped.contains("}") && stripped.length() < 5000) return true;
+        }
+        return false;
+    }
+
+    private static boolean isPlausibleConfig(String content) {
+        if (content == null || content.isBlank()) return false;
+        if (content.contains("\u0000")) return false;
+        if (looksLikeHtml(content)) return false;
+        String lowerHead = content.length() > 4096 ? content.substring(0, 4096).toLowerCase() : content.toLowerCase();
+        if ((lowerHead.contains("404 not found") || lowerHead.contains("500 internal server error") || lowerHead.contains("error_204")) && configLikenessRatio(content) < 0.30) {
+            return false;
+        }
+        String[] lines = content.split("\\r?\\n");
+        int nonEmpty = 0;
+        for (String l : lines) if (!l.trim().isEmpty()) nonEmpty++;
+        if (nonEmpty >= 5) {
+            double ratio = configLikenessRatio(content);
+            if (ratio < 0.30) return false;
+        }
+        return true;
+    }
+
+    private static double configLikenessRatio(String content) {
+        if (content == null || content.isBlank()) return 0.0;
+        if (content.contains("\u0000")) return 0.0;
+        String[] rawLines = content.split("\\r?\\n");
+        List<String> lines = new ArrayList<>();
+        for (String l : rawLines) if (!l.trim().isEmpty()) lines.add(l);
+        if (lines.isEmpty()) return 0.0;
+        int configLike = 0;
+        for (String line : lines) {
+            String stripped = line.trim();
+            if (stripped.contains("<") && stripped.contains(">")) continue;
+            if (stripped.length() > 500) continue;
+            // Config line shape: starts with alphanum/!/# and contains typical CLI tokens
+            if (line.matches("(?i)^\\s*(?:[!#].*|[A-Za-z0-9][\\w\\-\\./:]*(\\s+[\\w\\-\\./:,\\[\\]{};='\"\\(\\)]+)*)\\s*$")) {
+                configLike++;
+            }
+        }
+        return (double) configLike / lines.size();
     }
 }

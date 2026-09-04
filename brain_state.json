@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-03T19:58:03.305508838Z",
+  "last_updated": "2026-09-04T04:53:23.655930195Z",
   "active_sessions": [
     "test1",
     "demo",
@@ -15,7 +15,6 @@
     "cisco_reg",
     "unknown_reg",
     "multi_vendor_e2e",
-    "aaa",
     "test_create_29a5d844",
     "test_duplicate_f4fa33b9",
     "test_status_0ca8e85c",
@@ -61,56 +60,12 @@
     "test_fetch_ip_c445c5ee",
     "test_fetch_upload_89f7ae43",
     "test_fetch_failure_ce94ce2e",
-    "train_loop_7759dd"
+    "train_loop_7759dd",
+    "manual_aa_a132da"
   ],
   "session_count": 61,
   "high_risk_sessions": [],
   "recent_activity": [
-    {
-      "session": "test_fetch_upload_89f7ae43",
-      "timestamp": "2026-09-03T19:58:02.102942693Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "test_fetch_upload_89f7ae43",
-      "timestamp": "2026-09-03T19:58:02.108593450Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "test_fetch_failure_ce94ce2e",
-      "timestamp": "2026-09-03T19:58:02.232335175Z",
-      "event": "session_created"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.581198423Z",
-      "event": "session_created"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.931862251Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.941319016Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.949909503Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.956483908Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.965752046Z",
-      "event": "finding_recorded"
-    },
     {
       "session": "train_loop_7759dd",
       "timestamp": "2026-09-03T19:58:02.970477638Z",
@@ -165,8 +120,53 @@
       "session": "train_loop_7759dd",
       "timestamp": "2026-09-03T19:58:03.305467989Z",
       "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.326571504Z",
+      "event": "session_created"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.611211978Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.621017284Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.627829544Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.633914232Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.639206784Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.644768140Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.649711961Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "manual_aa_a132da",
+      "timestamp": "2026-09-04T04:53:23.655862244Z",
+      "event": "finding_recorded"
     }
   ],
-  "previous_chain_hash": "0e39ce86c32449c66aa969e7087640241c68c27042a03fbe361660aeeba4a73d",
-  "chain_hash": "fb7b47b3c513337e5f4e3e2ed662ebdc22d5001ba461795db6995de688b8be39"
+  "previous_chain_hash": "ae82d5c6f15d2d8802c9558e7b0d7439a8d75b031b9eb9dd908ccdfa74552bea",
+  "chain_hash": "ec08555622af6c52366c515b3e585824b198f526fbe75a8352f6f027de29976c"
 }
