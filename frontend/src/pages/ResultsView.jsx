@@ -136,6 +136,7 @@ export default function ResultsView({ api, toast }) {
           value={inputSession}
           onChange={e => setInputSession(e.target.value)}
           placeholder="Session name"
+          aria-label="Session name"
           style={{ flex: 1, maxWidth: 300 }}
         />
         <button type="submit" className="btn-primary" disabled={loading || !inputSession.trim()}>
@@ -185,6 +186,7 @@ export default function ResultsView({ api, toast }) {
                 type="button"
                 className={`framework-tab ${activeFramework === fw ? 'active' : ''}`}
                 onClick={() => setActiveFramework(fw)}
+                aria-pressed={activeFramework === fw}
               >
                 {fw.replace(/_/g, ' ')}
               </button>

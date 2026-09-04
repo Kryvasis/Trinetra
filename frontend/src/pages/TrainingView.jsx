@@ -220,9 +220,10 @@ export default function TrainingView({ api, toast }) {
                 style={{
                   cursor: 'pointer',
                   background: selectedLine === u.line ? 'var(--surface2)' : 'transparent',
-                  borderLeft: selectedLine === u.line ? '3px solid var(--accent)' : '3px solid transparent',
+                  border: selectedLine === u.line ? '1px solid var(--accent)' : '1px solid var(--border)',
                 }}
                 onClick={() => selectLine(u.line)}
+                aria-pressed={selectedLine === u.line}
               >
                 <span style={{ fontSize: 11, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{u.device}</span>
                 <span className="line-text">{u.line}</span>

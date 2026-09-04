@@ -8,11 +8,12 @@ website/device separation (2026-09-04). Security and score semantics: [SECURITY-
 
 | Capability | Owner | Variants / verification |
 | --- | --- | --- |
-| Navigation and titles | `frontend/src/App.jsx`, `UploadView.jsx` | Upload & collect owns all inputs; `/website` redirects to `/?source=website`; observation results stay independent of device Results |
-| Page headings | `SceneHeader.jsx` | Existing kicker/title/description layout |
-| Forms and controls | Global `scene.css` form-group/input/btn styles | Native labeled fields; Website uses noValidate, inline error association and first-invalid focus |
+| Navigation and titles | `frontend/src/App.jsx`, `UploadView.jsx` | Open workspace leads to `/dashboard` overview; `/upload` owns inputs; `/system` retains diagnostics; `/website` and `/?source=website` redirect to `/upload?source=website` |
+| Page headings | `SceneHeader.jsx` | Compact title and description, without a workspace kicker |
+| Forms and controls | Workspace-scoped `workspace.css` over existing base styles | Native fields; Website retains noValidate, inline error association and first-invalid focus; optional hardware fields use native details/summary |
 | Feedback | `Toast.jsx` and persistent page status | Shared toast for completion; actionable failures persist inline |
-| Scrollbar and tokens | `scene.css` | Natural document scroll; no Website shell-height override |
+| Scrollbar and tokens | `workspace.css` within `.workspace-shell`; `scene.css` for intro/base | Natural document scroll; tables have horizontal overflow, no shared fixed-height form container |
+| Overview | `OverviewView.jsx`, `assessmentSummary.js` | Read-only named-session device fetch; 30s timeout, stale-response protection, retry, empty/loading/loaded/error states; first-five device preview |
 | Website response state | `WebsiteView.jsx` | Idle, pending, success, error, PDF pending; abort on unmount, block duplicates, explicit retry |
 
 No new select, date picker, modal, table selection or CRUD contract is introduced.
@@ -36,9 +37,35 @@ tool, not a multi-user authorization service; do not expose it publicly as-is.
 
 ## Design reconciliation
 
-The collection panel uses existing colors, typography, buttons, heading primitive and
-flat ruled content regions. Only the evidence label/value layout and bounded
-four-outcome summary are new. No global palette or animation changes were made.
+The approved 2026-09-04 workspace redesign replaces square ruled regions with
+rounded graphite surfaces, compact sans-serif typography and white current-route
+pills. `workspace.css` owns this scoped presentation; the introduction and its canvas
+remain unchanged. Route arrival is 220ms, control state changes 160ms; reduced motion
+removes workspace motion. Native Training select popup remains platform-owned.
+
+The overview reads `/api/session/<name>/devices` without starting scans or generating
+reports. Counts aggregate recorded per-device outcomes; unresolved equals total less
+pass/fail and is never shown as confirmed failure. No session directory, historical
+trend, account identity or system-wide telemetry is invented. A valid empty session
+shows zero; an unloaded or unavailable session shows no measured values.
+
+Open workspace routes to the overview after the existing 760ms transition (immediate
+with reduced motion). Secondary routes remain independent pages. Main-content focus
+and document title update on route navigation. Unknown routes show an app-owned
+not-found page with a return link. Titles follow `{Page} — Cortex`; no authentication
+or permission system was introduced by this redesign.
+
+| Operation | Pending | Outcome / feedback | Failure / focus |
+| --- | --- | --- | --- |
+| Open overview session | Busy button, fixed metric regions | Same page, named-session URL, actual counts | Persistent error with retry; input retained |
+| Follow device link | Device loader | Automatically loads query session | Timeout/error with retry; stale work canceled |
+| Change workspace page | Short route arrival | Destination heading and document title | Main content receives focus; navigation remains available |
+| Expand hardware details | Immediate native disclosure | Existing optional fields, values preserved | Validation errors expand disclosure |
+
+Existing mutation behavior and legacy validation boundaries are retained; this visual
+redesign does not claim full end-to-end security or backend-state coverage. Device
+Results still requires explicit Load Results to generate its report. No export or
+network collection runs on opening the overview.
 
 Source selectors precede device metadata. Website mode never asks for a device/session,
 vendor or collection credentials. Switching source clears credentials and transient results;
