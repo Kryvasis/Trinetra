@@ -1,0 +1,165 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-04T06:19:40.151Z",
+  "title": "Design System: Cortex",
+  "extensions": {
+    "responsiveGeometry": {
+      "introDisplaySize": "clamp(58px, 6.3vw, 104px)",
+      "circleRadius": "50%"
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Preserved intro statement",
+        "purpose": "Cinematic opening; workspace headings use the local sans family."
+      },
+      "headline": {
+        "displayName": "Workspace heading",
+        "purpose": "Compact sentence-case route title, 23px at 760px and below."
+      }
+    },
+    "shadows": [
+      {
+        "name": "toast",
+        "value": "0 20px 60px rgba(0, 0, 0, 0.34)",
+        "purpose": "Inherited transient toast only; workspace panels use tonal depth."
+      }
+    ],
+    "motion": [
+      {
+        "name": "workspace-route",
+        "value": "220ms cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Route arrival from opacity .7 and translateY(5px) to opacity 1 and no transform."
+      },
+      {
+        "name": "workspace-state",
+        "value": "160ms",
+        "purpose": "Control color/background/border and workflow-hover feedback."
+      },
+      {
+        "name": "intro-wipe",
+        "value": "760ms cubic-bezier(.4, 0, .2, 1)",
+        "purpose": "Preserved solid vertical intro wipe."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "animation: none; transition: none; scroll-behavior: auto",
+        "purpose": "Workspace descendants and pseudo-elements; intro ambient motion freezes and entry is immediate."
+      },
+      {
+        "name": "inherited-field-state",
+        "value": "200ms",
+        "purpose": "Existing input border/background transition, removed under reduced motion."
+      },
+      {
+        "name": "inherited-progress",
+        "value": "700ms cubic-bezier(.16, 1, .3, 1)",
+        "purpose": "Existing progress width transition, removed under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "small-max",
+        "value": "480px"
+      },
+      {
+        "name": "narrow-max",
+        "value": "760px"
+      },
+      {
+        "name": "stacked-nav-max",
+        "value": "1100px"
+      },
+      {
+        "name": "wide-min",
+        "value": "1600px"
+      }
+    ],
+    "scope": {
+      "workspace": "src/workspace.css overrides inside .workspace-shell",
+      "intro": "src/scene.css and ThreatField.jsx remain unchanged",
+      "focus": "2px solid #e0e8e2; outline-offset: 4px",
+      "forcedColors": "CanvasText panel borders; 2px Highlight current-navigation border",
+      "palette": "Source-only colors are in DESIGN.md; no invented tonal ramps or additional runtime tokens.",
+      "snippets": "Workspace colors use literal values because workspace-scoped overrides do not inherit into the standalone panel shadow DOM."
+    }
+  },
+  "components": [
+    {
+      "name": "Primary action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "White task action with dark ink.",
+      "html": "<button class=\"ds-primary\">Collect evidence</button>",
+      "css": ".ds-primary{font:620 12px/1.2 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;min-height:42px;padding:10px 16px;border:1px solid #f0f2ef;border-radius:10px;background:#f0f2ef;color:#111412;cursor:pointer;transition:color 160ms,background-color 160ms,border-color 160ms}.ds-primary:hover{background:#fff;border-color:#fff}.ds-primary:focus-visible{outline:2px solid #e0e8e2;outline-offset:4px}.ds-primary:disabled{opacity:.48;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-primary{transition:none}}"
+    },
+    {
+      "name": "Secondary action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Quiet inset action.",
+      "html": "<button class=\"ds-secondary\">Load session</button>",
+      "css": ".ds-secondary{font:620 12px/1.2 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;min-height:42px;padding:10px 16px;border:1px solid transparent;border-radius:10px;background:#191b1b;color:#f0f2ef;cursor:pointer;transition:color 160ms,background-color 160ms,border-color 160ms}.ds-secondary:hover{background:#292d2c;border-color:#4c5250}.ds-secondary:focus-visible{outline:2px solid #e0e8e2;outline-offset:4px}.ds-secondary:disabled{opacity:.48;cursor:not-allowed}@media(prefers-reduced-motion:reduce){.ds-secondary{transition:none}}"
+    },
+    {
+      "name": "Session input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Persistently labeled evidence-session field.",
+      "html": "<label class=\"ds-field\">Session ID<input placeholder=\"Enter a session ID\" /></label>",
+      "css": ".ds-field{display:grid;gap:8px;color:#b2b8b4;font:500 13px/1.5 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif}.ds-field input{min-height:42px;padding:11px 13px;border:1px solid #4c5250;border-radius:9px;background:#0e1010;color:#f0f2ef;font:400 13px 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;caret-color:#f0f2ef;transition:border-color .2s,background-color .2s}.ds-field input::placeholder{color:#a2aaa5}.ds-field input:focus{border-color:#e6ece7;background:rgba(120,167,173,.035)}.ds-field input:focus-visible{outline:2px solid #e0e8e2;outline-offset:4px}.ds-field input:hover:not(:disabled){border-color:rgba(239,237,241,.48)}@media(prefers-reduced-motion:reduce){.ds-field input{transition:none}}"
+    },
+    {
+      "name": "Workspace navigation",
+      "kind": "nav",
+      "refersTo": "navigation-active",
+      "description": "White active pill inside a graphite rail, never an underline.",
+      "html": "<nav class=\"ds-nav\" aria-label=\"Workspace\"><a href=\"/dashboard\" aria-current=\"page\">Overview</a><a href=\"/upload\">Upload &amp; collect</a><a href=\"/system\">System</a></nav>",
+      "css": ".ds-nav{display:flex;flex-wrap:wrap;gap:4px;padding:5px;background:#121414;border-radius:30px}.ds-nav a{display:flex;align-items:center;min-height:38px;padding:0 18px;font:500 12px/1.3 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif;border-radius:24px;color:#b2b8b4;text-decoration:none;transition:background-color 160ms,color 160ms}.ds-nav a:hover{background:#292d2c}.ds-nav a[aria-current]{background:#f0f2ef;color:#111412}.ds-nav a:focus-visible{outline:2px solid #e0e8e2;outline-offset:4px}@media(max-width:760px){.ds-nav{border-radius:16px}.ds-nav a{min-height:42px;padding-inline:12px}}@media(prefers-reduced-motion:reduce){.ds-nav a{transition:none}}"
+    },
+    {
+      "name": "Status badge",
+      "kind": "chip",
+      "refersTo": "badge",
+      "description": "Textual status in a small rounded tonal label.",
+      "html": "<span class=\"ds-badge\">Passed</span>",
+      "css": ".ds-badge{display:inline-flex;padding:4px 8px;border:0;border-radius:5px;background:#191b1b;color:#a8c9b4;font:500 11px/1.3 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif}"
+    },
+    {
+      "name": "Overview panel",
+      "kind": "card",
+      "refersTo": "overview-panel",
+      "description": "Rounded graphite evidence region without decorative elevation.",
+      "html": "<section class=\"ds-panel\"><h2>Assessment overview</h2><p>Load a session to review collected evidence.</p></section>",
+      "css": ".ds-panel{min-width:0;padding:26px;border-radius:22px;background:#121414;color:#f0f2ef;font-family:'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif}.ds-panel h2{color:#b2b8b4;font-size:14px;font-weight:500;line-height:1.4}.ds-panel p{font-size:13px;line-height:1.65;color:#b2b8b4}@media(max-width:1100px){.ds-panel{padding:22px}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Graphite Assessment Workspace",
+    "overview": "Cortex pairs a preserved cinematic network observatory with a compact, calm operational workspace. The user's NEXORA reference governs the workspace: near-black graphite, rounded tonal panels, white current navigation and restrained functional motion. Evidence and readable task state take priority over decorative telemetry.\n\nThe introduction remains its own visual system: a quiet masthead, large left-aligned statement, muted cyan geographic mesh and one ember exception path, with a single circular entry action. Its supplied Pioneer science composition and global signal model are preserved without importing proprietary imagery or agricultural content. `src/scene.css` and `ThreatField.jsx` own this incumbent opening; `src/workspace.css` overrides the legacy workspace styles inside `.workspace-shell`. Do not apply workspace tokens globally or restore the discarded square-panel/underline-navigation rules to the workspace.",
+    "keyCharacteristics": [
+      "Rounded graphite containers and white selection in the workspace.",
+      "Compact local typography, honest metrics and visible recovery paths.",
+      "Preserved cinematic introduction with one global signal model.",
+      "Functional route and control motion, disabled by reduced-motion preference."
+    ],
+    "rules": [
+      {
+        "name": "The Evidence Rule",
+        "body": "Never manufacture alerts, people, histories, telemetry or a compliance certification to populate this visual system.",
+        "section": "colors"
+      }
+    ],
+    "dos": [
+      "Do keep the workspace skin scoped and preserve the opening animation and globe.",
+      "Do use rounded graphite panels and white active navigation for workspace routes.",
+      "Do pair semantic color and chart marks with readable labels and actual evidence.",
+      "Do preserve workflow behavior, keyboard focus, reduced motion and narrow-screen scrolling."
+    ],
+    "donts": [
+      "Don't restore square workspace cards or underline-only active navigation from the old design.",
+      "Don't introduce fake telemetry, decorative neon, purple gradients, glass or glow.",
+      "Don't treat a pass rate or local assessment as production security certification.",
+      "Don't animate tables, errors or controls in ways that displace the user's workflow."
+    ]
+  }
+}

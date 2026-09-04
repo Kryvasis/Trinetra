@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
-import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import UploadView from './pages/UploadView'
 import ResultsView from './pages/ResultsView'
 import TrainingView from './pages/TrainingView'
@@ -7,24 +7,27 @@ import DashboardView from './pages/DashboardView'
 import SessionDevicesView from './pages/SessionDevicesView'
 import Toast from './components/Toast'
 import ThreatField from './components/ThreatField'
+import OverviewView from './pages/OverviewView'
 
 const API = '/api'
 
 const NAV_ITEMS = [
-  { to: '/', label: 'Upload', end: true },
+  { to: '/dashboard', label: 'Overview' },
+  { to: '/upload', label: 'Upload & collect' },
   { to: '/results', label: 'Results' },
   { to: '/training', label: 'Training' },
   { to: '/devices', label: 'Devices' },
-  { to: '/dashboard', label: 'System' },
+  { to: '/system', label: 'System' },
 ]
 
 const TITLES = {
-  '/': 'Upload & collect',
+  '/upload': 'Upload & collect',
   '/website': 'Website Analysis',
   '/results': 'Results & Score',
   '/training': 'Training Loop',
   '/devices': 'Session Devices',
-  '/dashboard': 'System Status',
+  '/dashboard': 'Overview',
+  '/system': 'System Status',
 }
 
 function IntroExperience({ entering, onOpen }) {
@@ -70,6 +73,7 @@ function WorkspaceShell({ addToast }) {
   useEffect(() => {
     document.title = `${TITLES[location.pathname] || 'Compliance Scanner'} — Cortex`
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    document.getElementById('main-content')?.focus({ preventScroll: true })
   }, [location.pathname])
 
   return (
@@ -77,7 +81,7 @@ function WorkspaceShell({ addToast }) {
       <a className="skip-link" href="#main-content">Skip to content</a>
       <nav className="nav" aria-label="Primary navigation">
         <div className="nav-inner">
-          <NavLink to="/" className="nav-brand" aria-label="Cortex home">
+          <NavLink to="/dashboard" className="nav-brand" aria-label="Cortex overview">
             <span className="brand-glyph" aria-hidden="true"><i /><i /></span>
             <span className="brand-copy"><strong>CORTEX</strong><small>Configuration intelligence</small></span>
           </NavLink>
@@ -90,15 +94,18 @@ function WorkspaceShell({ addToast }) {
           </div>
         </div>
       </nav>
-      <main className="container app-main" id="main-content">
+      <main className="container app-main" id="main-content" tabIndex={-1}>
         <div key={location.pathname} className="route-stage">
           <Routes>
-            <Route path="/" element={<UploadView api={API} toast={addToast} />} />
-            <Route path="/website" element={<Navigate to="/?source=website" replace />} />
+            <Route path="/" element={<Navigate to={location.search ? `/upload${location.search}` : '/dashboard'} replace />} />
+            <Route path="/upload" element={<UploadView api={API} toast={addToast} />} />
+            <Route path="/website" element={<Navigate to="/upload?source=website" replace />} />
             <Route path="/results" element={<ResultsView api={API} toast={addToast} />} />
             <Route path="/training" element={<TrainingView api={API} toast={addToast} />} />
             <Route path="/devices" element={<SessionDevicesView api={API} toast={addToast} />} />
-            <Route path="/dashboard" element={<DashboardView api={API} toast={addToast} />} />
+            <Route path="/dashboard" element={<OverviewView api={API} />} />
+            <Route path="/system" element={<DashboardView api={API} toast={addToast} />} />
+            <Route path="*" element={<div className="empty-state card"><h1>Page not found</h1><p>Choose a workspace page from the navigation.</p><NavLink to="/dashboard">Return to overview</NavLink></div>} />
           </Routes>
         </div>
       </main>
@@ -108,6 +115,7 @@ function WorkspaceShell({ addToast }) {
 
 function Experience({ addToast }) {
   const location = useLocation()
+  const navigate = useNavigate()
   const [workspaceOpen, setWorkspaceOpen] = useState(location.pathname !== '/' || new URLSearchParams(location.search).has('source'))
   const [entering, setEntering] = useState(false)
 
@@ -120,15 +128,17 @@ function Experience({ addToast }) {
     const timer = window.setTimeout(() => {
       setWorkspaceOpen(true)
       setEntering(false)
+      navigate('/dashboard')
     }, 760)
     return () => window.clearTimeout(timer)
-  }, [entering])
+  }, [entering, navigate])
 
   const openWorkspace = () => {
     if (entering) return
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     if (reducedMotion) {
       setWorkspaceOpen(true)
+      navigate('/dashboard')
       return
     }
     setEntering(true)

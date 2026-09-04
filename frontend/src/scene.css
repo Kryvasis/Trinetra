@@ -104,14 +104,28 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .route-stage > div { position: relative; padding-bottom: 64px; }
 
 .intro-experience {
+  /* Match the graphite workspace palette without changing other route tokens. */
+  --bg-deep: #090a0a;
+  --surface: #121414;
+  --surface2: #191b1b;
+  --text: #f0f2ef;
+  --text-dim: #b2b8b4;
+  --text-faint: #a2aaa5;
+  --accent: #e6ece7;
+  --accent-hover: #ffffff;
+  --intro-mesh-rgb: 146, 158, 150;
+  --intro-signal-rgb: 191, 201, 194;
+  --intro-exception-rgb: 168, 157, 152;
+  --intro-label-rgb: 240, 242, 239;
   position: fixed;
   inset: 0;
   min-width: 320px;
   overflow: hidden;
   isolation: isolate;
   color: var(--text);
-  background: var(--bg-deep);
+  background: radial-gradient(ellipse at 71% 48%, var(--surface2) 0%, var(--surface) 36%, var(--bg-deep) 74%);
 }
+.intro-experience .brand-glyph i:first-child { border-color: var(--accent); }
 .intro-experience::before,
 .intro-experience::after {
   content: "";
@@ -190,7 +204,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   height: 132px;
   padding: 0;
   color: var(--text);
-  background: rgba(7, 7, 17, .72);
+  background: rgba(9, 10, 10, .72);
   border: 1px solid rgba(239, 237, 241, .62);
   border-radius: 50%;
   font: 560 9px/1.35 var(--mono);
@@ -215,11 +229,11 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 .intro-action::after {
   inset: 12px;
-  border: 1px solid rgba(120, 167, 173, .22);
+  border: 1px solid rgba(191, 201, 194, .22);
   transition: inset .45s var(--ease-out), border-color .3s;
 }
 .intro-action:hover { color: var(--bg-deep); background: var(--text); border-color: var(--text); }
-.intro-action:hover::after { inset: -1px; border-color: rgba(7, 7, 17, .3); }
+.intro-action:hover::after { inset: -1px; border-color: rgba(9, 10, 10, .3); }
 .intro-action:active { transform: scale(.96); }
 .intro-action:disabled { opacity: 1; cursor: wait; }
 .intro-foot {

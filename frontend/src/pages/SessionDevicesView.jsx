@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
@@ -12,20 +12,28 @@ export default function SessionDevicesView({ api, toast }) {
   const [devices, setDevices] = useState([])
   const [sessionMeta, setSessionMeta] = useState(null)
   const [error, setError] = useState(null)
+  const requestRef = useRef(null)
+
+  useEffect(() => () => { requestRef.current?.abort(); requestRef.current = null }, [])
 
   const fetchDevices = useCallback(async (sessName) => {
     if (!sessName) return
+    requestRef.current?.abort()
+    const controller = new AbortController()
+    requestRef.current = controller
+    const timeout = setTimeout(() => controller.abort(), 30000)
     setLoading(true)
     setError(null)
     setDevices([])
     setSessionMeta(null)
     try {
-      const res = await fetch(`${api}/session/${encodeURIComponent(sessName)}/devices`)
+      const res = await fetch(`${api}/session/${encodeURIComponent(sessName)}/devices`, { signal: controller.signal })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.error || `HTTP ${res.status}`)
       }
       const data = await res.json()
+      if (requestRef.current !== controller) return
       setDevices(data.devices || [])
       setSessionMeta(data)
       setSession(sessName)
@@ -35,19 +43,22 @@ export default function SessionDevicesView({ api, toast }) {
         toast(`Loaded ${data.devices.length} device(s)`, 'success')
       }
     } catch (err) {
-      setError(err.message)
-      toast(err.message, 'error')
+      if (requestRef.current !== controller) return
+      const message = err.name === 'AbortError' ? 'The request timed out. Check the backend and retry.' : err.message
+      setError(message)
+      toast(message, 'error')
     } finally {
-      setLoading(false)
+      clearTimeout(timeout)
+      if (requestRef.current === controller) { requestRef.current = null; setLoading(false) }
     }
   }, [api, toast])
 
   useEffect(() => {
-    if (sessionParam && sessionParam !== session) {
+    if (sessionParam) {
       setInputSession(sessionParam)
       fetchDevices(sessionParam)
     }
-  }, [sessionParam, session, fetchDevices])
+  }, [sessionParam, fetchDevices])
 
   const handleSubmit = (e) => {
     e.preventDefault()
@@ -71,6 +82,7 @@ export default function SessionDevicesView({ api, toast }) {
           value={inputSession}
           onChange={e => setInputSession(e.target.value)}
           placeholder="Session name (e.g. multi_vendor_e2e)"
+          aria-label="Session name"
           style={{ flex: 1, maxWidth: 400 }}
         />
         <button type="submit" className="btn-primary" disabled={loading || !inputSession.trim()}>
@@ -98,7 +110,7 @@ export default function SessionDevicesView({ api, toast }) {
       {!loading && !error && devices.length === 0 && session && (
         <div className="empty-state card">
           <h3>No devices found</h3>
-          <p>Session "{session}" has no devices. Upload a config first from the <Link to="/">Upload</Link> page.</p>
+          <p>Session "{session}" has no devices. Upload a config first from the <Link to="/upload">Upload & collect</Link> page.</p>
         </div>
       )}
 

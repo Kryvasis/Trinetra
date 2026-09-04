@@ -468,26 +468,26 @@ export default function UploadView({ api, toast }) {
           <p className="field-help">Use auto-detect unless the configuration source is already known.</p>
         </fieldset>
 
-        <div className="card" style={{ padding: 16, marginBottom: 16 }}>
-          <label style={{ fontWeight: 600, marginBottom: 8 }}>Distinct Hardware Fields (optional, per PS Deliverable 4)</label>
+        <details className="hardware-details" open={Boolean(errors.serialNumber || errors.hardwareModel || errors.osVersion) || undefined}>
+          <summary>Hardware details <span>Optional · serial number, model and OS version</span></summary>
           <div className="grid-2">
             <div className="form-group">
-              <label>Serial Number</label>
-              <input type="text" value={serialNumber} onChange={e => { setSerialNumber(e.target.value); setErrors(prev => ({ ...prev, serialNumber: null })) }} placeholder="e.g. FTX12345678" />
+              <label htmlFor="hardware-serial">Serial Number</label>
+              <input id="hardware-serial" type="text" value={serialNumber} onChange={e => { setSerialNumber(e.target.value); setErrors(prev => ({ ...prev, serialNumber: null })) }} placeholder="e.g. FTX12345678" />
               {errors.serialNumber && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.serialNumber}</div>}
             </div>
             <div className="form-group">
-              <label>Hardware Model</label>
-              <input type="text" value={hardwareModel} onChange={e => { setHardwareModel(e.target.value); setErrors(prev => ({ ...prev, hardwareModel: null })) }} placeholder="e.g. C9300-48P, SRX345" />
+              <label htmlFor="hardware-model">Hardware Model</label>
+              <input id="hardware-model" type="text" value={hardwareModel} onChange={e => { setHardwareModel(e.target.value); setErrors(prev => ({ ...prev, hardwareModel: null })) }} placeholder="e.g. C9300-48P, SRX345" />
               {errors.hardwareModel && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.hardwareModel}</div>}
             </div>
           </div>
           <div className="form-group">
-            <label>OS Version {osVersion === '' && <span style={{ fontWeight: 400, color: 'var(--text-dim)' }}>(auto-detected from config header if blank — IOS XE / NX-OS / JUNOS)</span>}</label>
-            <input type="text" value={osVersion} onChange={e => { setOsVersion(e.target.value); setErrors(prev => ({ ...prev, osVersion: null })) }} placeholder="e.g. IOS XE 17.6.5 or blank for auto-detect" />
+            <label htmlFor="hardware-os">OS Version {osVersion === '' && <span style={{ fontWeight: 400, color: 'var(--text-dim)' }}>(auto-detected from config header if blank — IOS XE / NX-OS / JUNOS)</span>}</label>
+            <input id="hardware-os" type="text" value={osVersion} onChange={e => { setOsVersion(e.target.value); setErrors(prev => ({ ...prev, osVersion: null })) }} placeholder="e.g. IOS XE 17.6.5 or blank for auto-detect" />
             {errors.osVersion && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{errors.osVersion}</div>}
           </div>
-        </div>
+        </details>
 
         {inputMode === 'file' ? (
           <div className="form-group">

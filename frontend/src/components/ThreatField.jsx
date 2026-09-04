@@ -28,6 +28,14 @@ export default function ThreatField({ scene = '/' }) {
     if (!canvas) return undefined
 
     const context = canvas.getContext('2d', { alpha: true })
+    // Resolve the intro's color tokens once, never during the animation loop.
+    const styles = window.getComputedStyle(canvas)
+    const palette = {
+      mesh: styles.getPropertyValue('--intro-mesh-rgb').trim() || '146, 158, 150',
+      signal: styles.getPropertyValue('--intro-signal-rgb').trim() || '191, 201, 194',
+      exception: styles.getPropertyValue('--intro-exception-rgb').trim() || '168, 157, 152',
+      label: styles.getPropertyValue('--intro-label-rgb').trim() || '240, 242, 239',
+    }
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
     const pointer = { x: 0, y: 0 }
     const routeRotation = ROUTE_ROTATION[scene] ?? 0
@@ -74,7 +82,7 @@ export default function ThreatField({ scene = '/' }) {
           const previous = points[index - 1]
           const current = points[index]
           const depth = Math.max(-1, Math.min(1, (previous.depth + current.depth) / 2))
-          context.strokeStyle = `rgba(111, 158, 166, ${depth > 0 ? 0.28 + depth * 0.24 : 0.055})`
+          context.strokeStyle = `rgba(${palette.mesh}, ${depth > 0 ? 0.28 + depth * 0.24 : 0.055})`
           context.beginPath()
           context.moveTo(previous.x, previous.y)
           context.lineTo(current.x, current.y)
@@ -111,7 +119,7 @@ export default function ThreatField({ scene = '/' }) {
         const anchorX = point.x + outward * reach
         const anchorY = point.y + (index % 2 === 0 ? -22 : 26)
         const isException = signal.label === 'AAA'
-        const color = isException ? '188, 102, 78' : '116, 165, 173'
+        const color = isException ? palette.exception : palette.signal
 
         context.strokeStyle = `rgba(${color}, ${isException ? 0.58 : 0.35})`
         context.lineWidth = isException ? 1.1 : 0.7
@@ -129,7 +137,7 @@ export default function ThreatField({ scene = '/' }) {
         if (width >= 720) {
           context.font = '10px "Cascadia Code", Consolas, monospace'
           context.textAlign = outward > 0 ? 'left' : 'right'
-          context.fillStyle = 'rgba(220, 218, 224, 0.56)'
+          context.fillStyle = `rgba(${palette.label}, 0.56)`
           context.fillText(signal.label, anchorX + outward * 23, anchorY + 3)
         }
       })
@@ -137,7 +145,7 @@ export default function ThreatField({ scene = '/' }) {
       for (let index = 1; index < visibleSignals.length; index += 1) {
         const previous = visibleSignals[index - 1].point
         const current = visibleSignals[index].point
-        context.strokeStyle = index === 2 ? 'rgba(188, 102, 78, 0.34)' : 'rgba(116, 165, 173, 0.15)'
+        context.strokeStyle = index === 2 ? `rgba(${palette.exception}, 0.34)` : `rgba(${palette.signal}, 0.15)`
         context.lineWidth = index === 2 ? 1 : 0.6
         context.beginPath()
         context.moveTo(previous.x, previous.y)
@@ -157,7 +165,7 @@ export default function ThreatField({ scene = '/' }) {
       drawMesh(rotation, centerX, centerY, radius)
       drawSignals(rotation, centerX, centerY, radius)
 
-      context.strokeStyle = 'rgba(203, 200, 210, 0.16)'
+      context.strokeStyle = `rgba(${palette.signal}, 0.16)`
       context.lineWidth = 0.8
       context.beginPath()
       context.arc(centerX, centerY, radius + 18, -0.4, 1.08)
