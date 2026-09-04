@@ -404,6 +404,59 @@ public class TrinetraSession {
         return TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);
     }
 
+    /** Scope changes never rewrite the original tamper-evident evidence chain. */
+    public static Set<String> getRemovedDevices(String sessionName) {
+        Map<String, Object> session = loadSession(sessionName);
+        if (session == null) return Set.of();
+        Object removed = session.get("removed_devices");
+        if (!(removed instanceof Map)) return Set.of();
+        Set<String> ids = new LinkedHashSet<>();
+        for (Object key : ((Map<?, ?>) removed).keySet()) ids.add(String.valueOf(key));
+        return ids;
+    }
+
+    public static List<Map<String, Object>> getActiveNormalizedResults(String sessionName) {
+        Set<String> removed = getRemovedDevices(sessionName);
+        List<Map<String, Object>> active = new ArrayList<>();
+        for (Map<String, Object> entry : getNormalizedResults(sessionName)) {
+            if (!removed.contains(TrinetraCommon.getString(entry, "device_id", ""))) active.add(entry);
+        }
+        return active;
+    }
+
+    public static boolean setDeviceRemoved(String sessionName, String deviceId, boolean removed) {
+        Boolean ok = withSessionStateLock(sessionName, () -> {
+            Map<String, Object> session = loadSession(sessionName);
+            if (session == null || session.isEmpty()) return false;
+            boolean exists = getAllDeviceVendors(sessionName).containsKey(deviceId);
+            for (Map<String, Object> row : getNormalizedResults(sessionName)) {
+                if (deviceId.equals(TrinetraCommon.getString(row, "device_id", ""))) exists = true;
+            }
+            for (Map<String, Object> row : getFindings(sessionName)) {
+                if (deviceId.equals(TrinetraCommon.getString(row, "device_id", ""))) exists = true;
+            }
+            if (!exists) return false;
+            Map<String, Object> excluded = new LinkedHashMap<>();
+            Object previous = session.get("removed_devices");
+            if (previous instanceof Map) {
+                for (Map.Entry<?, ?> entry : ((Map<?, ?>) previous).entrySet())
+                    excluded.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+            if (removed == excluded.containsKey(deviceId)) return true;
+            String timestamp = TrinetraCommon.nowIso();
+            if (removed) excluded.put(deviceId, timestamp);
+            else excluded.remove(deviceId);
+            session.put("removed_devices", excluded);
+            List<Map<String, Object>> history = new ArrayList<>(TrinetraCommon.getList(session, "device_scope_history"));
+            history.add(TrinetraCommon.mapOf("device_id", deviceId, "action", removed ? "remove" : "restore", "timestamp", timestamp));
+            session.put("device_scope_history", history);
+            session.put("updated_at", timestamp);
+            TrinetraCommon.writeJsonFile(TrinetraCommon.sessionJson(sessionName), session);
+            return true;
+        });
+        return Boolean.TRUE.equals(ok);
+    }
+
     /**
      * Append one entry to the brain-state normalized_results array and
      * persist atomically via TrinetraCommon.writeJsonFile.

@@ -85,7 +85,7 @@ public class TrinetraAuditReportBuilder {
 
         // ── Plane 1: raw execution evidence ──
         List<Map<String, Object>> results =
-            TrinetraSession.getNormalizedResults(sanitized);
+            TrinetraSession.getActiveNormalizedResults(sanitized);
 
         // test_id -> entries (a test may run more than once / many devices)
         Map<String, List<Map<String, Object>>> evidenceByTest = new LinkedHashMap<>();
@@ -282,6 +282,9 @@ public class TrinetraAuditReportBuilder {
 
         StringBuilder sb = new StringBuilder();
         sb.append("# Combined Audit Report — ").append(session).append("\n\n");
+        sb.append("Assessment scope excludes removed devices: ")
+          .append(TrinetraSession.getRemovedDevices(session).size())
+          .append(". Historical evidence and its chain remain retained; earlier exported reports are unchanged.\n\n");
         sb.append("| Field | Value |\n|-------|-------|\n");
         sb.append("| **Session** | ").append(session).append(" |\n");
         sb.append("| **Target** | ").append(cell(target)).append(" |\n");

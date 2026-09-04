@@ -1,0 +1,3 @@
+! SYNTHETIC INCOMPLETE EVIDENCE - not proof of a secure configuration
+hostname cortex-incomplete
+!

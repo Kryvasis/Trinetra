@@ -8,6 +8,8 @@ import SessionDevicesView from './pages/SessionDevicesView'
 import Toast from './components/Toast'
 import ThreatField from './components/ThreatField'
 import OverviewView from './pages/OverviewView'
+import ActiveSession from './components/ActiveSession'
+import { sessionSearch } from './utils/activeSession'
 
 const API = '/api'
 
@@ -67,8 +69,9 @@ function IntroExperience({ entering, onOpen }) {
   )
 }
 
-function WorkspaceShell({ addToast }) {
+function WorkspaceShell({ addToast, sessionBanner }) {
   const location = useLocation()
+  const sessionQuery = sessionSearch('', new URLSearchParams(location.search).get('session'))
 
   useEffect(() => {
     document.title = `${TITLES[location.pathname] || 'Compliance Scanner'} — Cortex`
@@ -81,19 +84,20 @@ function WorkspaceShell({ addToast }) {
       <a className="skip-link" href="#main-content">Skip to content</a>
       <nav className="nav" aria-label="Primary navigation">
         <div className="nav-inner">
-          <NavLink to="/dashboard" className="nav-brand" aria-label="Cortex overview">
+          <NavLink to={`/dashboard${sessionQuery}`} className="nav-brand" aria-label="Cortex overview">
             <span className="brand-glyph" aria-hidden="true"><i /><i /></span>
             <span className="brand-copy"><strong>CORTEX</strong><small>Configuration intelligence</small></span>
           </NavLink>
           <div className="nav-links">
             {NAV_ITEMS.map(item => (
-              <NavLink key={item.to} to={item.to} end={item.end}>
+              <NavLink key={item.to} to={`${item.to}${sessionQuery}`} end={item.end}>
                 {item.label}
               </NavLink>
             ))}
           </div>
         </div>
       </nav>
+      {sessionBanner}
       <main className="container app-main" id="main-content" tabIndex={-1}>
         <div key={location.pathname} className="route-stage">
           <Routes>
@@ -145,7 +149,7 @@ function Experience({ addToast }) {
   }
 
   if (!workspaceOpen) return <IntroExperience entering={entering} onOpen={openWorkspace} />
-  return <WorkspaceShell addToast={addToast} />
+  return <ActiveSession><WorkspaceShell addToast={addToast} /></ActiveSession>
 }
 
 export default function App() {

@@ -331,6 +331,9 @@ public class TrinetraConfigIngestor {
             TrinetraSession.appendFinding(sanitized, uncFinding);
         }
 
+        // A successful explicit re-upload returns the device to active scope.
+        if (TrinetraSession.getRemovedDevices(sanitized).contains(deviceId))
+            TrinetraSession.setDeviceRemoved(sanitized, deviceId, false);
         TrinetraBrain.updateBrain(sanitized);
 
         return new IngestResult(deviceId, canonicalVendor, methodTag, findings.size(), passed, failed, unrecognized, findings);

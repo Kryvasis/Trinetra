@@ -21,6 +21,17 @@ public class TrinetraBridgeHelper {
                 case "status":
                     handleStatus(args);
                     break;
+                case "remove-device":
+                case "restore-device":
+                    if (args.length != 3 || !args[1].matches("[A-Za-z0-9_-]{1,64}")
+                        || !args[2].matches("[A-Za-z0-9._-]{1,128}"))
+                        throw new IllegalArgumentException("Invalid session or device identifier");
+                    if (!TrinetraSession.setDeviceRemoved(args[1], args[2], cmd.equals("remove-device"))) {
+                        System.err.println("Session or device not found");
+                        System.exit(2);
+                    }
+                    System.out.println("{\"status\":\"ok\"}");
+                    break;
                 case "set-vendor":
                     handleSetVendor(args);
                     break;
@@ -193,12 +204,14 @@ public class TrinetraBridgeHelper {
         out.put("session", sanitized);
         if (args.length >= 3) {
             String deviceId = args[2];
-            List<String> lines = TrinetraSession.getUnrecognizedLines(sanitized, deviceId);
+            List<String> lines = TrinetraSession.getRemovedDevices(sanitized).contains(deviceId)
+                ? List.of() : TrinetraSession.getUnrecognizedLines(sanitized, deviceId);
             out.put("device_id", deviceId);
             out.put("unrecognized_lines", lines);
             out.put("count", lines.size());
         } else {
-            Map<String, List<String>> all = TrinetraSession.getAllUnrecognizedLines(sanitized);
+            Map<String, List<String>> all = new LinkedHashMap<>(TrinetraSession.getAllUnrecognizedLines(sanitized));
+            TrinetraSession.getRemovedDevices(sanitized).forEach(all::remove);
             out.put("unrecognized_by_device", all);
             int total = 0;
             for (List<String> l : all.values()) total += l.size();

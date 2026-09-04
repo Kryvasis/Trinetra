@@ -164,7 +164,7 @@ public class TrinetraNarrativeGenerator {
                                             Map<String, List<String>> failedByFw,
                                             Map<String, List<String>> passedByFw) {
         List<Map<String, Object>> results =
-            TrinetraSession.getNormalizedResults(sessionName);
+            TrinetraSession.getActiveNormalizedResults(sessionName);
         for (Map<String, Object> entry : results) {
             String testId = TrinetraCommon.getString(entry, "test_id", "?");
             String verdict = TrinetraCommon.getString(entry, "normalized_result", "");

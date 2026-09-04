@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
+import { rememberSession } from '../utils/activeSession'
 
 export default function TrainingView({ api, toast }) {
   const [params] = useSearchParams()
@@ -25,6 +26,7 @@ export default function TrainingView({ api, toast }) {
   const [training, setTraining] = useState(false)
   const [trainErrors, setTrainErrors] = useState({})
   const abortRef = useRef(null)
+  useEffect(() => () => { abortRef.current?.abort(); abortRef.current = null }, [])
 
   useEffect(() => {
     if (sessionParam && sessionParam !== session) {
@@ -48,6 +50,8 @@ export default function TrainingView({ api, toast }) {
         throw new Error(body.error || `Failed to load: ${res.status}`)
       }
       const data = await res.json()
+      if (controller.signal.aborted) return
+      rememberSession(sessName)
       const lines = []
       Object.entries(data.unrecognized_by_device || {}).forEach(([dev, devLines]) => {
         devLines.forEach(line => lines.push({ device: dev, line }))
