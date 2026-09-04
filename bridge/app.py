@@ -701,7 +701,7 @@ def fetch_config(name):
             return error_response("invalid configuration URL — malformed port or URL structure", 400)
         if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
             return error_response("URL must include a valid hostname (e.g. https://example.com/config)", 400)
-        if not is_valid_hostname(parsed.hostname):
+        if not is_valid_ip_or_hostname(parsed.hostname):
             return error_response("URL must include a valid hostname (e.g. https://example.com/config)", 400)
         if parsed.username or parsed.password:
             return error_response("credentials must not be embedded in the URL", 400)

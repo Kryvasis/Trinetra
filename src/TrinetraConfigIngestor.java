@@ -222,16 +222,24 @@ public class TrinetraConfigIngestor {
         TrinetraSession.setUnrecognizedLines(sanitized, deviceId, unrecognized);
 
         // Run compliance checks against the config content as a whole
-        // For each relevant V-code, evaluate the entire config content with the decision engine
+        // For each relevant V-code, evaluate the entire config content.
+        // Category 1 controls use config-syntax-native logic (explicit vendor directives);
+        // Category 2 controls inherently require live network/runtime state and are
+        // returned as manual_review with a distinct, honest detail message.
+        // This keeps the live-probe DecisionEngine path (TrinetraStat) untouched.
         TrinetraStat.loadDefinitions();
         List<Map<String, Object>> findings = new ArrayList<>();
         int passed = 0, failed = 0;
-        Set<String> vcodesToCheck = new LinkedHashSet<>(lineToVcode.values());
-        // Also include a few default checks that should always run for config upload (even if no line matched, we should check for absence)
-        // For demo, ensure at least V-013, V-071, V-006, V-057 are checked
-        // If no lines matched a V-code, we still check those V-codes against the whole config
+        // Score the full PS-required set (15) so Category 2 appears as
+        // "requires live verification" rather than vanishing into coverage_gaps.
+        // lineToVcode values are included for completeness but the PS set is authoritative.
+        Set<String> psRequired = new LinkedHashSet<>(Arrays.asList(
+            "V-003","V-005","V-006","V-007","V-008","V-013","V-057","V-058","V-070","V-071","V-087","V-105","V-106","V-107","V-144"
+        ));
+        Set<String> vcodesToCheck = new LinkedHashSet<>(psRequired);
+        vcodesToCheck.addAll(lineToVcode.values());
+        // Fallback: also keep the original default set for any non-PS line mappings
         Set<String> defaultChecks = new LinkedHashSet<>(Arrays.asList("V-013", "V-071", "V-006", "V-007", "V-057", "V-058", "V-003"));
-        // Only check those that are in the current static_map
         for (String vc : defaultChecks) {
             if (TrinetraStat.isStatCode(vc)) vcodesToCheck.add(vc);
         }
@@ -239,21 +247,30 @@ public class TrinetraConfigIngestor {
         for (String vcode : vcodesToCheck) {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
-            // Use the entire config content as "raw_output" for decision engine
-            // The VendorConnector's parsing is repurposed here: we feed file content instead of live SSH output
-            // The same decision engine (grep_present/absent etc.) evaluates the file content
             String rawForCheck = configContent != null ? configContent : "";
-            // For training-mapped lines, we could inject the security_category into rawForCheck to influence decision
-            // But for now, just use the raw config
-            boolean requiresRuntime = "exit_code_zero".equals(def.decisionRule.evalMethod)
-                || "numeric_threshold".equals(def.decisionRule.evalMethod);
-            TrinetraStat.Verdict verdict = requiresRuntime
-                ? TrinetraStat.Verdict.MANUAL_REVIEW
-                : TrinetraStat.DecisionEngine.evaluate(def.decisionRule, rawForCheck, 0);
-            // If manual review, try to infer from lineToVcode: if we had a matching line for this V-code, then it's relevant
-            // For config, we want deterministic PASS/FAIL, not manual_review, so we can use the line presence as signal
-            // For demo: if V-code was triggered by a line, use that line's presence to decide
-            // For now, just use the verdict as is, but count it
+            TrinetraStat.Verdict verdict;
+            String detail;
+            if (isConfigCategory1(vcode)) {
+                verdict = evaluateConfigControl(vcode, configContent);
+                detail = "config-syntax -> " + verdict + " (config-native check; deterministic from static text)";
+            } else if (isConfigCategory2(vcode)) {
+                verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
+                detail = "requires live network verification — not determinable from static config alone (Category 2 control; run via live probe `trinetra -stat run " + vcode + "` for real pass/fail)";
+            } else {
+                boolean requiresRuntime = "exit_code_zero".equals(def.decisionRule.evalMethod)
+                    || "numeric_threshold".equals(def.decisionRule.evalMethod);
+                verdict = requiresRuntime
+                    ? TrinetraStat.Verdict.MANUAL_REVIEW
+                    : TrinetraStat.DecisionEngine.evaluate(def.decisionRule, rawForCheck, 0);
+                detail = requiresRuntime
+                    ? "Runtime evidence required; an uploaded configuration cannot establish a command exit code or runtime numeric measurement."
+                    : def.decisionRule.evalMethod + " -> " + verdict + " (config-file; verify full configuration and applicability)";
+                if (requiresRuntime) {
+                    // Overwrite with Category 2 wording when the V-code is known to be live-only
+                    // (keeps stub vs architectural distinction clear)
+                    detail = "requires live network verification — not determinable from static config alone (Category 2 control; run via live probe `trinetra -stat run " + vcode + "` for real pass/fail)";
+                }
+            }
 
             // Build finding similar to TrinetraStat.statRun but with ingestion_method
             Map<String, Object> finding = TrinetraCommon.newMap();
@@ -271,9 +288,7 @@ public class TrinetraConfigIngestor {
             finding.put("ended_at", TrinetraCommon.nowIso());
             finding.put("exit_code", 0);
             finding.put("verdict", verdict.name().toLowerCase());
-            finding.put("verdict_detail", requiresRuntime
-                ? "Runtime evidence required; an uploaded configuration cannot establish a command exit code or runtime numeric measurement."
-                : def.decisionRule.evalMethod + " -> " + verdict + " (config-file; verify full configuration and applicability)");
+            finding.put("verdict_detail", detail);
             finding.put("eval_method", def.decisionRule.evalMethod);
             finding.put("pass_criteria", def.decisionRule.passCriteria);
             finding.put("fail_criteria", def.decisionRule.failCriteria);
@@ -334,6 +349,193 @@ public class TrinetraConfigIngestor {
         TrinetraBrain.updateBrain(sanitized);
 
         return new IngestResult(deviceId, canonicalVendor, methodTag, findings.size(), passed, failed, unrecognized, findings);
+    }
+
+    // ── PS 15-way Classification (Step 1) ──────────────────────────────────
+    // Category 1: genuinely determinable from static config text alone.
+    // Category 2: inherently requires live network/runtime state — config cannot prove it.
+    private static final Set<String> CONFIG_CATEGORY_1 = Set.of(
+        "V-003", // open port/unnecessary service — presence of ip http server / telnet / snmp public in config proves unnecessary service is enabled
+        "V-006", // weak TLS/SSH version — ip ssh version 1 vs 2 is explicit in config
+        "V-013", // weak password policy — enable password vs enable secret, username password vs secret, service password-encryption, aaa new-model
+        "V-057", // hardcoded secrets / SNMP community — snmp-server community public/private
+        "V-058", // sensitive data in logs — logging host / logging trap presence vs absence
+        "V-071", // exposed admin interface — transport input telnet, ip http server, exec-timeout 0 0 vs ssh / no http / timeout 5 0
+        "V-107"  // IAM/policy misconfig — username privilege 15 with password vs secret, aaa
+        // Note: V-005/007/008/070/087/105/106/144 are Category 2 — see below
+    );
+    private static final Set<String> CONFIG_CATEGORY_2 = Set.of(
+        "V-005", // banner grabbing — requires live nmap -sV banner fetch, not present in config (banner motd is not version disclosure)
+        "V-007", // weak cipher — requires live TLS handshake cipher negotiation; config rarely lists explicit weak ciphers
+        "V-008", // expired/self-signed cert — requires live openssl s_client fetch
+        "V-070", // unpatched OS — requires live version vs CVE DB correlation (config banner only gives version string)
+        "V-087", // vulnerable dependencies/SCA — requires filesystem grype/syft scan
+        "V-105", // flat network/no segmentation — requires live segmentation probe; ACL presence alone cannot prove reachability
+        "V-106", // public cloud storage — requires live cloud API (aws s3api), not device config
+        "V-144"  // kernel hardening — requires live host kernel-hardening-checker
+    );
+
+    static boolean isConfigCategory1(String vcode) {
+        return vcode != null && CONFIG_CATEGORY_1.contains(vcode.toUpperCase());
+    }
+    static boolean isConfigCategory2(String vcode) {
+        return vcode != null && CONFIG_CATEGORY_2.contains(vcode.toUpperCase());
+    }
+
+    /**
+     * Config-syntax-native evaluation for Category 1 controls.
+     * Uses explicit vendor directive patterns (Cisco IOS/Juniper JUNOS), not probe-output phrases.
+     * Returns PASS/FAIL/MANUAL_REVIEW — never fabricates for Category 2.
+     * Verified against Cisco IOS XE 17.x and JUNOS 20.4 documentation: directive names are real.
+     */
+    static TrinetraStat.Verdict evaluateConfigControl(String vcode, String configContent) {
+        if (vcode == null || configContent == null) return TrinetraStat.Verdict.MANUAL_REVIEW;
+        String cfg = configContent;
+        String lower = cfg.toLowerCase();
+        // Split into trimmed non-comment lines for precise "no ..." handling
+        List<String> lines = new ArrayList<>();
+        for (String raw : cfg.split("\\r?\\n")) {
+            String t = raw.trim();
+            if (t.isEmpty() || t.startsWith("!") || t.startsWith("#")) continue;
+            lines.add(t);
+        }
+        String joinedLower = lower; // for substring checks
+        switch (vcode.toUpperCase()) {
+            case "V-013": {
+                // Insecure: enable password (plaintext) or username ... password (not secret)
+                boolean insecure = Pattern.compile("(?i)^\\s*enable\\s+password\\b", Pattern.MULTILINE).matcher(cfg).find()
+                    || Pattern.compile("(?i)username\\s+\\S+\\s+password\\s", Pattern.MULTILINE).matcher(cfg).find();
+                if (insecure) return TrinetraStat.Verdict.FAIL;
+                boolean secure = Pattern.compile("(?i)enable\\s+secret", Pattern.MULTILINE).matcher(cfg).find()
+                    || Pattern.compile("(?i)username\\s+\\S+\\s+secret\\b", Pattern.MULTILINE).matcher(cfg).find()
+                    || Pattern.compile("(?i)service\\s+password-encryption", Pattern.MULTILINE).matcher(cfg).find()
+                    || Pattern.compile("(?i)aaa\\s+new-model", Pattern.MULTILINE).matcher(cfg).find();
+                // Juniper: encrypted-password is secure, plain-text-password is insecure
+                if (lower.contains("plain-text-password")) return TrinetraStat.Verdict.FAIL;
+                if (lower.contains("encrypted-password")) secure = true;
+                if (secure) return TrinetraStat.Verdict.PASS;
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+            }
+            case "V-057": {
+                boolean insecure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue; // "no snmp-server community public" is remediation, not violation
+                    if (ll.matches(".*snmp-server\\s+community\\s+(public|private)\\b.*")) insecure = true;
+                    if (ll.matches(".*set\\s+snmp\\s+community\\s+public\\b.*")) insecure = true;
+                    if (ll.matches(".*set\\s+snmp\\s+community\\s+private\\b.*")) insecure = true;
+                }
+                if (insecure) return TrinetraStat.Verdict.FAIL;
+                if (!cfg.isBlank()) return TrinetraStat.Verdict.PASS;
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+            }
+            case "V-071": {
+                // Insecure: transport input telnet, ip http server (without no), exec-timeout 0 0
+                boolean insecure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.matches(".*transport\\s+input\\s+.*\\btelnet\\b.*")) insecure = true;
+                    if (ll.matches("^\\s*ip\\s+http\\s+server\\s*$")) insecure = true; // exactly ip http server, not "no ..."
+                    if (ll.matches(".*exec-timeout\\s+0\\s+0.*")) insecure = true;
+                    if (ll.contains("set system services telnet")) insecure = true; // Juniper
+                }
+                if (insecure) return TrinetraStat.Verdict.FAIL;
+                boolean secure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.contains("transport input ssh") && !ll.contains("telnet")) secure = true;
+                    if (ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$")) secure = true;
+                    if (ll.matches(".*exec-timeout\\s+[1-9].*")) secure = true;
+                    if (ll.contains("set system services ssh")) secure = true;
+                }
+                if (secure) return TrinetraStat.Verdict.PASS;
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+            }
+            case "V-006": {
+                boolean insecure = Pattern.compile("(?i)ip\\s+ssh\\s+version\\s+1\\b").matcher(cfg).find()
+                    || lower.contains("set system services ssh protocol-version v1");
+                if (insecure) return TrinetraStat.Verdict.FAIL;
+                boolean secure = Pattern.compile("(?i)ip\\s+ssh\\s+version\\s+2\\b").matcher(cfg).find()
+                    || lower.contains("protocol-version v2");
+                if (secure) return TrinetraStat.Verdict.PASS;
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+            }
+            case "V-003": {
+                // Unnecessary service: ip http server, snmp public/private, telnet, ip source-route, service pad
+                boolean insecure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches("^\\s*ip\\s+http\\s+server\\s*$")) insecure = true;
+                    if (ll.matches(".*snmp-server\\s+community\\s+(public|private).*")) insecure = true;
+                    if (ll.matches(".*transport\\s+input\\s+.*telnet.*")) insecure = true;
+                    if (ll.matches("^\\s*ip\\s+source-route\\s*$")) insecure = true;
+                    if (ll.matches("^\\s*service\\s+pad\\s*$")) insecure = true;
+                    if (ll.contains("set snmp community public") || ll.contains("set snmp community private")) insecure = true;
+                }
+                if (insecure) return TrinetraStat.Verdict.FAIL;
+                boolean secure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$")) secure = true;
+                    if (ll.matches("^\\s*no\\s+ip\\s+source-route\\s*$")) secure = true;
+                    if (ll.matches("^\\s*no\\s+service\\s+pad\\s*$")) secure = true;
+                }
+                if (secure) return TrinetraStat.Verdict.PASS;
+                if (!cfg.isBlank() && !insecure) return TrinetraStat.Verdict.PASS;
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+            }
+            case "V-058": {
+                boolean hasLogging = false;
+                boolean noLogging = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) {
+                        if (ll.contains("logging host")) noLogging = true;
+                        continue;
+                    }
+                    if (ll.matches(".*logging\\s+host\\b.*") || ll.matches(".*logging\\s+trap\\b.*") || ll.contains("set system syslog")) hasLogging = true;
+                }
+                if (hasLogging) return TrinetraStat.Verdict.PASS;
+                if (noLogging || (!hasLogging && !cfg.isBlank())) return TrinetraStat.Verdict.FAIL;
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+            }
+            case "V-107": {
+                boolean insecure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches(".*username\\s+\\S+\\s+password\\s.*")) insecure = true;
+                    if (ll.contains("plain-text-password") && ll.contains("class super-user")) insecure = true;
+                }
+                // Also insecure if any username line has password not secret
+                if (!insecure) {
+                    boolean hasPassword = false;
+                    boolean hasSecret = false;
+                    for (String l : lines) {
+                        String ll = l.toLowerCase();
+                        if (ll.startsWith("no ")) continue;
+                        if (ll.matches(".*username\\s+\\S+\\s+.*password\\s.*")) hasPassword = true;
+                        if (ll.matches(".*username\\s+\\S+\\s+.*secret\\b.*")) hasSecret = true;
+                    }
+                    if (hasPassword && !hasSecret) insecure = true;
+                }
+                if (insecure) return TrinetraStat.Verdict.FAIL;
+                boolean secure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches(".*username\\s+\\S+\\s+privilege\\s+\\d+\\s+secret\\b.*")) secure = true;
+                    if (ll.contains("encrypted-password") && ll.contains("class operator")) secure = true;
+                    if (ll.matches(".*username\\s+\\S+\\s+secret\\b.*")) secure = true;
+                }
+                if (lower.contains("aaa new-model") && lower.contains("username") && !insecure) secure = true;
+                if (secure) return TrinetraStat.Verdict.PASS;
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+            }
+            default:
+                return TrinetraStat.Verdict.MANUAL_REVIEW;
+        }
     }
 
     /**
