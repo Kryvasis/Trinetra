@@ -1,0 +1,183 @@
+{
+  "session_name": "cortex-demo-20260904",
+  "target": "cisco-hardened-excerpt-1-",
+  "state": "brain_updated",
+  "last_updated": "2026-09-04T08:22:23.341227556Z",
+  "brain_md_path": "/home/mystic/Trinetra/sessions/cortex-demo-20260904/brain_cortex-demo-20260904.md",
+  "brain_backup_path": "/home/mystic/Trinetra/sessions/cortex-demo-20260904/brain_cortex-demo-20260904.bak.md",
+  "byte_size": 368,
+  "estimated_tokens": 92,
+  "compression_count": 0,
+  "already_run_v_codes": [
+    "V-013",
+    "V-071",
+    "V-058",
+    "V-006",
+    "V-007",
+    "V-057",
+    "V-003",
+    "UNRECOGNIZED",
+    "V-013",
+    "V-006",
+    "V-071",
+    "V-057",
+    "V-007",
+    "V-058",
+    "V-003",
+    "UNRECOGNIZED"
+  ],
+  "confirmed_findings": [],
+  "suspected_findings": [],
+  "counts": {
+    "total_runs": "16",
+    "success_runs": "0",
+    "failed_runs": "16",
+    "unsummarized": "14"
+  },
+  "latest_suggestion": null,
+  "suggestion_history": [],
+  "latest_score": null,
+  "normalized_results": [
+    {
+      "device_id": "cisco1",
+      "vendor": "Cisco",
+      "test_id": "V-013",
+      "raw_output": "! SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-hardened\naaa new-model\naaa authentication login default local\nip ssh version 2\nip ssh time-out 60\nip ssh authentication-retries 3\nno ip http server\nno ip http secure-server\nno snmp-server\nlogging host 192.0.2.10\nservice timestamps log datetime msec\nline vty 0 4\n transport input ssh\n exec-timeout 5 0\n login authentication default\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:01:36.373213783Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "c4cfbc119fda18da71cd98918f27babf8c919de92c967bc41a213bab791d9bd6"
+    },
+    {
+      "device_id": "cisco1",
+      "vendor": "Cisco",
+      "test_id": "V-071",
+      "raw_output": "! SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-hardened\naaa new-model\naaa authentication login default local\nip ssh version 2\nip ssh time-out 60\nip ssh authentication-retries 3\nno ip http server\nno ip http secure-server\nno snmp-server\nlogging host 192.0.2.10\nservice timestamps log datetime msec\nline vty 0 4\n transport input ssh\n exec-timeout 5 0\n login authentication default\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:01:36.384202641Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "e5381bb85277fd36ba9fde887af875cc2a040e8f73446cd5c436e60d58a66ed5"
+    },
+    {
+      "device_id": "cisco1",
+      "vendor": "Cisco",
+      "test_id": "V-058",
+      "raw_output": "! SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-hardened\naaa new-model\naaa authentication login default local\nip ssh version 2\nip ssh time-out 60\nip ssh authentication-retries 3\nno ip http server\nno ip http secure-server\nno snmp-server\nlogging host 192.0.2.10\nservice timestamps log datetime msec\nline vty 0 4\n transport input ssh\n exec-timeout 5 0\n login authentication default\n!\nend\n",
+      "normalized_result": "pass",
+      "timestamp": "2026-09-04T08:01:36.390335854Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "f446a928d3fb383a04f0c9879a50529589d354f1c80f8d409ea3692639664dfe"
+    },
+    {
+      "device_id": "cisco1",
+      "vendor": "Cisco",
+      "test_id": "V-006",
+      "raw_output": "! SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-hardened\naaa new-model\naaa authentication login default local\nip ssh version 2\nip ssh time-out 60\nip ssh authentication-retries 3\nno ip http server\nno ip http secure-server\nno snmp-server\nlogging host 192.0.2.10\nservice timestamps log datetime msec\nline vty 0 4\n transport input ssh\n exec-timeout 5 0\n login authentication default\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:01:36.396301878Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "024b91018c326f0a9b10def38aace39ad5bf10b86fe57dbc855d87fb1fa463f2"
+    },
+    {
+      "device_id": "cisco1",
+      "vendor": "Cisco",
+      "test_id": "V-007",
+      "raw_output": "! SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-hardened\naaa new-model\naaa authentication login default local\nip ssh version 2\nip ssh time-out 60\nip ssh authentication-retries 3\nno ip http server\nno ip http secure-server\nno snmp-server\nlogging host 192.0.2.10\nservice timestamps log datetime msec\nline vty 0 4\n transport input ssh\n exec-timeout 5 0\n login authentication default\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:01:36.406181561Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "26ccbc9302c2c194ac9dbb220a18a417fc65c66815cd417fcb0413a7e00c86fc"
+    },
+    {
+      "device_id": "cisco1",
+      "vendor": "Cisco",
+      "test_id": "V-057",
+      "raw_output": "! SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-hardened\naaa new-model\naaa authentication login default local\nip ssh version 2\nip ssh time-out 60\nip ssh authentication-retries 3\nno ip http server\nno ip http secure-server\nno snmp-server\nlogging host 192.0.2.10\nservice timestamps log datetime msec\nline vty 0 4\n transport input ssh\n exec-timeout 5 0\n login authentication default\n!\nend\n",
+      "normalized_result": "pass",
+      "timestamp": "2026-09-04T08:01:36.414825384Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "2f15a5fe91802167e399a338451a3f4f9a864542b992310bdd1f0b776774e494"
+    },
+    {
+      "device_id": "cisco1",
+      "vendor": "Cisco",
+      "test_id": "V-003",
+      "raw_output": "! SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-hardened\naaa new-model\naaa authentication login default local\nip ssh version 2\nip ssh time-out 60\nip ssh authentication-retries 3\nno ip http server\nno ip http secure-server\nno snmp-server\nlogging host 192.0.2.10\nservice timestamps log datetime msec\nline vty 0 4\n transport input ssh\n exec-timeout 5 0\n login authentication default\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:01:36.423104631Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "b76ce9bebafdba113cc2b2c889fc9f59fd79416ab47f05ad51fcf069fd455a09"
+    },
+    {
+      "device_id": "cisco01",
+      "vendor": "Cisco",
+      "test_id": "V-013",
+      "raw_output": "! SYNTHETIC TEST FIXTURE ONLY - never deploy\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-insecure\nno aaa new-model\nusername demo privilege 15 password 0 DEMO-NOT-A-REAL-SECRET\nip ssh version 1\nip http server\nsnmp-server community public RO\nsnmp-server community private RW\nline vty 0 4\n transport input telnet ssh\n exec-timeout 0 0\n login local\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:22:23.279075400Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "ce4a7787c6dd2d98f96ed655e4e870a0ac984c7be02a89e719dc7837e4ffa334"
+    },
+    {
+      "device_id": "cisco01",
+      "vendor": "Cisco",
+      "test_id": "V-006",
+      "raw_output": "! SYNTHETIC TEST FIXTURE ONLY - never deploy\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-insecure\nno aaa new-model\nusername demo privilege 15 password 0 DEMO-NOT-A-REAL-SECRET\nip ssh version 1\nip http server\nsnmp-server community public RO\nsnmp-server community private RW\nline vty 0 4\n transport input telnet ssh\n exec-timeout 0 0\n login local\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:22:23.289167713Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "25c1ba83936aabfd83b1d70536b4fcb9b2570ce87fa00745aa6791dd1a751f1a"
+    },
+    {
+      "device_id": "cisco01",
+      "vendor": "Cisco",
+      "test_id": "V-071",
+      "raw_output": "! SYNTHETIC TEST FIXTURE ONLY - never deploy\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-insecure\nno aaa new-model\nusername demo privilege 15 password 0 DEMO-NOT-A-REAL-SECRET\nip ssh version 1\nip http server\nsnmp-server community public RO\nsnmp-server community private RW\nline vty 0 4\n transport input telnet ssh\n exec-timeout 0 0\n login local\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:22:23.295131534Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "05706c555f829256f141463f21d3edba1b3902be3db9bb843672b70a5726e83c"
+    },
+    {
+      "device_id": "cisco01",
+      "vendor": "Cisco",
+      "test_id": "V-057",
+      "raw_output": "! SYNTHETIC TEST FIXTURE ONLY - never deploy\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-insecure\nno aaa new-model\nusername demo privilege 15 password 0 DEMO-NOT-A-REAL-SECRET\nip ssh version 1\nip http server\nsnmp-server community public RO\nsnmp-server community private RW\nline vty 0 4\n transport input telnet ssh\n exec-timeout 0 0\n login local\n!\nend\n",
+      "normalized_result": "pass",
+      "timestamp": "2026-09-04T08:22:23.303851572Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "c95e3eee6652cd6da5658198591880b3d48e30468a0b78bf3fbff381417c9d98"
+    },
+    {
+      "device_id": "cisco01",
+      "vendor": "Cisco",
+      "test_id": "V-007",
+      "raw_output": "! SYNTHETIC TEST FIXTURE ONLY - never deploy\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-insecure\nno aaa new-model\nusername demo privilege 15 password 0 DEMO-NOT-A-REAL-SECRET\nip ssh version 1\nip http server\nsnmp-server community public RO\nsnmp-server community private RW\nline vty 0 4\n transport input telnet ssh\n exec-timeout 0 0\n login local\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:22:23.308445554Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "430364852cfd8d5bc02f634dabc5eb2e73f1b8001ccfd4d35019e1557d915a08"
+    },
+    {
+      "device_id": "cisco01",
+      "vendor": "Cisco",
+      "test_id": "V-058",
+      "raw_output": "! SYNTHETIC TEST FIXTURE ONLY - never deploy\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-insecure\nno aaa new-model\nusername demo privilege 15 password 0 DEMO-NOT-A-REAL-SECRET\nip ssh version 1\nip http server\nsnmp-server community public RO\nsnmp-server community private RW\nline vty 0 4\n transport input telnet ssh\n exec-timeout 0 0\n login local\n!\nend\n",
+      "normalized_result": "pass",
+      "timestamp": "2026-09-04T08:22:23.315971594Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "ca1d9a0b0ba4ce1fa73d36deb83a5f97cb78833bd5a4fbb9dac4051aac7a0cab"
+    },
+    {
+      "device_id": "cisco01",
+      "vendor": "Cisco",
+      "test_id": "V-003",
+      "raw_output": "! SYNTHETIC TEST FIXTURE ONLY - never deploy\n! Cisco IOS XE Software, Version 17.6.5\nhostname cortex-insecure\nno aaa new-model\nusername demo privilege 15 password 0 DEMO-NOT-A-REAL-SECRET\nip ssh version 1\nip http server\nsnmp-server community public RO\nsnmp-server community private RW\nline vty 0 4\n transport input telnet ssh\n exec-timeout 0 0\n login local\n!\nend\n",
+      "normalized_result": "manual_review",
+      "timestamp": "2026-09-04T08:22:23.323618664Z",
+      "ingestion_method": "config_upload",
+      "chain_hash": "10cfe3ac9d823f00aa4643704d2c2c3991032640ebc7aa48afea453f8a8b9d0d"
+    }
+  ],
+  "previous_chain_hash": "10cfe3ac9d823f00aa4643704d2c2c3991032640ebc7aa48afea453f8a8b9d0d"
+}

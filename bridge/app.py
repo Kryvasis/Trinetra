@@ -374,6 +374,8 @@ def session_status(name):
 def compliance_score(name):
     if not validate_session(name):
         return error_response(f"invalid session name: {name!r}", 400)
+    if not os.path.isfile(os.path.join(TRINETRA_ROOT, "sessions", name, f"{name}.json")):
+        return error_response(f"session not found: {name}", 404)
     fw_filter = get_framework_filter()
     tr_args = ["-compliance-score", name]
     if fw_filter:
@@ -423,6 +425,8 @@ def compliance_score(name):
 def compliance_report(name):
     if not validate_session(name):
         return error_response(f"invalid session name: {name!r}", 400)
+    if not os.path.isfile(os.path.join(TRINETRA_ROOT, "sessions", name, f"{name}.json")):
+        return error_response(f"session not found: {name}", 404)
     fw_filter = get_framework_filter()
     tr_args = ["-compliance-report", name]
     if fw_filter:
@@ -842,6 +846,9 @@ def session_devices(name):
         if did:
             device_ids.add(did)
 
+    removed = session_data.get("removed_devices") or {}
+    device_ids.difference_update(removed)
+
     # Build per-device summaries
     devices = []
     for did in sorted(device_ids):
@@ -902,7 +909,22 @@ def session_devices(name):
         "session": name,
         "device_count": len(devices),
         "devices": devices,
+        "removed_devices": sorted(removed),
     }), 200
+
+
+@app.route("/api/session/<name>/devices/<device_id>", methods=["DELETE"])
+@app.route("/api/session/<name>/devices/<device_id>/restore", methods=["POST"])
+def device_scope(name, device_id):
+    if not validate_session(name) or not validate_device(device_id):
+        return error_response("invalid session or device identifier", 400)
+    if not os.path.isfile(os.path.join(TRINETRA_ROOT, "sessions", name, f"{name}.json")):
+        return error_response(f"session not found: {name}", 404)
+    command = "remove-device" if request.method == "DELETE" else "restore-device"
+    rc, out, err = run_java_helper("TrinetraBridgeHelper", [command, name, device_id])
+    if rc != 0:
+        return error_response("Device not found" if rc == 2 else "Could not update device scope", 404 if rc == 2 else 500)
+    return jsonify({"session": name, "device_id": device_id, "removed": request.method == "DELETE", "evidence_retained": True})
 
 # ── POST /api/session/<name>/train — add training entry (no code change) ──
 @app.route("/api/session/<name>/train", methods=["POST"])
@@ -1628,9 +1650,15 @@ def doctor():
             if m:
                 current_sess = m.group(1)
                 session_errors[current_sess] = []
-            elif current_sess and "Missing required field" in line:
+            elif current_sess and line.strip().startswith("-"):
                 session_errors[current_sess].append(line.strip())
     structured["session_validation"]["session_errors"] = session_errors
+    # Session inventory is not the diagnostic error list.
+    sessions_root = Path(TRINETRA_ROOT) / "sessions"
+    structured["sessions"] = sorted(
+        folder.name for folder in sessions_root.iterdir()
+        if folder.is_dir() and validate_session(folder.name) and (folder / f"{folder.name}.json").is_file()
+    ) if sessions_root.is_dir() else []
     if not session_errors and "All sessions valid" in out:
         structured["session_validation"]["status"] = "valid"
     else:

@@ -1,0 +1,9 @@
+# SYNTHETIC TEST FIXTURE ONLY - never deploy
+# JUNOS 20.4R3-S2.4
+set system host-name cortex-juniper-insecure
+set system services ssh protocol-version v1
+set system services telnet
+set system login idle-timeout 0
+set snmp community public authorization read-only
+set snmp community private authorization read-write
+set system syslog host 192.0.2.10 any info

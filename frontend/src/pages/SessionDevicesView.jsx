@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
+import { rememberSession } from '../utils/activeSession'
 
 export default function SessionDevicesView({ api, toast }) {
   const [searchParams] = useSearchParams()
@@ -13,11 +14,44 @@ export default function SessionDevicesView({ api, toast }) {
   const [sessionMeta, setSessionMeta] = useState(null)
   const [error, setError] = useState(null)
   const requestRef = useRef(null)
+  const [removeTarget, setRemoveTarget] = useState(null)
+  const [changingScope, setChangingScope] = useState(false)
+  const [scopeError, setScopeError] = useState('')
+  const cancelRef = useRef(null)
+  const scopeRequestRef = useRef(null)
+  useEffect(() => () => { scopeRequestRef.current?.abort(); scopeRequestRef.current = null }, [])
+  useEffect(() => { if (removeTarget) cancelRef.current?.focus() }, [removeTarget])
+
+  async function changeScope(deviceId, restore = false) {
+    if (changingScope) return
+    setChangingScope(true)
+    setScopeError('')
+    const controller = new AbortController()
+    scopeRequestRef.current = controller
+    const timeout = setTimeout(() => controller.abort(), 30000)
+    try {
+      const response = await fetch(`${api}/session/${encodeURIComponent(session)}/devices/${encodeURIComponent(deviceId)}${restore ? '/restore' : ''}`, {
+        method: restore ? 'POST' : 'DELETE', signal: controller.signal,
+      })
+      if (!response.ok) throw new Error((await response.json()).error || 'Could not update device scope')
+      if (scopeRequestRef.current !== controller) return
+      setRemoveTarget(null)
+      toast(restore ? 'Device restored to assessment' : 'Device removed; historical evidence retained', 'success')
+      await fetchDevices(session)
+    } catch (err) {
+      if (scopeRequestRef.current !== controller) return
+      setScopeError(err.name === 'AbortError' ? 'Request timed out. Reload Devices to check whether the change completed before retrying.' : err.message)
+    } finally {
+      clearTimeout(timeout)
+      if (scopeRequestRef.current === controller) { scopeRequestRef.current = null; setChangingScope(false) }
+    }
+  }
 
   useEffect(() => () => { requestRef.current?.abort(); requestRef.current = null }, [])
 
   const fetchDevices = useCallback(async (sessName) => {
     if (!sessName) return
+    setRemoveTarget(null)
     requestRef.current?.abort()
     const controller = new AbortController()
     requestRef.current = controller
@@ -37,6 +71,7 @@ export default function SessionDevicesView({ api, toast }) {
       setDevices(data.devices || [])
       setSessionMeta(data)
       setSession(sessName)
+      rememberSession(sessName)
       if ((data.devices || []).length === 0) {
         toast('No devices found in this session', 'info')
       } else {
@@ -85,10 +120,27 @@ export default function SessionDevicesView({ api, toast }) {
           aria-label="Session name"
           style={{ flex: 1, maxWidth: 400 }}
         />
-        <button type="submit" className="btn-primary" disabled={loading || !inputSession.trim()}>
+        <button type="submit" className="btn-primary" disabled={loading || changingScope || !inputSession.trim()}>
           {loading ? <><Spinner size={14} /> Loading...</> : 'Load Devices'}
         </button>
       </form>
+
+      {removeTarget && <section className="card" aria-labelledby="remove-device-title" style={{ marginBottom: 24 }}>
+        <h2 id="remove-device-title">Remove {removeTarget}?</h2>
+        <p>This removes the device from session {session}, active counts, and newly generated reports. Historical evidence and earlier exports are retained. You can restore it below.</p>
+        <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
+          <button ref={cancelRef} className="btn-secondary" type="button" disabled={changingScope} onClick={() => setRemoveTarget(null)}>Cancel</button>
+          <button className="btn-primary" type="button" disabled={changingScope} onClick={() => changeScope(removeTarget)}>{changingScope ? 'Removing…' : 'Remove from assessment'}</button>
+        </div>
+      </section>}
+      {scopeError && <p role="alert">{scopeError}</p>}
+      {!!sessionMeta?.removed_devices?.length && <section className="card" style={{ marginBottom: 24 }}>
+        <h2>Removed devices</h2>
+        <p>Retained evidence is excluded from this assessment. Restore a device to include it again.</p>
+        {sessionMeta.removed_devices.map(id => <div key={id} style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginTop: 12 }}>
+          <span>{id}</span><button className="btn-secondary" disabled={changingScope || loading} type="button" onClick={() => changeScope(id, true)} aria-label={`Restore ${id}`}>Restore</button>
+        </div>)}
+      </section>}
 
       {loading && (
         <div className="empty-state card">
@@ -195,7 +247,8 @@ export default function SessionDevicesView({ api, toast }) {
                         <td style={{ fontFamily: 'var(--mono)', color: 'var(--red)' }}>{d.fail_count}</td>
                         <td style={{ fontFamily: 'var(--mono)' }}>{d.total_checks}</td>
                         <td>
-                          <div style={{ display: 'flex', gap: 6 }}>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            <button type="button" className="btn-secondary" disabled={changingScope || loading} aria-label={`Remove ${d.device_id}`} onClick={() => { setScopeError(''); setRemoveTarget(d.device_id) }}>Remove</button>
                             <Link
                               to={`/results?session=${encodeURIComponent(session)}`}
                               className="btn-secondary"

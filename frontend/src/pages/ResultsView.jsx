@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
+import { rememberSession } from '../utils/activeSession'
 
 const FRAMEWORKS = ['CIS', 'ISO27001', 'NIST_800-53', 'STIG', 'PCI-DSS', 'SOC2']
 const PS_REQUIRED = new Set(['CIS', 'ISO27001', 'NIST_800-53', 'STIG'])
@@ -18,6 +19,9 @@ export default function ResultsView({ api, toast }) {
   const [error, setError] = useState(null)
   const [selectedFrameworks, setSelectedFrameworks] = useState(new Set(FRAMEWORKS))
   const abortRef = useRef(null)
+  const autoLoadRef = useRef(null)
+  const loadedSessionRef = useRef('')
+  useEffect(() => () => { abortRef.current?.abort(); abortRef.current = null }, [])
 
   const toggleFramework = (fw) => {
     setSelectedFrameworks(prev => {
@@ -43,47 +47,51 @@ export default function ResultsView({ api, toast }) {
     }
   }, [sessionParam, session])
 
-  const load = async (e) => {
+  const load = async (e, requested = inputSession.trim()) => {
     e?.preventDefault()
-    const s = inputSession.trim()
+    const s = requested
     if (!s) return
     setLoading(true)
     setScore(null)
     setReport(null)
     setError(null)
 
+    abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
     const timeoutId = setTimeout(() => controller.abort(), 60000)
 
     try {
       const fq = frameworksQuery()
-      const [scoreRes, reportRes] = await Promise.all([
-        fetch(`${api}/session/${encodeURIComponent(s)}/score${fq}`, { signal: controller.signal }),
-        fetch(`${api}/session/${encodeURIComponent(s)}/audit-report${fq}`, { signal: controller.signal }),
-      ])
-      clearTimeout(timeoutId)
+      // Both endpoints write session scoring artifacts; do not race their writers.
+      const scoreRes = await fetch(`${api}/session/${encodeURIComponent(s)}/score${fq}`, { signal: controller.signal })
 
       if (!scoreRes.ok) {
         const body = await scoreRes.json().catch(() => ({}))
         throw new Error(body.error || `Score request failed (${scoreRes.status})`)
       }
+      const scoreData = await scoreRes.json()
+      if (abortRef.current !== controller || controller.signal.aborted) return
+      const reportRes = await fetch(`${api}/session/${encodeURIComponent(s)}/audit-report${fq}`, { signal: controller.signal })
       if (!reportRes.ok) {
         const body = await reportRes.json().catch(() => ({}))
         throw new Error(body.error || `Report request failed (${reportRes.status})`)
       }
 
-      const scoreData = await scoreRes.json()
       const reportData = await reportRes.json()
+      if (abortRef.current !== controller || controller.signal.aborted) return
+      loadedSessionRef.current = s
       setScore(scoreData.score || scoreData)
       setReport(reportData)
       setSession(s)
+      rememberSession(s)
       if (scoreData.score?.frameworks) {
         const fws = Object.keys(scoreData.score.frameworks)
         setActiveFramework(fws[0] || null)
       }
       toast('Results loaded', 'success')
     } catch (err) {
+      if (abortRef.current !== controller) return
       if (err.name === 'AbortError') {
         toast('Request timed out. Is the bridge running?', 'error')
         setError('Request timed out')
@@ -93,10 +101,17 @@ export default function ResultsView({ api, toast }) {
       }
     } finally {
       clearTimeout(timeoutId)
-      abortRef.current = null
-      setLoading(false)
+      if (abortRef.current === controller) {
+        abortRef.current = null
+        setLoading(false)
+      }
     }
   }
+
+  useEffect(() => { autoLoadRef.current = load })
+  useEffect(() => {
+    if (sessionParam && loadedSessionRef.current !== sessionParam) autoLoadRef.current(null, sessionParam)
+  }, [sessionParam])
 
   const fwScore = score?.frameworks?.[activeFramework]
 

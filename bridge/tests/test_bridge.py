@@ -264,18 +264,14 @@ def test_invalid_session_returns_error(client):
     assert resp.status_code in (404, 500), resp.get_data(as_text=True)
     assert "error" in resp.get_json()
 
-    # For score/report, CLI creates empty session and returns 200 with empty data
-    # So we check that non-existent returns 200 with empty frameworks (legitimate result)
+    # Read endpoints must not create orphan session directories.
     resp = client.get("/api/session/nonexistent_sess_123xyz/score")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert "score" in data
-    assert data["score"]["total_tests_executed"] == 0
+    assert resp.status_code == 404
+    assert "error" in resp.get_json()
 
     resp = client.get("/api/session/nonexistent_sess_123xyz/report")
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert "stdout" in data
+    assert resp.status_code == 404
+    assert "error" in resp.get_json()
 
     resp = client.get("/api/session/nonexistent_sess_123xyz/audit-report")
     # Audit report for empty session should fail (no brain-state)
@@ -465,10 +461,10 @@ def test_distinguishes_test_failure_from_backend_error(client):
     resp = client.get("/api/session/invalid!name/score")
     assert resp.status_code == 400
     assert "error" in resp.get_json()
-    # Non-existent but valid format should still return 200 with empty score (legitimate result, not backend error)
+    # A syntactically valid identifier is not proof that a session exists.
     resp = client.get("/api/session/this_session_does_not_exist_999/score")
-    assert resp.status_code == 200
-    assert "score" in resp.get_json()
+    assert resp.status_code == 404
+    assert "error" in resp.get_json()
     # Ensure the successful score response does NOT contain error field
     resp = client.get(f"/api/session/{sess}/score")
     assert "error" not in resp.get_json()

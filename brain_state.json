@@ -1,5 +1,5 @@
 {
-  "last_updated": "2026-09-04T04:53:23.655930195Z",
+  "last_updated": "2026-09-04T08:22:23.330091691Z",
   "active_sessions": [
     "test1",
     "demo",
@@ -61,112 +61,114 @@
     "test_fetch_upload_89f7ae43",
     "test_fetch_failure_ce94ce2e",
     "train_loop_7759dd",
-    "manual_aa_a132da"
+    "cortex-demo-20260904",
+    "session-ui-continuity",
+    "session-ui-continuity-2"
   ],
-  "session_count": 61,
+  "session_count": 64,
   "high_risk_sessions": [],
   "recent_activity": [
     {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.970477638Z",
+      "session": "session-ui-continuity",
+      "timestamp": "2026-09-04T08:15:15.114138140Z",
       "event": "finding_recorded"
     },
     {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.976268952Z",
+      "session": "session-ui-continuity",
+      "timestamp": "2026-09-04T08:15:15.122363214Z",
       "event": "finding_recorded"
     },
     {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:02.986393982Z",
+      "session": "session-ui-continuity",
+      "timestamp": "2026-09-04T08:15:15.131763422Z",
       "event": "finding_recorded"
     },
     {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.240619109Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.253356558Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.263256572Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.271490406Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.281738738Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.288316033Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.298331852Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "train_loop_7759dd",
-      "timestamp": "2026-09-03T19:58:03.305467989Z",
-      "event": "finding_recorded"
-    },
-    {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.326571504Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.164053962Z",
       "event": "session_created"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.611211978Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.634614958Z",
       "event": "finding_recorded"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.621017284Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.644143950Z",
       "event": "finding_recorded"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.627829544Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.650597807Z",
       "event": "finding_recorded"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.633914232Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.658041796Z",
       "event": "finding_recorded"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.639206784Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.665977118Z",
       "event": "finding_recorded"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.644768140Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.674685225Z",
       "event": "finding_recorded"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.649711961Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.681621185Z",
       "event": "finding_recorded"
     },
     {
-      "session": "manual_aa_a132da",
-      "timestamp": "2026-09-04T04:53:23.655862244Z",
+      "session": "session-ui-continuity-2",
+      "timestamp": "2026-09-04T08:16:32.690606070Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.272726259Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.286554026Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.293315445Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.302360907Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.307141706Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.313181875Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.321871270Z",
+      "event": "finding_recorded"
+    },
+    {
+      "session": "cortex-demo-20260904",
+      "timestamp": "2026-09-04T08:22:23.330024505Z",
       "event": "finding_recorded"
     }
   ],
-  "previous_chain_hash": "ae82d5c6f15d2d8802c9558e7b0d7439a8d75b031b9eb9dd908ccdfa74552bea",
-  "chain_hash": "ec08555622af6c52366c515b3e585824b198f526fbe75a8352f6f027de29976c"
+  "previous_chain_hash": "73383fab965270ee5c03a3ecd855ff883d502e194655d066c163fc8b29cdd20f",
+  "chain_hash": "369976675effad8a7bf4bfd84f247560e57d0a6774ab7172597641587a1ad007"
 }

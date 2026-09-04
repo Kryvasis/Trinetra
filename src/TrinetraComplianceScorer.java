@@ -43,7 +43,7 @@ public class TrinetraComplianceScorer {
         Set<String> normalizedFilter = normalizeFrameworkFilter(frameworkFilter);
 
         List<Map<String, Object>> results =
-            TrinetraSession.getNormalizedResults(sanitized);
+            TrinetraSession.getActiveNormalizedResults(sanitized);
 
         Set<String> allManifestIds = TrinetraCompliance.getMappedTestIds();
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { rememberSession } from '../utils/activeSession'
 import SceneHeader from '../components/SceneHeader'
 import WorkspaceIcon from '../components/WorkspaceIcon'
 import Spinner from '../components/Spinner'
@@ -54,6 +55,7 @@ export default function OverviewView({ api }) {
     if (loading) return
     const name = input.trim()
     if (!name) { inputRef.current?.focus(); return }
+    rememberSession(name)
     if (name === requestedSession) setRevision(value => value + 1)
     else setParams({ session: name })
   }

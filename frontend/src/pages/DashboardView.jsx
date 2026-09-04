@@ -23,11 +23,7 @@ export default function DashboardView({ api, toast }) {
       if (!res.ok) throw new Error(`Doctor failed: ${res.status}`)
       const data = await res.json()
       setDoctor(data)
-      const errs = data.session_validation?.session_errors || {}
-      const sessionNames = Object.keys(errs)
-      if (sessionNames.length > 0) {
-        setSessions(sessionNames)
-      }
+      setSessions(Array.isArray(data.sessions) ? data.sessions : [])
       toast('Health check loaded', 'success')
     } catch (err) {
       if (err.name === 'AbortError') {

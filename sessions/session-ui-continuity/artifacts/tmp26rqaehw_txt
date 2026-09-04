@@ -1,0 +1,4 @@
+! Synthetic UI continuity test only
+hostname demo-router
+ip ssh version 2
+no ip http server

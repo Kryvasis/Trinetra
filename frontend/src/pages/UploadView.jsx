@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
 import WebsiteView from './WebsiteView'
+import { rememberSession } from '../utils/activeSession'
 
 const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'Generic']
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/
@@ -96,7 +97,7 @@ export default function UploadView({ api, toast }) {
   const [searchParams, setSearchParams] = useSearchParams()
   const initialWebsite = searchParams.get('source') === 'website'
   const [websiteBusy, setWebsiteBusy] = useState(false)
-  const [session, setSession] = useState('')
+  const [session, setSession] = useState(searchParams.get('session') || '')
   const [deviceId, setDeviceId] = useState('')
   const [vendor, setVendor] = useState('Auto-detect')
   const [serialNumber, setSerialNumber] = useState('')
@@ -123,7 +124,10 @@ export default function UploadView({ api, toast }) {
   function changeSource(source) {
     if (source === fetchSourceType) return
     setFetchSourceType(source)
-    setSearchParams(source === 'website' ? { source: 'website' } : {}, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    if (source === 'website') next.set('source', 'website')
+    else next.delete('source')
+    setSearchParams(next, { replace: true })
     setFetchPassword('')
     setFetchSshKey('')
     setFetchAuthToken('')
@@ -216,7 +220,10 @@ export default function UploadView({ api, toast }) {
 
   const changeInputMode = mode => {
     setInputMode(mode)
-    setSearchParams(mode === 'fetch' && fetchSourceType === 'website' ? { source: 'website' } : {}, { replace: true })
+    const next = new URLSearchParams(searchParams)
+    if (mode === 'fetch' && fetchSourceType === 'website') next.set('source', 'website')
+    else next.delete('source')
+    setSearchParams(next, { replace: true })
     setErrors({})
     if (mode !== 'fetch') {
       setFetchPassword('')
@@ -305,6 +312,8 @@ export default function UploadView({ api, toast }) {
           throw new Error(detail.error || `Live collection failed (${response.status})`)
         }
         const data = await response.json()
+        if (controller.signal.aborted) return
+        rememberSession(sessionName)
         setBulkResults([{
           fileName: `${fetchSourceType.toUpperCase()} live collection`,
           deviceId: data.device_id || deviceId.trim(),
@@ -360,6 +369,8 @@ export default function UploadView({ api, toast }) {
             throw new Error(err.error || `Upload failed (${uploadRes.status})`)
           }
           const data = await uploadRes.json()
+          if (controller.signal.aborted) return
+          rememberSession(sessionName)
           results[idx] = { fileName: f.name, deviceId: did, status: 'success', message: `${data.passed} passed, ${data.failed} failed, ${data.unrecognized_count} unrecognized`, data }
           successCount++
           toast(`[${f.name}] ingested: ${data.passed} passed`, 'success')
@@ -430,6 +441,8 @@ export default function UploadView({ api, toast }) {
       }
 
       const data = await uploadRes.json()
+      if (controller.signal.aborted) return
+      rememberSession(sessionName)
       setBulkResults([{ fileName: devId, deviceId: devId, status: 'success', message: `${data.passed} passed, ${data.failed} failed, ${data.unrecognized_count} unrecognized`, data }])
       toast(`Config ingested: ${data.passed} passed, ${data.failed} failed, ${data.unrecognized_count} unrecognized`, 'success')
     } catch (err) {
