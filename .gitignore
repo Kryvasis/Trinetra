@@ -52,6 +52,14 @@ sessions/nonexistent_*/
 sessions/this_session_*/
 sessions/tmp_*/
 sessions/live_fetch_*/
+sessions/aaa/
+sessions/review_*/
+sessions/review-*/
+sessions/documented_*/
+sessions/manual_*/
+sessions/liveprobe_*/
+sessions/hdrtest_*/
+sessions/msgtest_*/
 # Audit/demo ephemeral sessions (created by live audit scripts / manual demo runs)
 sessions/audit_*/
 sessions/audit_d*/
@@ -64,6 +72,19 @@ sessions/test_severity_*/
 sessions/test_devices_*/
 sessions/fail_remediation_*/
 sessions/train_loop_*/
+sessions/cfgfix_*/
+sessions/cfg_diff_*/
+sessions/det1_*/
+sessions/det2_*/
+sessions/diff_test_*/
+sessions/eq_*/
+sessions/generic_test_*/
+sessions/auto_test_*/
+sessions/mix_*/
+sessions/mix2_*/
+sessions/score_*/
+sessions/ssrf_*/
+sessions/train_check*/
 
 # React frontend build artifacts
 frontend/node_modules/

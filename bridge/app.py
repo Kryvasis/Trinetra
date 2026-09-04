@@ -13,12 +13,12 @@ try:
     from bridge import live_fetcher
     from bridge.request_boundary import install_request_boundary
     from bridge.website import bp as website_bp
-    from bridge.config_validation import is_web_document, HTML_ERROR
+    from bridge.config_validation import is_web_document, HTML_ERROR, CONFIG_SANITY_ERROR, is_plausible_config, looks_like_html
 except ImportError:
     import live_fetcher
     from request_boundary import install_request_boundary
     from website import bp as website_bp
-    from config_validation import is_web_document, HTML_ERROR
+    from config_validation import is_web_document, HTML_ERROR, CONFIG_SANITY_ERROR, is_plausible_config, looks_like_html
 
 try:
     from bridge.config import (
@@ -59,6 +59,51 @@ DEVICE_RE = re.compile(r"^[A-Za-z0-9._\-]{1,128}$")
 VENDOR_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]{0,254}[A-Za-z0-9])?$")
 HEADER_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,127}$")
+
+# Strict hostname validation per RFC 1123 — used for fetch targets (ip/hostname and URL host)
+# Hostname must be 3-253 chars, labels 1-63, alphanum/hyphen, not start/end hyphen.
+# Single-label hostnames must be >=3 chars; multi-label TLD must be >=2 letters.
+def is_valid_hostname(hostname: str) -> bool:
+    if not isinstance(hostname, str):
+        return False
+    if len(hostname) < 3 or len(hostname) > 253:
+        return False
+    if hostname[0] == "." or hostname[-1] == "." or ".." in hostname:
+        return False
+    if any(c not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-" for c in hostname):
+        return False
+    labels = hostname.split(".")
+    for label in labels:
+        if not 1 <= len(label) <= 63:
+            return False
+        if label[0] == "-" or label[-1] == "-":
+            return False
+        if not label[0].isalnum() or not label[-1].isalnum():
+            return False
+        if not all(c.isalnum() or c == "-" for c in label):
+            return False
+    if len(labels) > 1:
+        tld = labels[-1]
+        if len(tld) < 2 or not tld.isalpha():
+            return False
+    # Single-label hostnames must not be purely numeric (would be ambiguous with IP)
+    if len(labels) == 1 and hostname.isdigit():
+        return False
+    return True
+
+
+def is_valid_ip_or_hostname(target: str) -> bool:
+    if not isinstance(target, str) or not target.strip():
+        return False
+    t = target.strip()
+    # Try IP first (covers IPv4 and IPv6)
+    try:
+        ipaddress.ip_address(t)
+        return True
+    except ValueError:
+        pass
+    return is_valid_hostname(t)
+
 
 # Block obvious injection characters even if regex would allow (defense in depth)
 INJECTION_CHARS = set(';|&$`><\\\'"*\n\r')
@@ -541,7 +586,7 @@ def upload_config(name):
         return error_response("missing or empty config file content", 400)
     if len(config_content.encode("utf-8")) > 1024 * 1024:  # 1 MiB, not characters
         return error_response("config file too large (max 1MB)", 413)
-    if is_web_document(config_content):
+    if is_web_document(config_content) or looks_like_html(config_content):
         return error_response(HTML_ERROR, 422)
     if contains_injection(device_id) or (vendor and contains_injection(vendor)):
         return error_response("injection characters detected", 400)
@@ -624,11 +669,8 @@ def fetch_config(name):
 
     fetch_args = {"source_type": source_type, "target": target, "vendor": vendor}
     if source_type == "ip":
-        try:
-            ipaddress.ip_address(target)
-        except ValueError:
-            if not HOST_RE.fullmatch(target):
-                return error_response("invalid SSH hostname or IP address", 400)
+        if not is_valid_ip_or_hostname(target):
+            return error_response("invalid IP address or hostname — must be a valid IPv4/IPv6 address or RFC 1123 hostname (3-253 chars, valid labels; e.g. 10.0.0.1 or edge-router.local)", 400)
         username = data.get("username")
         password = data.get("password")
         ssh_key = data.get("ssh_key")
@@ -653,13 +695,20 @@ def fetch_config(name):
             username=username.strip(), password=password, ssh_key=ssh_key, port=port,
         )
     else:
+        # Strict URL validation — must start with http:// or https:// and have valid hostname
+        if not re.match(r"^https?://", target, re.I):
+            return error_response("URL must start with http:// or https://", 400)
         try:
             parsed = urlsplit(target)
-            parsed.port  # Validate malformed/out-of-range ports before collection.
+            _ = parsed.port  # Validate malformed/out-of-range ports before collection.
         except ValueError:
-            return error_response("invalid configuration URL", 400)
+            return error_response("invalid configuration URL — malformed port or URL structure", 400)
         if parsed.scheme.lower() not in ("http", "https") or not parsed.hostname:
-            return error_response("URL must use http:// or https:// and include a hostname", 400)
+            return error_response("URL must include a valid hostname (e.g. https://example.com/config)", 400)
+        if not is_valid_ip_or_hostname(parsed.hostname):
+            return error_response("URL must include a valid hostname (e.g. https://example.com/config)", 400)
+        if parsed.username or parsed.password:
+            return error_response("credentials must not be embedded in the URL", 400)
         auth_token = data.get("auth_token")
         auth_header = data.get("auth_header") or "Authorization"
         if auth_token is not None and (not isinstance(auth_token, str) or len(auth_token) > 2048):
@@ -688,6 +737,12 @@ def fetch_config(name):
         return error_response("collected configuration exceeds the 1 MB limit", 413)
     if is_web_document(config_content):
         return error_response(HTML_ERROR, 422)
+    # Defense in depth: content sanity check (catches HTML/JS/error pages not at start)
+    if looks_like_html(config_content):
+        return error_response(CONFIG_SANITY_ERROR, 422)
+    plausible, reason = is_plausible_config(config_content)
+    if not plausible:
+        return error_response(f"{CONFIG_SANITY_ERROR} ({reason})", 422)
 
     tmp_path = None
     try:

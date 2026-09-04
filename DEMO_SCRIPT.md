@@ -45,6 +45,22 @@ Open **http://localhost:5173** in the browser.
 
 **What to say:** *"Bulk is one click — each filename becomes a device ID, each file gets its own Vendor auto-detect and chain entry, all in the same session. Per-file badges make failures obvious without losing the session."*
 
+## Step 1c — Live Collection (Optional, 1 min) — same pipeline, tagged `live_fetch`
+
+*This step is additive — you can skip it and the file-upload demo is complete. It proves the “unified ingestion” claim that live-fetch shares the identical scoring path.*
+
+1. Stay on **Upload**, switch **Input method** to **Collect from Network** (third mode, additive — file upload remains primary per `README.md:72`).
+2. Choose **SSH device** (`IP`):
+   - **IP/hostname:** `10.0.0.1` (or any lab device you control; `127.0.0.1` is blocked by SSRF policy and will show `collection target rejected`)
+   - **Username:** `admin` / **Password:** `••••` (or paste PEM key; credentials are masked, never persisted — see `bridge/live_fetcher.py:84` `RejectPolicy`)
+   - **Device ID:** `live-01` / **Vendor:** Auto-detect
+   - Or choose **Configuration URL** (`URL`): `https://example.com/config` with optional `Authorization: Bearer …` (requires `https`, private RFC1918 URLs like `http://10.0.0.1/` are blocked → `400`)
+3. Click **Collect & Scan**.
+4. **Show:** Same **Scan Results** card (`passed/failed/unrecognized`) and same **Session Devices** row, but `Ingestion` now shows `live_fetch` (`bridge/app.py:551` → same `TrinetraConfigIngestor.ingest(..., live_fetch)` `src/TrinetraConfigIngestor.java:118`, `src/TrinetraSession.java:771` `device_ingestion`).
+5. Click **View Session Devices** → verify `live-01 | Cisco | live_fetch` vs `cisco-lab-01 | Cisco | config_upload` in the same session; **Download PDF** and **Results** both include the live device with identical evidence columns plus `Ingestion` column.
+
+**What to say:** *“Same pipeline — file or live, it’s one `ingest` function. Live is thin retrieval only: SSH `known_hosts` strict, URL blocks private/SSRF and strips creds on redirect (`bridge/live_fetcher.py:136`), 1 MB cap. Credentials exist for one request and never touch disk or the report.”*
+
 ---
 
 ## Step 2 — View Results & Framework Scores (2 min)
@@ -106,7 +122,7 @@ Open **http://localhost:5173** in the browser.
 3. **Show:** PDF opens in new tab (ReportLab `landscape(letter)` `bridge/app.py:786`) with:
    - Session metadata (name, target, timestamp)
    - Per-framework compliance tables (respects the `?frameworks=` filter if used)
-   - Evidence rows with **distinct columns** `Device | Vendor | Serial | Hardware | OS Version | Test ID | Verdict | Severity | Timestamp | Controls` — e.g., `cisco-lab-01 | Cisco | FTX999 | C9300 | IOS XE 17.6.5 | V-013 | pass | medium | ...` (not folded into `device_id`)
+   - Evidence rows with **distinct columns** `Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Severity | Timestamp | Controls` — e.g., `cisco-lab-01 | Cisco | FTX999 | C9300 | IOS XE 17.6.5 | config_upload | V-013 | pass | medium | ...` (`live_fetch` for Step 1c devices, not folded into `device_id`)
    - Remediation section with **numbered step-by-step CLI sequences** `1. configure terminal … 5. write memory` (`bridge/app.py:990` 15 V-codes, `V-106` uses `aws s3api`) and documented/AI-suggested labels
    - Bonus coverage note for PCI-DSS/SOC2 (PS-required are CIS/NIST/ISO27001/STIG) + honest STIG 14/15 note
    - Tamper-evidence chain status `INTACT (N links)` / `BROKEN at index`

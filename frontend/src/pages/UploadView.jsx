@@ -10,6 +10,56 @@ const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/
 const DEVICE_RE = /^[A-Za-z0-9._-]{1,128}$/
 const MAX_FILE_SIZE = 1024 * 1024 // 1MB — matches bridge limit
 
+// Strict hostname validation mirrors bridge/app.py is_valid_hostname (RFC 1123)
+function isValidHostname(h) {
+  if (typeof h !== 'string') return false
+  if (h.length < 3 || h.length > 253) return false
+  if (h.startsWith('.') || h.endsWith('.') || h.includes('..')) return false
+  if (!/^[A-Za-z0-9.-]+$/.test(h)) return false
+  const labels = h.split('.')
+  for (const label of labels) {
+    if (label.length < 1 || label.length > 63) return false
+    if (label.startsWith('-') || label.endsWith('-')) return false
+    if (!/^[A-Za-z0-9][A-Za-z0-9-]*[A-Za-z0-9]$/.test(label) && label.length !== 1) return false
+    if (label.length === 1 && !/^[A-Za-z0-9]$/.test(label)) return false
+  }
+  if (labels.length > 1) {
+    const tld = labels[labels.length - 1]
+    if (tld.length < 2 || !/^[A-Za-z]+$/.test(tld)) return false
+  }
+  if (labels.length === 1 && /^\d+$/.test(h)) return false
+  return true
+}
+function isValidIp(t) {
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(t)) {
+    return t.split('.').every(o => {
+      const n = Number(o)
+      return n >= 0 && n <= 255 && String(n) === o
+    })
+  }
+  if (t.includes(':')) {
+    // IPv6: use URL constructor trick or simple check
+    try {
+      // URL requires brackets for IPv6, so test via simple regex
+      return /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F:]+$/.test(t) && t.split(':').length <= 8
+    } catch { return false }
+  }
+  return false
+}
+function isValidIpOrHostname(t) {
+  return isValidIp(t) || isValidHostname(t)
+}
+function isValidUrl(t) {
+  try {
+    const u = new URL(t)
+    if (!['http:', 'https:'].includes(u.protocol)) return false
+    if (!u.hostname) return false
+    if (!isValidHostname(u.hostname) && !isValidIp(u.hostname)) return false
+    if (u.username || u.password) return false
+    return true
+  } catch { return false }
+}
+
 function SecretField({ id, label, value, onChange, placeholder, multiline = false }) {
   const [visible, setVisible] = useState(false)
   const controlProps = {
@@ -128,8 +178,11 @@ export default function UploadView({ api, toast }) {
       if (!d) e.deviceId = 'Device ID is required for live collection'
       else if (!DEVICE_RE.test(d)) e.deviceId = 'Only letters, numbers, dots, hyphens, underscores (max 128)'
       if (!target) e.fetchTarget = fetchSourceType === 'ip' ? 'IP address or hostname is required' : 'Configuration URL is required'
-      else if (fetchSourceType === 'ip' && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,255}$/.test(target)) e.fetchTarget = 'Enter a valid IP address or hostname'
-      else if (fetchSourceType === 'url' && !/^https?:\/\//i.test(target)) e.fetchTarget = 'URL must start with http:// or https://'
+      else if (fetchSourceType === 'ip' && !isValidIpOrHostname(target)) e.fetchTarget = 'Enter a valid IP address or hostname (e.g. 10.0.0.1 or edge-router.local)'
+      else if (fetchSourceType === 'url') {
+        if (!/^https?:\/\//i.test(target)) e.fetchTarget = 'URL must start with http:// or https://'
+        else if (!isValidUrl(target)) e.fetchTarget = 'Enter a valid URL with a proper hostname (e.g. https://example.com/config)'
+      }
       if (fetchSourceType === 'ip') {
         if (!fetchUsername.trim()) e.fetchUsername = 'SSH username is required'
         if (!fetchPassword && !fetchSshKey) e.fetchCredential = 'Enter an SSH password or paste a private key'

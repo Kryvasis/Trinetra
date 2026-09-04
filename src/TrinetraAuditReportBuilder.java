@@ -234,8 +234,8 @@ public class TrinetraAuditReportBuilder {
         }
 
         sb.append("## Test Evidence\n\n");
-        sb.append("| Device | Vendor | Serial | Hardware | OS Version | Test ID | Verdict | Severity | Timestamp | Controls |\n");
-        sb.append("|--------|--------|--------|----------|------------|---------|---------|----------|-----------|----------|\n");
+        sb.append("| Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Severity | Timestamp | Controls |\n");
+        sb.append("|--------|--------|--------|----------|------------|-----------|---------|---------|----------|-----------|----------|\n");
         for (Map<String, Object> row : rows) {
             @SuppressWarnings("unchecked")
             Map<String, Object> e = (Map<String, Object>) row.get("entry");
@@ -248,6 +248,7 @@ public class TrinetraAuditReportBuilder {
               .append(" | ").append(cell(TrinetraCommon.getString(det, "serial_number", "")))
               .append(" | ").append(cell(TrinetraCommon.getString(det, "hardware_model", "")))
               .append(" | ").append(cell(TrinetraCommon.getString(det, "os_version", "")))
+              .append(" | ").append(cell(TrinetraCommon.getString(e, "ingestion_method", "")))
               .append(" | ").append(cell(testId))
               .append(" | ").append(cell(TrinetraCommon.getString(e, "normalized_result", "?")))
               .append(" | ").append(cell(severity))
@@ -377,8 +378,8 @@ public class TrinetraAuditReportBuilder {
                 : "_No narrative section available for this framework._\n\n");
 
             sb.append("Test evidence:\n\n");
-            sb.append("| Device | Vendor | Serial | Hardware | OS Version | Test ID | Verdict | Severity | Timestamp |\n");
-            sb.append("|--------|--------|--------|----------|------------|---------|---------|----------|------------|\n");
+            sb.append("| Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Severity | Timestamp |\n");
+            sb.append("|--------|--------|--------|----------|------------|-----------|---------|---------|----------|------------|\n");
             for (Map<String, Object> row : rows) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> entry = (Map<String, Object>) row.get("entry");
@@ -391,6 +392,7 @@ public class TrinetraAuditReportBuilder {
                   .append(" | ").append(cell(TrinetraCommon.getString(det2, "serial_number", "")))
                   .append(" | ").append(cell(TrinetraCommon.getString(det2, "hardware_model", "")))
                   .append(" | ").append(cell(TrinetraCommon.getString(det2, "os_version", "")))
+                  .append(" | ").append(cell(TrinetraCommon.getString(entry, "ingestion_method", "")))
                   .append(" | ").append(cell(tid2))
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "normalized_result", "?")))
                   .append(" | ").append(cell(sev2))

@@ -180,8 +180,19 @@ public class TrinetraStat {
         /**
          * Evaluate raw script output against a decision rule.
          * Returns a Verdict: PASS, FAIL, MANUAL_REVIEW, or ERROR.
+         * Canonical contract: if stdout contains a line "VERDICT: <pass|fail|manual_review|error>"
+         * (case-insensitive, last occurrence wins), that verdict is authoritative and
+         * exit code is treated as execution signal only. Otherwise falls back to
+         * legacy grep/exit_code methods for backward compatibility.
          */
         public static Verdict evaluate(DecisionRule rule, String rawOutput, int exitCode) {
+            // New canonical path: explicit VERDICT line takes precedence
+            Verdict explicit = parseExplicitVerdict(rawOutput);
+            if (explicit != null) {
+                return explicit;
+            }
+            // If script signaled execution failure via non-zero exit and produced no output, treat as ERROR
+            // (legacy scripts that conflate exit code with verdict will still be handled below)
             if (rule == null) {
                 return Verdict.MANUAL_REVIEW;
             }
@@ -210,6 +221,30 @@ public class TrinetraStat {
             } catch (Exception e) {
                 TrinetraCommon.logError("Decision engine error for " + method + ": " + e.getMessage());
                 return Verdict.ERROR;
+            }
+        }
+
+        /** Parse explicit VERDICT line from script output, if present. */
+        private static Verdict parseExplicitVerdict(String rawOutput) {
+            if (rawOutput == null || rawOutput.isBlank()) return null;
+            // Find last occurrence of VERDICT: <value> (case-insensitive)
+            String lower = rawOutput.toLowerCase();
+            // Use regex to find all verdict lines
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                "^\\s*verdict\\s*:\\s*(pass|fail|manual_review|error)\\s*$",
+                java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.MULTILINE);
+            java.util.regex.Matcher m = p.matcher(rawOutput);
+            String last = null;
+            while (m.find()) {
+                last = m.group(1).toLowerCase();
+            }
+            if (last == null) return null;
+            switch (last) {
+                case "pass": return Verdict.PASS;
+                case "fail": return Verdict.FAIL;
+                case "manual_review": return Verdict.MANUAL_REVIEW;
+                case "error": return Verdict.ERROR;
+                default: return null;
             }
         }
 
