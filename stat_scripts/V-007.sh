@@ -110,6 +110,8 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_CIPHER_LOG=$(mktemp)
+
 
 TIMEOUT=30
 
@@ -169,12 +171,7 @@ for PORT in 443 8443; do
     echo "--- Port $PORT ---"
 
     for CIPHER_GROUP in "NULL" "EXPORT" "aNULL" "eNULL" "RC4" "DES" "3DES" "MD5" "ADH" "AECDH"; do
-        RESULT=$(timeout 10 bash -c "
-            echo '' | openssl s_client -connect ${SCAN_TARGET}:${PORT} \
-                -servername $HOST \
-                -cipher ${CIPHER_GROUP} \
-                2>&1
-        " 2>/dev/null)
+        RESULT=$(printf '' | timeout 10 openssl s_client -connect "${SCAN_TARGET}:${PORT}" -servername "$HOST" -cipher "${CIPHER_GROUP}" 2>&1)
 
         if echo "$RESULT" | grep -q "BEGIN CERTIFICATE"; then
             echo "[FAIL] $CIPHER_GROUP: ACCEPTED (connection succeeded)"
@@ -184,12 +181,7 @@ for PORT in 443 8443; do
     done
 
     # Check for RC4/3DES specifically
-    RESULT=$(timeout 10 bash -c "
-        echo '' | openssl s_client -connect ${SCAN_TARGET}:${PORT} \
-            -servername $HOST \
-            -cipher RC4:3DES \
-            2>&1
-    " 2>/dev/null)
+    RESULT=$(printf '' | timeout 10 openssl s_client -connect "${SCAN_TARGET}:${PORT}" -servername "$HOST" -cipher "RC4:3DES" 2>&1)
 
     if echo "$RESULT" | grep -q "BEGIN CERTIFICATE"; then
         echo "[FAIL] RC4/3DES: ACCEPTED"
@@ -211,11 +203,7 @@ echo "=== Method 4: openssl full cipher enumeration ==="
 for PORT in 443 8443; do
     echo ""
     echo "--- Port $PORT ---"
-    CIPHERS=$(timeout 10 bash -c "
-        echo '' | openssl s_client -connect ${SCAN_TARGET}:${PORT} \
-            -servername $HOST \
-            2>&1
-    " 2>/dev/null | grep -i 'Cipher is' || true)
+    CIPHERS=$(printf '' | timeout 10 openssl s_client -connect "${SCAN_TARGET}:${PORT}" -servername "$HOST" 2>&1 | grep -i 'Cipher is' || true)
     echo "$CIPHERS"
 
     # Check negotiated cipher for weak properties
@@ -230,6 +218,22 @@ done
 echo ""
 echo "=== Scan Complete ==="
 # Original exit replaced by canonical footer: exit 0
+
+
+# Bucket A wiring: V-007 weak ciphers - check for [FAIL] in cipher checks
+if grep -q "\[FAIL\]" "$TMP_CIPHER_LOG" 2>/dev/null || grep -q "WEAK.*ACCEPTED" "$TMP_CIPHER_LOG" 2>/dev/null; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: high"
+  echo "DETAILS: weak cipher offered"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: strong ciphers only"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

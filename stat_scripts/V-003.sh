@@ -106,6 +106,8 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_NMAP_LOG=$(mktemp)
+
 
 
 echo "=== V-003: Open port scan ==="
@@ -151,31 +153,47 @@ BASE_OPTS="-sS -T3 -Pn --open --max-retries 2 --max-rate 300 --min-rate 10 --hos
 # --- Phase 1: Quick TCP SYN on top 100 fast ports ---
 echo ""
 echo "=== Phase 1: TCP quick scan (top 100 ports) ==="
-timeout 90 nmap $BASE_OPTS --top-ports 100 --reason "$SCAN_TARGET" 2>&1 || true
+timeout 90 nmap $BASE_OPTS --top-ports 100 --reason "$SCAN_TARGET" 2>&1 | tee -a "$TMP_NMAP_LOG" || true
 
 # --- Phase 2: Full TCP 1-1024 (well-known ports) ---
 echo ""
 echo "=== Phase 2: TCP well-known ports (1-1024) ==="
-timeout 120 nmap $BASE_OPTS -p 1-1024 -sV --version-intensity 4 "$SCAN_TARGET" 2>&1 || true
+timeout 120 nmap $BASE_OPTS -p 1-1024 -sV --version-intensity 4 "$SCAN_TARGET" 2>&1 | tee -a "$TMP_NMAP_LOG" || true
 
 # --- Phase 3: Extended TCP 1025-10000 (registered ports) ---
 echo ""
 echo "=== Phase 3: TCP registered ports (1025-10000) ==="
-timeout 180 nmap $BASE_OPTS -p 1025-10000 -sV --version-intensity 2 "$SCAN_TARGET" 2>&1 || true
+timeout 180 nmap $BASE_OPTS -p 1025-10000 -sV --version-intensity 2 "$SCAN_TARGET" 2>&1 | tee -a "$TMP_NMAP_LOG" || true
 
 # --- Phase 4: Default scripts on discovered open ports ---
 echo ""
 echo "=== Phase 4: Default scripts on open ports ==="
-timeout 120 nmap $BASE_OPTS -sC -sV --version-intensity 4 "$SCAN_TARGET" 2>&1 || true
+timeout 120 nmap $BASE_OPTS -sC -sV --version-intensity 4 "$SCAN_TARGET" 2>&1 | tee -a "$TMP_NMAP_LOG" || true
 
 # --- Phase 5: UDP top 20 only (UDP is inherently slow & noisy) ---
 echo ""
 echo "=== Phase 5: UDP top 20 ports ==="
-timeout 90 nmap -sU -T2 -Pn --open --max-retries 1 --max-rate 50 --top-ports 20 "$SCAN_TARGET" 2>&1 || true
+timeout 90 nmap -sU -T2 -Pn --open --max-retries 1 --max-rate 50 --top-ports 20 "$SCAN_TARGET" 2>&1 | tee -a "$TMP_NMAP_LOG" || true
 
 echo ""
 echo "=== Scan Complete ==="
 # Original exit replaced by canonical footer: exit 0
+
+
+# Bucket A wiring: V-003 open ports - check nmap temp file for "open"
+if [ -f "$TMP_NMAP_LOG" ] && grep -qi "open" "$TMP_NMAP_LOG"; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: medium"
+  echo "DETAILS: open ports found beyond allow-list"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: no disallowed open ports"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

@@ -110,6 +110,9 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_TLS_LOG=$(mktemp)
+TLS_LOG=""
+
 
 TIMEOUT=30
 
@@ -173,10 +176,10 @@ check_tls_version() {
     RESULT=$(printf '' | timeout 10 openssl s_client -connect "${SCAN_TARGET}:${port}" -servername "$HOST" $version_flag 2>&1)
 
     if echo "$RESULT" | grep -q "BEGIN CERTIFICATE"; then
-        echo "[FAIL] $version_name: ACCEPTED (connection succeeded)"
+        echo "[FAIL] $version_name: ACCEPTED (connection succeeded)" | tee -a "$TMP_TLS_LOG"
         return 0
     elif echo "$RESULT" | grep -qiE "no protocols available|wrong version|no cipher|alert protocol|ssl handshake failure|tlsv1 alert"; then
-        echo "[PASS] $version_name: REJECTED"
+        echo "[PASS] $version_name: REJECTED" | tee -a "$TMP_TLS_LOG"
         return 1
     else
         echo "[INFO] $version_name: could not determine"
@@ -208,15 +211,31 @@ for FLAG in "--tlsv1.0" "--tlsv1.1" "--tlsv1.2" "--tlsv1.3"; do
     RESULT=$(timeout 10 curl -sk -o /dev/null -w "%{http_code}" \
         $FLAG --connect-timeout 5 "https://${HOST}/" 2>/dev/null)
     if [ "$RESULT" != "000" ]; then
-        echo "[FAIL] curl $FLAG: connected (HTTP $RESULT)"
+        echo "[FAIL] curl $FLAG: connected (HTTP $RESULT)" | tee -a "$TMP_TLS_LOG"
     else
-        echo "[PASS] curl $FLAG: rejected"
+        echo "[PASS] curl $FLAG: rejected" | tee -a "$TMP_TLS_LOG"
     fi
 done
 
 echo ""
 echo "=== Scan Complete ==="
 # Original exit replaced by canonical footer: exit 0
+
+
+# Bucket A wiring: V-006 weak TLS - check for [FAIL] from check_tls_version
+if grep -q "\[FAIL\].*ACCEPTED" <<< "$TLS_LOG" 2>/dev/null || grep -q "FAIL.*ACCEPTED" "$TMP_TLS_LOG" 2>/dev/null; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: high"
+  echo "DETAILS: weak TLS version accepted (SSLv3/TLS 1.0/1.1)"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: only TLS 1.2+ offered"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

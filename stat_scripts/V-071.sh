@@ -105,10 +105,28 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_ADMIN_LOG=$(mktemp)
 
-nmap -sV -T4 --open "$HOST" 2>&1 | head -30
-for path in /admin /administrator /wp-admin /phpmyadmin /console /manage; do code=$(curl -s -o /dev/null -w "%{http_code}" "http://$HOST$path"); [ "$code" != "000" ] && [ "$code" != "404" ] && echo "  $path -> HTTP $code"; done
+
+timeout 30 nmap -sV -T4 --open "$HOST" 2>&1 | tee "$TMP_ADMIN_LOG" | head -30
+for path in /admin /administrator /wp-admin /phpmyadmin /console /manage; do code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://$HOST$path"); [ "$code" != "000" ] && [ "$code" != "404" ] && echo "  $path -> HTTP $code" | tee -a "$TMP_ADMIN_LOG"; done
 # Original exit replaced by canonical footer: exit $?
+
+
+# Bucket A wiring: V-071 admin interface - check for HTTP 200 on admin paths
+if [ -f "$TMP_ADMIN_LOG" ] && grep -q "HTTP 200" "$TMP_ADMIN_LOG"; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: high"
+  echo "DETAILS: admin panel reachable unauthenticated"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: admin panel not externally reachable"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

@@ -103,11 +103,29 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_GRYPE_LOG=$(mktemp)
+
 
 SESSION_DIR="${2:-}"
 
-if [ -d "$TARGET" ]; then syft "$TARGET" -o json 2>/dev/null | timeout 10 grype 2>&1 | head -30; else timeout 10 grype "$TARGET" 2>&1 | head -20; fi
+if [ -d "$TARGET" ]; then timeout 10 syft "$TARGET" -o json 2>/dev/null | timeout 10 grype 2>&1 | tee "$TMP_GRYPE_LOG" | head -30; else timeout 10 grype "$TARGET" 2>&1 | tee "$TMP_GRYPE_LOG" | head -20; fi
 # Original exit replaced by canonical footer: exit $?
+
+
+# Bucket A wiring: V-087 SCA - check for CVE in grype output
+if [ -f "$TMP_GRYPE_LOG" ] && grep -qiE "CVE-[0-9]+-[0-9]+|HIGH|CRITICAL" "$TMP_GRYPE_LOG"; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: high"
+  echo "DETAILS: CVE match in dependency tree"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: no known-CVE dependency"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

@@ -174,11 +174,7 @@ fi
 echo ""
 echo "=== Method 2: openssl certificate analysis ==="
 
-CERT_RAW=$(timeout 10 bash -c "
-    echo '' | openssl s_client -connect ${SCAN_TARGET}:443 \
-        -servername $HOST \
-        -showcerts 2>&1
-" 2>/dev/null)
+CERT_RAW=$(printf '' | timeout 10 openssl s_client -connect "${SCAN_TARGET}:443" -servername "$HOST" -showcerts 2>&1)
 
 # Extract just the first certificate PEM block
 END_LINE=$(echo "$CERT_RAW" | grep -nF '-----END CERTIFICATE-----' | head -1 | cut -d: -f1)

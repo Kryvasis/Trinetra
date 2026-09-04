@@ -110,6 +110,8 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_BANNER_LOG=$(mktemp)
+
 
 TIMEOUT=60
 
@@ -147,12 +149,12 @@ SAFE_OPTS="-T3 -Pn --open --max-retries 2 --max-rate 200 --host-timeout 120s"
 # --- Phase 1: Service version detection (top 1000) ---
 echo ""
 echo "=== Phase 1: TCP service version scan (top 1000 ports) ==="
-timeout $TIMEOUT nmap -sV --version-intensity 5 $SAFE_OPTS --reason "$SCAN_TARGET" 2>&1 || true
+timeout $TIMEOUT nmap -sV --version-intensity 5 $SAFE_OPTS --reason "$SCAN_TARGET" 2>&1 | tee -a "$TMP_BANNER_LOG" || true
 
 # --- Phase 2: Aggressive version probe on all open ports ---
 echo ""
 echo "=== Phase 2: Aggressive version probe (-sV --version-all) ==="
-timeout $TIMEOUT nmap -sV --version-intensity 9 --version-all $SAFE_OPTS "$SCAN_TARGET" 2>&1 || true
+timeout $TIMEOUT nmap -sV --version-intensity 9 --version-all $SAFE_OPTS "$SCAN_TARGET" 2>&1 | tee -a "$TMP_BANNER_LOG" || true
 
 # --- Phase 3: Default scripts that grab banners ---
 echo ""
@@ -167,7 +169,7 @@ for PORT in 80 443 8080 8443 8000 8888; do
     RESP=$(timeout 10 curl -skI -m 5 "http://${HOST}:${PORT}/" 2>/dev/null)
     if [ -n "$RESP" ]; then
         echo "--- Port $PORT HTTP Headers ---"
-        echo "$RESP" | grep -iE '^server:|^x-powered-by:|^x-aspnet|^x-generator:|^x-drupal:|^x-varnish:' || echo "(no version headers found)"
+        echo "$RESP" | tee -a "$TMP_BANNER_LOG" | grep -iE '^server:|^x-powered-by:|^x-aspnet|^x-generator:|^x-drupal:|^x-varnish:' || echo "(no version headers found)"
         echo ""
     fi
 done
@@ -197,6 +199,22 @@ done
 echo ""
 echo "=== Scan Complete ==="
 # Original exit replaced by canonical footer: exit 0
+
+
+# Bucket A wiring: V-005 banner grabbing - check for verbose Server header in nmap/curl output
+if [ -f "$TMP_BANNER_LOG" ] && grep -qiE "Server:.*[0-9]+\.[0-9]+|Apache/[0-9]|nginx/[0-9]|IIS/[0-9]" "$TMP_BANNER_LOG"; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: low"
+  echo "DETAILS: verbose version banner exposed"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: no verbose banner"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

@@ -103,11 +103,29 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_SECRET_LOG=$(mktemp)
+
 
 SESSION_DIR="${2:-}"
 
-echo "Scanning for secrets..."; curl -s "$TARGET/.env" 2>&1 | head -20; echo "---"; curl -s "$TARGET/.git/HEAD" 2>&1 | head -5
+echo "Scanning for secrets..."; { curl -s "$TARGET/.env" 2>&1 | tee "$TMP_SECRET_LOG" | head -20; echo "---" | tee -a "$TMP_SECRET_LOG"; curl -s "$TARGET/.git/HEAD" 2>&1 | tee -a "$TMP_SECRET_LOG" | head -5; }
 # Original exit replaced by canonical footer: exit $?
+
+
+# Bucket A wiring: V-057 secrets - check if .env fetch returned content with key-like pattern
+if [ -f "$TMP_SECRET_LOG" ] && grep -qiE "DB_PASSWORD|SECRET|API_KEY|aws_secret|password.*=" "$TMP_SECRET_LOG"; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: critical"
+  echo "DETAILS: secret/key/token found in .env/.git"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: no secrets detected"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

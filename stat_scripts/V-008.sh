@@ -105,12 +105,30 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_CERT_LOG=$(mktemp)
 
 
-echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>&1 | head -50
+
+echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>&1 | tee "$TMP_CERT_LOG" | head -50
 echo "--- cert details ---"
-echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>&1 | openssl x509 -noout -dates -subject -issuer 2>&1
+echo | openssl s_client -connect "$HOST:443" -servername "$HOST" 2>&1 | tee -a "$TMP_CERT_LOG" | openssl x509 -noout -dates -subject -issuer 2>&1 | tee -a "$TMP_CERT_LOG"
 # Original exit replaced by canonical footer: exit $?
+
+
+# Bucket A wiring: V-008 cert - check for expired or self-signed in openssl output
+if [ -f "$TMP_CERT_LOG" ] && grep -qiE "notAfter.*expired|self.signed|Verify return code: 18|Verify return code: 19" "$TMP_CERT_LOG"; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: medium"
+  echo "DETAILS: expired or self-signed cert"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: cert valid and CA-signed"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review

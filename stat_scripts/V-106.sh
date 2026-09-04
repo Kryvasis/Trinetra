@@ -103,11 +103,29 @@ fi
 # Timeout safety: enforce per-tool timeouts (outer Java 300s, inner 10-90s per tool)
 # Individual tools already wrapped in timeout where applicable; this header ensures script itself does not hang on large input
 # End hardening header
+TMP_CLOUD_LOG=$(mktemp)
+
 
 SESSION_DIR="${2:-}"
 
-timeout 10 cloud_enum -k "$TARGET" 2>&1 | head -30
+timeout 10 cloud_enum -k "$TARGET" 2>&1 | tee "$TMP_CLOUD_LOG" | head -30
 # Original exit replaced by canonical footer: exit $?
+
+
+# Bucket A wiring: V-106 cloud storage - check for publicly readable bucket
+if [ -f "$TMP_CLOUD_LOG" ] && grep -qiE "publicly readable|Grantee.*AllUsers|Access.*Allow.*\*" "$TMP_CLOUD_LOG"; then
+  echo "VERDICT: fail"
+  echo "SEVERITY: high"
+  echo "DETAILS: publicly readable bucket/blob found"
+  _VERDICT_EMITTED=1
+  exit 0
+else
+  echo "VERDICT: pass"
+  echo "SEVERITY: none"
+  echo "DETAILS: no public bucket/blob found"
+  _VERDICT_EMITTED=1
+  exit 0
+fi
 
 # --- Canonical contract footer: ensure VERDICT/SEVERITY always present ---
 # If script reached here without emitting VERDICT, emit fallback manual_review
