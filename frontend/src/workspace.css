@@ -229,3 +229,31 @@
   .workspace-shell :is(.overview-panel, .card, .nav-links, .flow-stages a) { border: 1px solid CanvasText; }
   .workspace-shell .nav-links a.active { border: 2px solid Highlight; }
 }
+
+/* Evidence workflows retain the graphite tokens and natural document flow. */
+.assessment-toolbar, .assessment-summary, .assessment-pagination { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
+.assessment-toolbar input { flex: 1 1 180px; min-width: 0; max-width: 360px; }
+.assessment-summary h2, .assessment-summary h3 { margin-right: auto; overflow-wrap: anywhere; }
+.assessment-summary span { color: var(--text-dim); font-size: 13px; }
+.assessment-notice { padding: 16px; margin-bottom: 20px; border: 1px solid var(--border-strong); border-radius: 12px; }
+.evidence-disclosure { padding-block: 16px; border-top: 1px solid var(--border); }
+.evidence-disclosure summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.observation-row { padding-block: 14px; border-bottom: 1px solid var(--border); }
+.observation-row > div { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.observation-row p, .report-actions p { color: var(--text-dim); max-width: 75ch; margin-block: 8px; }
+.evidence-controls { display: block; color: var(--text-dim); margin-top: 8px; }
+.assessment-pagination { justify-content: flex-end; margin-top: 16px; }
+.assessment-pagination > span { margin-right: auto; }
+.report-actions { margin-top: 24px; }
+.workspace-shell :is(#config-review-heading, #mapped-heading, .report-actions h2) { font-size: 17px; font-weight: 600; margin-bottom: 12px; }
+.workspace-shell .evidence-disclosure > p { margin-block: 12px; color: var(--text-dim); }
+.workspace-shell .framework-tabs { flex-wrap: wrap; }
+.workspace-shell .framework-tab { display: flex; gap: 12px; align-items: center; }
+.workspace-shell .card + .card { margin-top: 20px; }
+@media (max-width: 760px) {
+  .workspace-shell input:not([type='checkbox']):not([type='radio']), .workspace-shell select, .workspace-shell textarea { font-size: 16px; }
+  .workspace-shell :is(.btn-primary, .btn-secondary) { min-height: 44px; }
+  .workspace-shell .assessment-toolbar { padding: 0; }
+  .assessment-toolbar label { flex-basis: 100%; }
+  .assessment-toolbar input { max-width: none; }
+}

@@ -25,7 +25,7 @@ const NAV_ITEMS = [
 const TITLES = {
   '/upload': 'Upload & collect',
   '/website': 'Website Analysis',
-  '/results': 'Results & Score',
+  '/results': 'Results & evidence',
   '/training': 'Training Loop',
   '/devices': 'Session Devices',
   '/dashboard': 'Overview',

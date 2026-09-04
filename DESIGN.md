@@ -205,7 +205,7 @@ Main task regions use rounded graphite panels; nested sections use rules and whi
 
 ### Motion
 
-Workspace routes arrive over 220ms with `cubic-bezier(.16, 1, .3, 1)`, fading from .7 opacity and rising 5px. Button/navigation color/background/border and workflow-hover transitions take 160ms. Inputs retain the inherited 200ms border/background transition and progress bars retain their 700ms width transition; these are not new ambient animations. No perpetual workspace animation is introduced. Reduced motion removes workspace animations and transitions and resets scroll behavior to auto. Forced-color mode adds system-color panel borders and a highlighted current-navigation border.
+Workspace routes arrive over 220ms with `cubic-bezier(.16, 1, .3, 1)`, fading from .7 opacity and rising 5px. Button/navigation color/background/border and workflow-hover transitions take 160ms. Inputs retain the inherited 200ms border/background transition. Progress values update without animating layout width; zero is rendered as zero, without a decorative minimum fill. No perpetual workspace animation is introduced. Reduced motion removes workspace animations and transitions and resets scroll behavior to auto. Forced-color mode adds system-color panel borders and a highlighted current-navigation border.
 
 The Canvas globe remains capped near 24 FPS and device pixel ratio 1.25, pauses in hidden tabs and keeps pointer movement outside React state. Intro elements arrive in one orchestrated sequence; the circular action rotates slowly. The preserved 760ms top-to-bottom solid-color wipe is owned by `.intro-wipe`/`workspace-wipe` in `frontend/src/scene.css`. Reduced motion freezes ambient intro animation and opens the workspace immediately while preserving state feedback.
 

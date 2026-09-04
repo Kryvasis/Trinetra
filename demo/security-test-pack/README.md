@@ -1,5 +1,25 @@
 # Cortex upload test pack
 
+## Update after the engineering review (2026-09-04)
+
+The table and findings below are the **historical pre-fix baseline**, not the
+current output. Fresh configuration uploads now yield manual-review runtime
+checks, without unsupported passes. Cisco IOS text observations separately
+identify five supported risky directive types with source-line numbers. The
+hardened excerpt means those directives were not observed, not that it passed
+an audit. Juniper semantic observation coverage remains unsupported.
+
+Use a **new assessment and reupload**: historical evidence is deliberately not
+rewritten. Run `.venv/bin/python tests/run_isolated.py` for the updated regression
+suite, including `bridge/tests/test_evidence_accuracy.py`.
+
+The older `verify_demo.py` deliberately retains its original failing product
+acceptance targets. Its Cisco `failed > 0` predicate does not yet distinguish
+configuration observations from runtime verdicts; its Juniper target is still
+unimplemented. Do not present that script as a passing suite. It also retains
+temporary output for inspection. See `ENGINEERING-AUDIT-2026-09-04.md` at the
+repository root for current scope, verification and remaining limitations.
+
 Created and tested 2026-09-04. All files are synthetic. No real credentials,
 customer data, malware, or live scanning targets are included. Do not deploy
 these snippets to a router. The hardened excerpt is deliberately incomplete,

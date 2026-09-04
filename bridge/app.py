@@ -826,8 +826,8 @@ def session_devices(name):
         try:
             with open(brain_path, "r") as f:
                 brain_data = json.load(f)
-        except Exception:
-            pass
+        except (OSError, ValueError):
+            return error_response('Assessment evidence could not be read. Restore a valid backup before trusting results.', 500)
 
     device_vendors = session_data.get("device_vendors") or {}
     device_ingestion = session_data.get("device_ingestion") or {}
@@ -1245,73 +1245,24 @@ def audit_report_pdf(name):
             story.append(et)
             story.append(Spacer(1, 12))
 
-        # Remediation section — per failed test, step-by-step CLI sequences (item 6)
-        # Extract failed tests dynamically using header index
-        failed_tests = []
-        if header_row and evidence_rows:
-            verdict_idx_dyn = col_index.get("verdict", -1)
-            test_idx = col_index.get("test id", 2)
-            device_idx = col_index.get("device", 0)
-            if verdict_idx_dyn >= 0:
-                failed_tests = [r for r in evidence_rows if len(r) > verdict_idx_dyn and r[verdict_idx_dyn].lower() == "fail"]
-        else:
-            failed_tests = [r for r in evidence_rows if len(r) >= 4 and r[3].lower() == "fail"]
-        if failed_tests:
-            story.append(Paragraph("Remediation — Failed Tests (Step-by-Step CLI)", heading_style))
-            # Updated remediation map: numbered step-by-step sequences (item 6) — not new research, just structuring on correct commands
-            remediation_map = {
-                "V-003": "1. Enter config mode: <font face=\"Courier\">configure terminal</font>. 2. Identify service: <font face=\"Courier\">show running-config | include transport|http</font>. 3. Disable unused: <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">no transport input telnet</font>; <font face=\"Courier\">no ip http server</font>. 4. Restrict with ACL: <font face=\"Courier\">access-list 10 permit 10.0.0.0 0.255.255.255</font> → <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">access-class 10 in</font>. 5. Save: <font face=\"Courier\">write memory</font>. (Documented)",
-                "V-005": "1. <font face=\"Courier\">configure terminal</font>. 2. Suppress banner version: <font face=\"Courier\">no banner motd</font> or <font face=\"Courier\">banner motd # Authorized Use Only #</font>. 3. Disable disclosure: <font face=\"Courier\">no ip http server</font> + <font face=\"Courier\">no service pad</font> (Juniper: <font face=\"Courier\">set system login announcement \"Authorized\"</font>). 4. Verify: <font face=\"Courier\">show running-config | include banner|version</font>. (Documented)",
-                "V-006": "1. <font face=\"Courier\">configure terminal</font>. 2. Disable weak TLS: <font face=\"Courier\">no ip http server</font> (or <font face=\"Courier\">ip http secure-server</font> only). 3. Enforce TLS 1.2+: <font face=\"Courier\">ip ssh version 2</font> → <font face=\"Courier\">ip ssh server algorithm encryption aes128-ctr aes256-ctr aes128-gcm</font>. 4. Verify: <font face=\"Courier\">show ip http server status</font> / <font face=\"Courier\">show ip ssh</font>. (Documented)",
-                "V-007": "1. <font face=\"Courier\">configure terminal</font>. 2. Remove weak ciphers: <font face=\"Courier\">no ip ssh server algorithm encryption 3des-cbc</font> / <font face=\"Courier\">no ip ssh server algorithm encryption rc4</font>. 3. Enable strong AEAD: <font face=\"Courier\">ip ssh server algorithm encryption aes128-ctr aes256-ctr aes128-gcm</font> + <font face=\"Courier\">ip ssh server algorithm mac hmac-sha2-256</font>. 4. Verify: <font face=\"Courier\">show ip ssh</font>. (Documented)",
-                "V-008": "1. Generate CSR: <font face=\"Courier\">crypto pki enroll &lt;trustpoint&gt;</font>. 2. Install CA-signed cert: <font face=\"Courier\">crypto pki import &lt;trustpoint&gt; certificate</font>. 3. Bind: <font face=\"Courier\">ip http secure-trustpoint &lt;trustpoint&gt;</font>. 4. Verify &amp; renew: <font face=\"Courier\">show crypto pki certificates</font>. (Documented)",
-                "V-013": "1. <font face=\"Courier\">configure terminal</font>. 2. Enforce complexity: <font face=\"Courier\">aaa new-model</font> (or <font face=\"Courier\">security passwords min-length 12</font>). 3. Create strong secret: <font face=\"Courier\">enable secret &lt;strong-password&gt;</font>. 4. Local user: <font face=\"Courier\">username admin privilege 15 secret &lt;strong-password&gt;</font>. 5. Save: <font face=\"Courier\">write memory</font>. (Documented)",
-                "V-057": "1. <font face=\"Courier\">configure terminal</font>. 2. Remove hardcoded: <font face=\"Courier\">no snmp-server community public</font> / <font face=\"Courier\">no snmp-server community private</font>. 3. Use vault/manager: <font face=\"Courier\">snmp-server group &lt;name&gt; v3 priv</font> + store secret in vault. 4. Verify: <font face=\"Courier\">show running-config | include snmp-server</font>. (Documented)",
-                "V-058": "1. <font face=\"Courier\">configure terminal</font>. 2. Enable logging: <font face=\"Courier\">logging host 10.10.1.100</font> + <font face=\"Courier\">logging trap informational</font>. 3. Protect: <font face=\"Courier\">service timestamps log datetime msec</font> + <font face=\"Courier\">no logging console</font> (avoid sensitive). 4. Verify: <font face=\"Courier\">show logging</font>. (Documented)",
-                "V-070": "1. Check version: <font face=\"Courier\">show version</font> / <font face=\"Courier\">show inventory</font> (Juniper: <font face=\"Courier\">show version detail</font>). 2. Compare to advisory: <font face=\"Courier\">https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory</font>. 3. Download image: <font face=\"Courier\">copy tftp://server/<image> flash:</font>. 4. Install: <font face=\"Courier\">install add file flash:<image> activate commit</font> (Juniper: <font face=\"Courier\">request system software add <image> reboot</font>). 5. Verify: <font face=\"Courier\">show version</font> post-upgrade + <font face=\"Courier\">verify /md5 flash:<image></font>. (Documented)",
-                "V-071": "1. <font face=\"Courier\">configure terminal</font>. 2. Harden vty: <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">no transport input telnet</font> → <font face=\"Courier\">transport input ssh</font>. 3. Disable HTTP: <font face=\"Courier\">no ip http server</font>. 4. Set idle timeout: <font face=\"Courier\">line vty 0 4</font> → <font face=\"Courier\">exec-timeout 5 0</font> → <font face=\"Courier\">logging synchronous</font>. 5. <font face=\"Courier\">end</font> → <font face=\"Courier\">write memory</font>. (Documented)",
-                "V-087": "1. Identify component: <font face=\"Courier\">show version</font> / <font face=\"Courier\">show inventory</font> (Juniper: <font face=\"Courier\">show version | match JUNOS</font>). 2. Check CVE: compare to <font face=\"Courier\">https://sec.cloudapps.cisco.com/security/center/content/CiscoSecurityAdvisory</font>. 3. Patch: <font face=\"Courier\">install add file <image> activate commit</font> or <font face=\"Courier\">request system software add <image></font> (Juniper). 4. Verify: <font face=\"Courier\">show version</font> post-patch. (Documented)",
-                "V-105": "1. Identify flat domain: <font face=\"Courier\">show ip route</font> / <font face=\"Courier\">show vlan</font> (Juniper: <font face=\"Courier\">show vlans detail</font>). 2. Create segments: <font face=\"Courier\">vlan 10</font> → <font face=\"Courier\">name SEGMENT_A</font> → <font face=\"Courier\">interface vlan 10</font> (Juniper: <font face=\"Courier\">set vlans vlan10 vlan-id 10</font>). 3. Apply ACL: <font face=\"Courier\">access-list 101 deny ip any any</font> → <font face=\"Courier\">interface Gi0/1 ip access-group 101 in</font>. 4. Verify: <font face=\"Courier\">show vlan</font> / <font face=\"Courier\">show access-lists</font>. (Documented)",
-                "V-106": "1. Identify bucket: <font face=\"Courier\">aws s3api get-bucket-acl --bucket &lt;bucket&gt;</font> (GCP: <font face=\"Courier\">gsutil iam get gs://&lt;bucket&gt;</font>; Azure: <font face=\"Courier\">az storage container show --name &lt;container&gt;</font>). 2. Set private: <font face=\"Courier\">aws s3api put-bucket-acl --bucket &lt;bucket&gt; --acl private</font> (GCP: <font face=\"Courier\">gsutil iam ch -d allUsers gs://&lt;bucket&gt;</font>). 3. Enable encryption: <font face=\"Courier\">aws s3api put-bucket-encryption --bucket &lt;bucket&gt; --server-side-encryption-configuration '{\"Rules\":[{\"ApplyServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]}'</font>. 4. Enable logging/versioning: <font face=\"Courier\">aws s3api put-bucket-logging --bucket &lt;bucket&gt; --bucket-logging-status '{\"LoggingEnabled\":{\"TargetBucket\":\"log-bucket\"}}'</font>. 5. Verify: <font face=\"Courier\">aws s3api get-bucket-acl --bucket &lt;bucket&gt;</font> shows private. (Documented)",
-                "V-107": "1. Review IAM: <font face=\"Courier\">show running-config | include username|privilege</font> (Juniper: <font face=\"Courier\">show configuration system login</font>). 2. Apply least privilege: <font face=\"Courier\">username &lt;user&gt; privilege 5 secret &lt;pwd&gt;</font> (Juniper: <font face=\"Courier\">set system login user &lt;user&gt; class operator</font>). 3. Remove excess: <font face=\"Courier\">no username &lt;user&gt; privilege 15</font> (Juniper: <font face=\"Courier\">delete system login user &lt;user&gt;</font>). 4. Verify: <font face=\"Courier\">show running-config | include username</font> + <font face=\"Courier\">show aaa local user lockout</font>. (Documented)",
-                "V-144": "1. Check params: <font face=\"Courier\">show version</font> + <font face=\"Courier\">sysctl -a | grep kernel.randomize</font> (NX-OS: <font face=\"Courier\">show running-config | include ip source-route</font>). 2. Harden: <font face=\"Courier\">no ip source-route</font> + <font face=\"Courier\">ip tcp synwait-time 10</font> (Juniper: <font face=\"Courier\">set system internet-options no-source-route</font>) + <font face=\"Courier\">sysctl -w kernel.randomize_va_space=2</font>. 3. Persist: <font face=\"Courier\">copy running-config startup-config</font> (Linux: <font face=\"Courier\">sysctl -p /etc/sysctl.conf</font>). 4. Verify: <font face=\"Courier\">show running-config | include source-route</font>. (Documented)",
-            }
-            # Resolve indices for test_id/device
-            t_idx = col_index.get("test id", 2) if col_index else 2
-            d_idx = col_index.get("device", 0) if col_index else 0
-            for row in failed_tests:
-                test_id = row[t_idx] if len(row) > t_idx else "unknown"
-                device = row[d_idx] if len(row) > d_idx else "unknown"
-                remediation = remediation_map.get(test_id)
-                is_ai = False
-                if not remediation:
-                    # Fallback to training map or generic
-                    # Check VendorTrainingMap for this test's remediation
-                    try:
-                        from pathlib import Path as _P2
-                        import json as _j
-                        tm_path = _P(TRINETRA_ROOT) / "config" / "vendor_training_map.json"
-                        if tm_path.exists():
-                            tm_data = _j.loads(tm_path.read_text())
-                            for e in tm_data.get("entries", []):
-                                if test_id in str(e.get("control_mapping",[])):
-                                    remediation = xml_escape(str(e.get("remediation", "")))
-                                    if remediation:
-                                        break
-                    except:
-                        pass
-                if not remediation:
-                    remediation = f"Review {test_id} for device {device} and apply vendor hardening guide. (AI-suggested — verify before use)"
-                    is_ai = True
-                else:
-                    if is_ai:
-                        remediation += " (AI-suggested — verify before use)"
+        # Advice must not invent platform-specific commands or claim AI provenance.
+        failed_rows = [r for r in evidence_rows if col_index.get("verdict", -1) >= 0
+                       and len(r) > col_index["verdict"] and r[col_index["verdict"]].lower() == "fail"]
+        if failed_rows:
+            story.append(Paragraph("Review plan for failed checks", heading_style))
+            story.append(Paragraph("Validate the original evidence and affected service first. Confirm the exact vendor, OS version and business requirements. Use the applicable vendor guide to prepare a reviewed change with backup, rollback and post-change verification. Cortex does not validate or execute remediation commands.", normal_style))
+            for row in failed_rows[:60]:
+                tid = row[col_index.get("test id", 2)]
+                device = row[col_index.get("device", 0)]
+                story.append(Paragraph(xml_escape(f"{tid} on {device}: operator review required."), normal_style))
 
-                p_text = f"<b>{xml_escape(test_id)} on {xml_escape(device)}:</b> {remediation}"
-                if is_ai:
-                    p_text += " <i>(AI-suggested — verify before use)</i>"
-                story.append(Paragraph(p_text, normal_style))
-                story.append(Spacer(1, 6))
+        config_lines = [line for line in md_content.splitlines()
+                        if line.startswith(("Config review:", "Config observation:", "Config limitation:"))]
+        if config_lines:
+            story.append(Paragraph("Configuration observations — separate from benchmark scores", heading_style))
+            for line in config_lines:
+                story.append(Paragraph(xml_escape(line), normal_style))
+            story.append(Spacer(1, 12))
 
         # Unrecognized lines section if any
         unrec = status_data.get("unrecognized_by_device", {})
@@ -1321,8 +1272,7 @@ def audit_report_pdf(name):
             for dev, lines in unrec.items():
                 if lines:
                     story.append(Paragraph(f"Device {xml_escape(str(dev))}: {len(lines)} unrecognized line(s)", normal_style))
-                    for l in lines[:10]:
-                        story.append(Paragraph(f"&nbsp;&nbsp;&bull; <font face=\"Courier\">{xml_escape(str(l)[:80])}</font>", normal_style))
+                    story.append(Paragraph('Raw configuration lines are omitted from this export because they may contain credentials. Review them locally in Training.', normal_style))
 
         # Footer — note bonus frameworks (now includes STIG as PS-required)
         story.append(Spacer(1, 12))
@@ -1655,16 +1605,51 @@ def doctor():
     structured["session_validation"]["session_errors"] = session_errors
     # Session inventory is not the diagnostic error list.
     sessions_root = Path(TRINETRA_ROOT) / "sessions"
-    structured["sessions"] = sorted(
+    all_sessions = sorted(
         folder.name for folder in sessions_root.iterdir()
-        if folder.is_dir() and validate_session(folder.name) and (folder / f"{folder.name}.json").is_file()
+        if folder.is_dir() and not folder.is_symlink() and validate_session(folder.name) and (folder / f"{folder.name}.json").is_file()
     ) if sessions_root.is_dir() else []
+    structured["archived_sessions"] = [name for name in all_sessions if (sessions_root / name / '.cortex-archived').is_file()]
+    structured["sessions"] = [name for name in all_sessions if name not in structured["archived_sessions"]]
     if not session_errors and "All sessions valid" in out:
         structured["session_validation"]["status"] = "valid"
     else:
         structured["session_validation"]["status"] = "warnings" if session_errors else "unknown"
 
     return jsonify(structured), 200
+
+@app.route('/api/session/<name>/archive', methods=['POST', 'DELETE'])
+def archive_session(name):
+    """Recoverable list removal only; never rewrite or delete assessment evidence."""
+    if not validate_session(name):
+        return error_response('invalid session name', 400)
+    root = Path(TRINETRA_ROOT) / 'sessions'
+    folder = root / name
+    if folder.is_symlink() or folder.resolve().parent != root.resolve():
+        return error_response('invalid session path', 400)
+    if not (folder / f'{name}.json').is_file():
+        return error_response('session not found', 404)
+    marker = folder / '.cortex-archived'
+    if marker.is_symlink():
+        return error_response('invalid archive marker', 400)
+    archived = request.method == 'POST'
+    try:
+        if archived:
+            # Exclusive create is atomic and leaves an existing marker untouched.
+            try:
+                fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                if not marker.is_file():
+                    return error_response('invalid archive marker', 409)
+            else:
+                os.close(fd)
+        else:
+            marker.unlink(missing_ok=True)
+    except OSError:
+        app.logger.exception('Could not update session archive marker')
+        return error_response('Could not update session. Refresh the list and retry.', 500)
+    return jsonify(session=name, archived=archived, evidence_retained=True)
+
 
 # ── Error handlers ──
 @app.errorhandler(404)

@@ -43,6 +43,19 @@ export default function ActiveSession({ children }) {
   }, [location.pathname, location.search, navigate])
 
   useEffect(() => {
+    function removed(event) {
+      if (!active || event.detail !== active) return
+      writeSession(active, Date.now() - IDLE_TIMEOUT)
+      setExpiredName(active)
+      setActive('')
+      setNotice('Session removed from the list. Its saved evidence can be restored in System.')
+      navigate('/system', { replace: true })
+    }
+    window.addEventListener('cortex:session-removed', removed)
+    return () => window.removeEventListener('cortex:session-removed', removed)
+  }, [active, navigate])
+
+  useEffect(() => {
     if (!active) return undefined
     function expire() {
       // Retain an expired timestamp so refreshing an old URL cannot silently revive it.

@@ -53,8 +53,18 @@ public class TrinetraComplianceScorer {
         Map<String, FrameworkAccumulator> accumulators = new LinkedHashMap<>();
 
         List<String> unmappedTests = new ArrayList<>();
+        Map<String, Object> latestReviews = new LinkedHashMap<>();
+        int legacyConfigRecords = 0;
 
         for (Map<String, Object> entry : results) {
+            String device = TrinetraCommon.getString(entry, "device_id", "unknown");
+            if (entry.get("configuration_review") instanceof Map) {
+                Map<String, Object> review = new LinkedHashMap<>((Map<String, Object>) entry.get("configuration_review"));
+                review.put("device_id", device);
+                review.put("recorded_at", entry.get("timestamp"));
+                latestReviews.put(device, review);
+            }
+            if (Arrays.asList("config_upload", "live_fetch").contains(entry.get("ingestion_method")) && !entry.containsKey("assessment_kind")) legacyConfigRecords++;
             String testId = TrinetraCommon.getString(entry, "test_id", "");
             String verdict = TrinetraCommon.getString(entry, "normalized_result", "");
 
@@ -80,6 +90,14 @@ public class TrinetraComplianceScorer {
                     framework, k -> new FrameworkAccumulator());
                 acc.controlsCovered.addAll(controlIds);
                 acc.totalMapped++;
+                Map<String, Object> detail = new LinkedHashMap<>();
+                detail.put("test_id", testId);
+                detail.put("device_id", device);
+                detail.put("result", verdict);
+                detail.put("timestamp", entry.get("timestamp"));
+                detail.put("controls", controlIds);
+                detail.put("remediation", TrinetraCommon.getString(entry, "verdict_detail", "Review source evidence, applicability and vendor guidance before any change."));
+                acc.details.add(detail);
                 if (isPassed) {
                     acc.testsPassed++;
                 } else {
@@ -119,6 +137,9 @@ public class TrinetraComplianceScorer {
         // ── Build output ──
         Map<String, Object> output = new LinkedHashMap<>();
         output.put("session_name", sanitized);
+        TrinetraSession.ChainVerifyResult integrity = TrinetraSession.verifyChain(sanitized);
+        output.put("evidence_chain_intact", integrity.intact);
+        output.put("evidence_chain_detail", integrity.detail);
         output.put("score_basis", "Mapped-check pass rate, not framework compliance or certification. Unresolved checks remain in the denominator; mappings do not prove control effectiveness.");
 
         Map<String, Object> frameworks = new LinkedHashMap<>();
@@ -135,6 +156,7 @@ public class TrinetraComplianceScorer {
             fw.put("tests_not_tested", acc.testsNotTested);
             fw.put("tests_not_passed", acc.totalMapped - acc.testsPassed);
             fw.put("total_tests_mapped", acc.totalMapped);
+            fw.put("results", acc.details);
             double pct = acc.totalMapped > 0
                 ? Math.round(acc.testsPassed * 1000.0 / acc.totalMapped) / 10.0
                 : 0.0;
@@ -146,6 +168,9 @@ public class TrinetraComplianceScorer {
             frameworks.put(e.getKey(), fw);
         }
         output.put("frameworks", frameworks);
+        output.put("configuration_reviews", new ArrayList<>(latestReviews.values()));
+        output.put("legacy_config_records", legacyConfigRecords);
+        output.put("history_basis", "Mapped counts include retained assessment history, not only the latest upload. Configuration observations show the latest supported review per device.");
 
         // Sort unmapped tests for deterministic output
         List<String> sortedUnmapped = new ArrayList<>(unmappedTests);
@@ -280,6 +305,7 @@ public class TrinetraComplianceScorer {
      * Internal accumulator for per-framework scoring.
      */
     private static class FrameworkAccumulator {
+        final List<Map<String, Object>> details = new ArrayList<>();
         final Set<String> controlsCovered = new LinkedHashSet<>();
         int testsPassed = 0;
         int testsFailed = 0;

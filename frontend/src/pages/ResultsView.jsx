@@ -1,307 +1,127 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
-import { rememberSession } from '../utils/activeSession'
+import { rememberSession, validSession } from '../utils/activeSession'
 
 const FRAMEWORKS = ['CIS', 'ISO27001', 'NIST_800-53', 'STIG', 'PCI-DSS', 'SOC2']
-const PS_REQUIRED = new Set(['CIS', 'ISO27001', 'NIST_800-53', 'STIG'])
+const format = value => String(value || '').replace(/_/g, ' ')
 
 export default function ResultsView({ api, toast }) {
   const [params] = useSearchParams()
-  const sessionParam = params.get('session') || ''
-  const [session, setSession] = useState(sessionParam)
-  const [inputSession, setInputSession] = useState(sessionParam)
-  const [loading, setLoading] = useState(false)
+  const requested = params.get('session') || ''
+  const [input, setInput] = useState(requested)
   const [score, setScore] = useState(null)
-  const [, setReport] = useState(null)
-  const [activeFramework, setActiveFramework] = useState(null)
-  const [error, setError] = useState(null)
-  const [selectedFrameworks, setSelectedFrameworks] = useState(new Set(FRAMEWORKS))
-  const abortRef = useRef(null)
-  const autoLoadRef = useRef(null)
-  const loadedSessionRef = useRef('')
-  useEffect(() => () => { abortRef.current?.abort(); abortRef.current = null }, [])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [selected, setSelected] = useState(FRAMEWORKS)
+  const [applied, setApplied] = useState(FRAMEWORKS)
+  const [active, setActive] = useState('')
+  const [page, setPage] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
+  const requestRef = useRef(null)
+  const exportRef = useRef(null)
+  const loadRef = useRef(null)
+  const loadedRef = useRef('')
+  const sessionRef = useRef(null)
+  useEffect(() => () => {
+    requestRef.current?.abort(); requestRef.current = null
+    exportRef.current?.abort(); exportRef.current = null
+  }, [])
 
-  const toggleFramework = (fw) => {
-    setSelectedFrameworks(prev => {
-      const next = new Set(prev)
-      if (next.has(fw)) {
-        if (next.size === 1) return prev // keep at least one
-        next.delete(fw)
-      } else {
-        next.add(fw)
-      }
-      return next
-    })
-  }
-  const frameworksQuery = () => {
-    if (selectedFrameworks.size === FRAMEWORKS.length) return ''
-    return `?frameworks=${Array.from(selectedFrameworks).join(',')}`
-  }
-
-  useEffect(() => {
-    if (sessionParam && sessionParam !== session) {
-      setSession(sessionParam)
-      setInputSession(sessionParam)
-    }
-  }, [sessionParam, session])
-
-  const load = async (e, requested = inputSession.trim()) => {
-    e?.preventDefault()
-    const s = requested
-    if (!s) return
-    setLoading(true)
-    setScore(null)
-    setReport(null)
-    setError(null)
-
-    abortRef.current?.abort()
+  async function load(event, name = input.trim()) {
+    event?.preventDefault()
+    if (!validSession(name)) { setError('Use 1–64 letters, numbers, hyphens or underscores.'); sessionRef.current?.focus(); return }
+    requestRef.current?.abort()
     const controller = new AbortController()
-    abortRef.current = controller
-    const timeoutId = setTimeout(() => controller.abort(), 60000)
-
+    requestRef.current = controller
+    const scope = [...selected]
+    setLoading(true); setError(''); setScore(null); setExportError('')
+    const timeout = setTimeout(() => controller.abort(), 60000)
     try {
-      const fq = frameworksQuery()
-      // Both endpoints write session scoring artifacts; do not race their writers.
-      const scoreRes = await fetch(`${api}/session/${encodeURIComponent(s)}/score${fq}`, { signal: controller.signal })
-
-      if (!scoreRes.ok) {
-        const body = await scoreRes.json().catch(() => ({}))
-        throw new Error(body.error || `Score request failed (${scoreRes.status})`)
-      }
-      const scoreData = await scoreRes.json()
-      if (abortRef.current !== controller || controller.signal.aborted) return
-      const reportRes = await fetch(`${api}/session/${encodeURIComponent(s)}/audit-report${fq}`, { signal: controller.signal })
-      if (!reportRes.ok) {
-        const body = await reportRes.json().catch(() => ({}))
-        throw new Error(body.error || `Report request failed (${reportRes.status})`)
-      }
-
-      const reportData = await reportRes.json()
-      if (abortRef.current !== controller || controller.signal.aborted) return
-      loadedSessionRef.current = s
-      setScore(scoreData.score || scoreData)
-      setReport(reportData)
-      setSession(s)
-      rememberSession(s)
-      if (scoreData.score?.frameworks) {
-        const fws = Object.keys(scoreData.score.frameworks)
-        setActiveFramework(fws[0] || null)
-      }
+      const response = await fetch(`${api}/session/${encodeURIComponent(name)}/score?frameworks=${encodeURIComponent(scope.join(','))}`, {signal: controller.signal})
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || `Results unavailable (${response.status})`)
+      if (requestRef.current !== controller) return
+      const next = data.score || data
+      setScore(next); setApplied(scope); setActive(Object.keys(next.frameworks || {})[0] || ''); setPage(0)
+      loadedRef.current = name; setInput(name); rememberSession(name)
       toast('Results loaded', 'success')
     } catch (err) {
-      if (abortRef.current !== controller) return
-      if (err.name === 'AbortError') {
-        toast('Request timed out. Is the bridge running?', 'error')
-        setError('Request timed out')
-      } else {
-        toast(err.message, 'error')
-        setError(err.message)
-      }
+      if (requestRef.current === controller) setError(err.name === 'AbortError' ? 'Results timed out. Check the backend and retry.' : err.message)
     } finally {
-      clearTimeout(timeoutId)
-      if (abortRef.current === controller) {
-        abortRef.current = null
-        setLoading(false)
-      }
+      clearTimeout(timeout)
+      if (requestRef.current === controller) { requestRef.current = null; setLoading(false) }
     }
   }
-
-  useEffect(() => { autoLoadRef.current = load })
+  useEffect(() => { loadRef.current = load })
   useEffect(() => {
-    if (sessionParam && loadedSessionRef.current !== sessionParam) autoLoadRef.current(null, sessionParam)
-  }, [sessionParam])
+    if (requested && requested !== loadedRef.current) { setInput(requested); loadRef.current(null, requested) }
+  }, [requested])
 
-  const fwScore = score?.frameworks?.[activeFramework]
-
-  return (
-    <div>
-      <SceneHeader
-        index="02"
-        label="Evaluate"
-        title="Results & Score"
-        description="Review mapped-check pass rates and evidence. These are not compliance certifications: unresolved checks remain in the denominator and are not confirmed failures."
-      />
-
-      <section className="benchmark-panel" aria-labelledby="benchmark-heading">
-        <div className="benchmark-heading-row">
-          <div>
-            <span className="benchmark-eyebrow">Scan scope</span>
-            <h2 id="benchmark-heading">Benchmarks to evaluate</h2>
-          </div>
-          <span className="benchmark-count">{selectedFrameworks.size} / {FRAMEWORKS.length} selected</span>
-        </div>
-        <div className="benchmark-grid">
-          {FRAMEWORKS.map(fw => (
-            <label className={`benchmark-option${selectedFrameworks.has(fw) ? ' is-selected' : ''}`} key={fw}>
-              <input type="checkbox" checked={selectedFrameworks.has(fw)} onChange={() => toggleFramework(fw)} />
-              <span className="choice-control" aria-hidden="true" />
-              <span className="benchmark-name">{fw.replace(/_/g, ' ')}</span>
-              <span className="benchmark-tier">{PS_REQUIRED.has(fw) ? 'Core' : 'Extended'}</span>
-            </label>
-          ))}
-        </div>
-        <p className="benchmark-help">At least one benchmark remains active. Your selection filters scoring, reports, and PDF exports.</p>
+  async function download() {
+    if (exportRef.current || !score) return
+    const controller = new AbortController()
+    exportRef.current = controller; setExporting(true); setExportError('')
+    const timeout = setTimeout(() => controller.abort(), 130000)
+    try {
+      const response = await fetch(`${api}/session/${encodeURIComponent(loadedRef.current)}/audit-report/pdf?frameworks=${encodeURIComponent(applied.join(','))}`, {signal: controller.signal})
+      if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Export failed (${response.status})`) }
+      const blob = await response.blob()
+      if (exportRef.current !== controller) return
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a'); link.href = url; link.download = `audit_report_${loadedRef.current}.pdf`; link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      toast('Report downloaded', 'success')
+    } catch (err) {
+      if (exportRef.current === controller) setExportError(err.name === 'AbortError' ? 'Export timed out; your results are still available. Retry after checking the backend.' : err.message)
+    } finally {
+      clearTimeout(timeout)
+      if (exportRef.current === controller) { exportRef.current = null; setExporting(false) }
+    }
+  }
+  const fw = score?.frameworks?.[active]
+  const rows = fw?.results || []
+  const dirty = selected.join(',') !== applied.join(',')
+  const rate = data => data?.total_tests_mapped > 0 ? `${data.compliance_percentage}%` : '—'
+  return <div>
+    <SceneHeader title="Results & evidence" description="Review what the evidence supports, what needs verification, and the next steps. Mapped-check pass rates are not compliance certifications." />
+    <section className="benchmark-panel" aria-labelledby="benchmark-heading">
+      <div className="benchmark-heading-row"><h2 id="benchmark-heading">Assessment frameworks</h2><span>{selected.length} selected</span></div>
+      <div className="benchmark-grid">{FRAMEWORKS.map(name => <label className={`benchmark-option${selected.includes(name) ? ' is-selected' : ''}`} key={name}>
+        <input type="checkbox" checked={selected.includes(name)} disabled={loading || exporting || (selected.length === 1 && selected.includes(name))} onChange={() => setSelected(current => FRAMEWORKS.filter(item => item === name ? !current.includes(item) : current.includes(item)))} />
+        <span className="choice-control" aria-hidden="true" /><span className="benchmark-name">{format(name)}</span>
+      </label>)}</div>
+      <p className="benchmark-help">Keep at least one selected. Load results to apply changes. PDF exports use the displayed scope.</p>
+    </section>
+    <form onSubmit={load} noValidate className="assessment-toolbar">
+      <label htmlFor="results-session">Saved session</label><input ref={sessionRef} id="results-session" value={input} maxLength={64} onChange={event => setInput(event.target.value)} disabled={loading || exporting} aria-describedby={error ? 'results-error' : undefined} />
+      <button className="btn-primary" disabled={loading || exporting || !input.trim()}>{loading ? <><Spinner size={14} /> Loading results…</> : 'Load results'}</button>
+    </form>
+    {error && <div className="card" role="alert" id="results-error"><h2>Results unavailable</h2><p>{error}</p><button className="btn-secondary" onClick={load} disabled={loading}>Retry</button></div>}
+    {!score && !loading && !error && <div className="empty-state card"><h2>No assessment selected</h2><p>Upload a configuration or open a saved session to review its evidence.</p><Link className="btn-secondary" to="/upload">Upload & collect</Link></div>}
+    {score && <>
+      <div className="assessment-summary"><h2>{loadedRef.current}</h2><span>{score.total_tests_executed ?? 0} recorded checks</span><span>{score.generated_at ? new Date(score.generated_at).toLocaleString() : ''}</span></div>
+      {dirty && <p role="status" className="assessment-notice">Framework selection changed. Load results to apply it; results and PDF still use the displayed scope.</p>}
+      {score.legacy_config_records > 0 && <p className="assessment-notice">This session contains {score.legacy_config_records} older configuration records. Their historical verdicts have not been corrected. Create a fresh assessment and re-upload to use the current evidence rules.</p>}
+      <p className="field-help">{score.history_basis}</p>
+      {score.evidence_chain_intact === false && <p role="alert" className="assessment-notice">Evidence integrity check failed: {score.evidence_chain_detail}. Treat these historical records as untrusted; do not use this report as verified evidence.</p>}
+      {(score.configuration_reviews || []).length > 0 && <section className="card" aria-labelledby="config-review-heading">
+        <h2 id="config-review-heading">Configuration observations</h2><p>Explicit directives in supplied text—not proof that a service is reachable. “Not observed” is not a pass and does not affect benchmark scores.</p>
+        {score.configuration_reviews.map(review => <details className="evidence-disclosure" key={review.device_id}>
+          <summary>{review.device_id} — {review.parser === 'unsupported' ? 'Parser not supported' : `${review.observations.filter(item => item.status === 'observed_risk').length} risky directive types observed`}</summary>
+          <p>{review.scope}</p>{review.observations.map(item => <div className="observation-row" key={item.id}><div><strong>{item.title}</strong><span className={`badge ${item.status === 'observed_risk' ? 'badge-fail' : 'badge-review'}`}>{format(item.status)}</span></div>{item.line_numbers.length > 0 && <p>Source lines: {item.line_numbers.join(', ')}</p>}<p>{item.next_step}</p></div>)}
+        </details>)}
+      </section>}
+      <section className="card" aria-labelledby="mapped-heading">
+        <h2 id="mapped-heading">Mapped-check outcomes</h2><div className="framework-tabs">{Object.entries(score.frameworks || {}).map(([name, data]) => <button key={name} className={`framework-tab ${active === name ? 'active' : ''}`} aria-pressed={active === name} onClick={() => {setActive(name); setPage(0)}}>{format(name)} <span>{rate(data)}</span></button>)}</div>
+        {fw && <><div className="assessment-summary"><h3>{format(active)}</h3><span>{rate(fw)} mapped-check pass rate</span></div><p>Passed: {fw.tests_passed} · Failed: {fw.tests_failed} · Manual review: {fw.tests_manual_review} · Errors: {fw.tests_errors} · Not tested: {fw.tests_not_tested}</p>
+          {fw.total_tests_mapped === 0 && <p>No recorded checks map to this framework. No pass rate can be established.</p>}
+          {rows.length > 0 && <><div className="table-wrap"><table><thead><tr><th>Device / check</th><th>Outcome</th><th>Evidence / next step</th></tr></thead><tbody>{rows.slice(page * 20, (page + 1) * 20).map((row, index) => <tr key={`${row.device_id}-${row.test_id}-${index}`}><td>{row.device_id}<br /><code>{row.test_id}</code></td><td><span className={`badge badge-${row.result === 'pass' ? 'pass' : row.result === 'fail' ? 'fail' : 'review'}`}>{format(row.result)}</span></td><td>{row.remediation}<small className="evidence-controls">Mapped controls: {(row.controls || []).join(', ')}</small></td></tr>)}</tbody></table></div><div className="assessment-pagination" aria-label="Evidence pages"><span role="status">{page * 20 + 1}–{Math.min((page + 1) * 20, rows.length)} of {rows.length}</span><button className="btn-secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button><button className="btn-secondary" disabled={(page + 1) * 20 >= rows.length} onClick={() => setPage(page + 1)}>Next</button></div></>}
+        </>}
       </section>
-
-      <form onSubmit={load} noValidate style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
-        <input
-          type="text"
-          value={inputSession}
-          onChange={e => setInputSession(e.target.value)}
-          placeholder="Session name"
-          aria-label="Session name"
-          style={{ flex: 1, maxWidth: 300 }}
-        />
-        <button type="submit" className="btn-primary" disabled={loading || !inputSession.trim()}>
-          {loading ? <><Spinner size={14} /> Loading...</> : 'Load Results'}
-        </button>
-      </form>
-
-      {!score && !loading && !error && (
-        <div className="empty-state card">
-          <h3>No results loaded</h3>
-          <p>Enter a session name above to view compliance results.</p>
-        </div>
-      )}
-
-      {error && !loading && (
-        <div className="card">
-          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load results</h3>
-          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
-          <button className="btn-secondary" onClick={load} style={{ marginTop: 8 }}>Retry</button>
-        </div>
-      )}
-
-      {score && (
-        <>
-          {/* Overall score summary */}
-          <div className="stat-grid">
-            <div className="stat-card">
-              <div className="stat-value">{score.total_tests_executed ?? 0}</div>
-              <div className="stat-label">Tests Executed</div>
-            </div>
-            {Object.entries(score.frameworks || {}).map(([fw, data]) => (
-              <div className="stat-card" key={fw}>
-                <div className="stat-value">
-                  {/* canonical scorer field is compliance_percentage (TrinetraComplianceScorer.java:132, bridge /score passthrough) */}
-                  {data.compliance_percentage ?? '—'}%
-                </div>
-                <div className="stat-label">{fw.replace(/_/g, ' ')}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Framework tabs — all PS-required + bonus */}
-          <div className="framework-tabs">
-            {FRAMEWORKS.map(fw => (
-              <button
-                key={fw}
-                type="button"
-                className={`framework-tab ${activeFramework === fw ? 'active' : ''}`}
-                onClick={() => setActiveFramework(fw)}
-                aria-pressed={activeFramework === fw}
-              >
-                {fw.replace(/_/g, ' ')}
-              </button>
-            ))}
-          </div>
-
-          {/* Active framework detail */}
-          {activeFramework && fwScore && (
-            <div className="card">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                  <h2 style={{ fontSize: 18, fontWeight: 600 }}>
-                    {activeFramework.replace(/_/g, ' ')} Results
-                  </h2>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>
-                      {/* canonical: compliance_percentage; fallback removed — API stable since STIG 14/15 (28 Aug) */}
-                      {fwScore.compliance_percentage ?? 0}%
-                    </span>
-                    {!PS_REQUIRED.has(activeFramework) && (
-                      <span className="badge badge-bonus">Bonus Coverage</span>
-                    )}
-                    {activeFramework === 'STIG' && fwScore.compliance_percentage != null && (
-                      <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                        Mapped checks passed: {fwScore.tests_passed}/{fwScore.total_tests_mapped}
-                      </span>
-                    )}
-                  </div>
-              </div>
-
-              {/* Progress bar */}
-              <p className="field-help">
-                Passed: {fwScore.tests_passed ?? 0} · Failed: {fwScore.tests_failed ?? 0} · Manual review: {fwScore.tests_manual_review ?? '—'} · Errors: {fwScore.tests_errors ?? '—'} · Not tested: {fwScore.tests_not_tested ?? '—'}
-              </p>
-              <div className="progress">
-                <div
-                  className="progress-bar"
-                  style={{
-                    width: `${fwScore.compliance_percentage ?? 0}%`,
-                    background: (fwScore.compliance_percentage ?? 0) >= 80 ? 'var(--green)' :
-                      (fwScore.compliance_percentage ?? 0) >= 50 ? 'var(--yellow)' : 'var(--red)',
-                  }}
-                />
-              </div>
-
-              {/* Tests table */}
-              {fwScore.results && fwScore.results.length > 0 ? (
-                <div className="table-wrap" style={{ marginTop: 16 }}>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>V-Code</th>
-                        <th>Result</th>
-                        <th>Remediation</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {fwScore.results.map((r, i) => (
-                        <tr key={i}>
-                          <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{r.test_id || r.vcode || r.id}</td>
-                          <td>
-                            <span className={`badge badge-${(r.result || r.status || '').toLowerCase() === 'pass' ? 'pass' : (r.result || r.status || '').toLowerCase() === 'fail' ? 'fail' : 'review'}`}>
-                              {r.result || r.status || 'N/A'}
-                            </span>
-                          </td>
-                          <td>
-                            {r.remediation ? (
-                              <div className={`remediation ${(r.remediation || '').toLowerCase().includes('ai-suggested') ? 'ai-suggested' : ''}`}>
-                                {r.remediation}
-                              </div>
-                            ) : (
-                              <span style={{ color: 'var(--text-dim)', fontSize: 12 }}>No remediation</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p style={{ color: 'var(--text-dim)', marginTop: 12, fontSize: 13 }}>
-                  No per-test breakdown available for this framework.
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* PDF download — respects framework filter */}
-          <div style={{ marginTop: 24 }}>
-            <a
-              href={`${api}/session/${encodeURIComponent(session)}/audit-report/pdf${frameworksQuery()}`}
-              className="btn-primary"
-              style={{ display: 'inline-block' }}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Download PDF Report {selectedFrameworks.size !== FRAMEWORKS.length ? `(${Array.from(selectedFrameworks).join(', ')})` : ''}
-            </a>
-          </div>
-        </>
-      )}
-    </div>
-  )
+      <section className="report-actions"><h2>Export assessment</h2><p>Generates a fresh report for the displayed frameworks. Existing AI integration may be used if configured. Avoid changing session evidence during export.</p><button className="btn-primary" onClick={download} disabled={exporting || loading}>{exporting ? <><Spinner size={14} /> Generating PDF…</> : 'Download PDF report'}</button>{exportError && <p role="alert">{exportError}</p>}</section>
+    </>}
+  </div>
 }
