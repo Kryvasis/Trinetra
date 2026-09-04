@@ -244,33 +244,14 @@ public class TrinetraConfigIngestor {
             if (TrinetraStat.isStatCode(vc)) vcodesToCheck.add(vc);
         }
 
+        boolean reviewRecorded = false;
         for (String vcode : vcodesToCheck) {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
             String rawForCheck = configContent != null ? configContent : "";
-            TrinetraStat.Verdict verdict;
-            String detail;
-            if (isConfigCategory1(vcode)) {
-                verdict = evaluateConfigControl(vcode, configContent);
-                detail = "config-syntax -> " + verdict + " (config-native check; deterministic from static text)";
-            } else if (isConfigCategory2(vcode)) {
-                verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
-                detail = "requires live network verification — not determinable from static config alone (Category 2 control; run via live probe `trinetra -stat run " + vcode + "` for real pass/fail)";
-            } else {
-                boolean requiresRuntime = "exit_code_zero".equals(def.decisionRule.evalMethod)
-                    || "numeric_threshold".equals(def.decisionRule.evalMethod);
-                verdict = requiresRuntime
-                    ? TrinetraStat.Verdict.MANUAL_REVIEW
-                    : TrinetraStat.DecisionEngine.evaluate(def.decisionRule, rawForCheck, 0);
-                detail = requiresRuntime
-                    ? "Runtime evidence required; an uploaded configuration cannot establish a command exit code or runtime numeric measurement."
-                    : def.decisionRule.evalMethod + " -> " + verdict + " (config-file; verify full configuration and applicability)";
-                if (requiresRuntime) {
-                    // Overwrite with Category 2 wording when the V-code is known to be live-only
-                    // (keeps stub vs architectural distinction clear)
-                    detail = "requires live network verification — not determinable from static config alone (Category 2 control; run via live probe `trinetra -stat run " + vcode + "` for real pass/fail)";
-                }
-            }
+            // These V-code rules consume runtime tool output, not router configuration.
+            // Even grep absence cannot establish a negative finding from this evidence type.
+            TrinetraStat.Verdict verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
 
             // Build finding similar to TrinetraStat.statRun but with ingestion_method
             Map<String, Object> finding = TrinetraCommon.newMap();
@@ -288,7 +269,7 @@ public class TrinetraConfigIngestor {
             finding.put("ended_at", TrinetraCommon.nowIso());
             finding.put("exit_code", 0);
             finding.put("verdict", verdict.name().toLowerCase());
-            finding.put("verdict_detail", detail);
+            finding.put("verdict_detail", "Runtime evidence required. This rule expects live tool output; a supplied configuration cannot prove its pass/fail criteria.");
             finding.put("eval_method", def.decisionRule.evalMethod);
             finding.put("pass_criteria", def.decisionRule.passCriteria);
             finding.put("fail_criteria", def.decisionRule.failCriteria);
@@ -315,6 +296,12 @@ public class TrinetraConfigIngestor {
             norm.put("raw_output", rawForCheck.substring(0, Math.min(2000, rawForCheck.length())));
             norm.put("normalized_result", verdict.name().toLowerCase());
             norm.put("ingestion_method", methodTag);
+            norm.put("assessment_kind", "configuration_only");
+            norm.put("verdict_detail", finding.get("verdict_detail"));
+            if (!reviewRecorded) {
+                norm.put("configuration_review", TrinetraConfigObservations.review(canonicalVendor, rawForCheck));
+                reviewRecorded = true;
+            }
             TrinetraSession.appendNormalizedResult(sanitized, norm);
 
             findings.add(finding);

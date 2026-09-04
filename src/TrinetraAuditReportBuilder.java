@@ -153,7 +153,7 @@ public class TrinetraAuditReportBuilder {
             renderCombinedReport(sanitized, score, frameworks,
                                   evidenceByFramework, narrativeSections,
                                   narrative, templateMode, aggregate,
-                                  chain, auditUuids, skipped, deviceDetails));
+                                  chain, auditUuids, skipped, deviceDetails) + renderConfigurationReviews(score));
 
         Map<String, Object> out = TrinetraCommon.newMap();
         out.put("session_name", sanitized);
@@ -164,6 +164,24 @@ public class TrinetraAuditReportBuilder {
         out.put("narrative_source", narrativeSource);
         out.put("chain_status", chain.toString());
         return out;
+    }
+
+    private static String renderConfigurationReviews(Map<String, Object> score) {
+        StringBuilder text = new StringBuilder("\n## Configuration observations\n\n");
+        text.append("Config limitation: Explicit text observations are not runtime findings or benchmark passes. Absence of a risky directive is not proof of safety. Historical verdicts are retained; re-upload to use current evaluation rules.\n\n");
+        Object reviews = score.get("configuration_reviews");
+        if (reviews instanceof List) for (Object value : (List<?>) reviews) {
+            Map<?, ?> review = (Map<?, ?>) value;
+            text.append("Config review: ").append(review.get("device_id")).append("; parser: ").append(review.get("parser")).append("; recorded: ").append(review.get("recorded_at")).append("\n\n");
+            Object observations = review.get("observations");
+            if (observations instanceof List) for (Object item : (List<?>) observations) {
+                Map<?, ?> row = (Map<?, ?>) item;
+                text.append("Config observation: ").append(row.get("id")).append(" — ").append(row.get("title"))
+                    .append("; ").append(row.get("status")).append("; source lines ").append(row.get("line_numbers"))
+                    .append(". ").append(row.get("next_step")).append("\n\n");
+            }
+        }
+        return text.toString();
     }
 
     // ── Per-framework report ─────────────────────────────────────────

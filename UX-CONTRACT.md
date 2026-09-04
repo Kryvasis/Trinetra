@@ -1,5 +1,18 @@
 # Cortex workflow contract
 
+## Evidence and workflow hardening — 2026-09-04
+
+- Results reads scores only on load. Report generation is an explicit PDF action; it may invoke configured narrative services. Merely opening Results must not generate a report or contact an LLM.
+- Framework choices are draft until Load results. Displayed data and PDF share the applied scope. Changing a draft shows a persistent notice. Failures preserve existing data; duplicate loads/exports are disabled.
+- Results exposes recorded checks in 20-row pages, device IDs, mapped controls and evidence explanations. No mapped evidence displays a dash rather than an invented percentage. Counts represent retained history, not a latest-snapshot certification.
+- Configuration observations are separate from runtime verdicts. Source lines and parser limitations are visible. Legacy configuration records carry a warning; existing evidence is never silently rewritten. Broken evidence chains show an integrity warning.
+- System loads diagnostics on entry, including after removing the selected session. Its saved-session inventory supports case-insensitive search, Clear, 10-row pagination and reversible removal. AI connectivity is not inferred from configuration-file presence.
+- Training auto-loads the selected session, guards stale responses and duplicate submissions, and offers guidance when no session is selected. Pattern recognition is not security compliance.
+- Search, pagination and draft framework choices are intentionally local transient UI state. Assessment selection retains the existing per-tab, 30-minute inactivity contract. These refinements introduce no new component library or global storage layer.
+- Narrow-screen controls wrap, inputs use 16px text and actions have 44px minimum height. Existing graphite tokens and introduction are retained.
+
+Implementation owners: `ResultsView.jsx`, `DashboardView.jsx`, `TrainingView.jsx`, `workspace.css`; server evidence semantics: `TrinetraConfigObservations.java`, `TrinetraConfigIngestor.java`, `TrinetraComplianceScorer.java`, `TrinetraSession.java`.
+
 Visual identity and runtime token ownership: [DESIGN.md](DESIGN.md).
 Business scope for the new mode: [WEBSITE-ANALYSIS.md](WEBSITE-ANALYSIS.md), approved
 website/device separation (2026-09-04). Security and score semantics: [SECURITY-REVIEW.md](SECURITY-REVIEW.md).
@@ -115,3 +128,20 @@ these scope metadata records are not themselves protected by the evidence hash c
 System Status lists real session files separately from validation errors. Missing
 session score/report API requests return 404 without creating session directories.
 The backend remains a local single-user tool, not an authorization boundary.
+
+## Saved-session list removal (2026-09-04)
+
+User-requested removal from System is a recoverable list operation, not erasure.
+`DashboardView.jsx` uses the existing non-modal inline confirmation pattern with
+Cancel initially focused, persistent failure text, duplicate prevention, a 30-second
+timeout and stale-response cancellation. Cancel restores trigger focus; completion
+focuses the list heading. Removed sessions appear in a collapsed Restore section.
+`ActiveSession.jsx` clears the matching selected session on confirmed removal.
+
+POST `/api/session/<name>/archive` creates an exclusive empty `.cortex-archived`
+marker; DELETE on the same endpoint removes only that marker. Both are idempotent.
+Session directories and all original evidence/report files remain untouched. The
+marker is not a security boundary or a hash-chain record. Saved links and manual
+session lookup still work, and diagnostics still validate retained sessions.
+The doctor response partitions real session files into `sessions` and
+`archived_sessions`; the UI never turns validation errors into session inventory.

@@ -501,6 +501,11 @@ public class TrinetraSession {
         if (ingestionMethod instanceof String && !((String) ingestionMethod).isBlank()) {
             record.put("ingestion_method", ingestionMethod);
         }
+        // Optional structured provenance is included in the hashed payload.
+        // Old records and their hashes are never rewritten.
+        for (String key : List.of("assessment_kind", "verdict_detail", "configuration_review")) {
+            if (entry.containsKey(key)) record.put(key, entry.get(key));
+        }
 
         List<Map<String, Object>> results =
             TrinetraCommon.getList(state, NORMALIZED_RESULTS_FIELD);

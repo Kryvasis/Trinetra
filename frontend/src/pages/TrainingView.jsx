@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
 import { rememberSession } from '../utils/activeSession'
@@ -14,6 +14,8 @@ export default function TrainingView({ api, toast }) {
   const [totalBefore, setTotalBefore] = useState(0)
   const [totalAfter, setTotalAfter] = useState(0)
   const [error, setError] = useState(null)
+  const [hasLoaded, setHasLoaded] = useState(false)
+  const fetchRef = useRef(null)
 
   // Training form state
   const [selectedLine, setSelectedLine] = useState(null)
@@ -36,12 +38,15 @@ export default function TrainingView({ api, toast }) {
   }, [sessionParam, session])
 
   const fetchUnrecognized = async (sessName) => {
+    if (training) return
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const timeoutId = setTimeout(() => controller.abort(), 30000)
     setLoading(true)
     setError(null)
+    setSelectedLine(null)
     try {
-      const controller = new AbortController()
-      abortRef.current = controller
-      const timeoutId = setTimeout(() => controller.abort(), 30000)
 
       const res = await fetch(`${api}/session/${encodeURIComponent(sessName)}/unrecognized`, { signal: controller.signal })
       clearTimeout(timeoutId)
@@ -50,7 +55,8 @@ export default function TrainingView({ api, toast }) {
         throw new Error(body.error || `Failed to load: ${res.status}`)
       }
       const data = await res.json()
-      if (controller.signal.aborted) return
+      if (controller.signal.aborted || abortRef.current !== controller) return
+      setHasLoaded(true)
       rememberSession(sessName)
       const lines = []
       Object.entries(data.unrecognized_by_device || {}).forEach(([dev, devLines]) => {
@@ -64,17 +70,21 @@ export default function TrainingView({ api, toast }) {
         toast(`Found ${lines.length} unrecognized line(s)`, 'info')
       }
     } catch (err) {
+      if (abortRef.current !== controller) return
       if (err.name === 'AbortError') {
+        setError('Request timed out. Check the backend and retry.')
         toast('Request timed out. Is the bridge running?', 'error')
       } else {
         setError(err.message)
         toast(err.message, 'error')
       }
     } finally {
-      abortRef.current = null
-      setLoading(false)
+      clearTimeout(timeoutId)
+      if (abortRef.current === controller) { abortRef.current = null; setLoading(false) }
     }
   }
+  useEffect(() => { fetchRef.current = fetchUnrecognized })
+  useEffect(() => { if (sessionParam) fetchRef.current(sessionParam) }, [sessionParam])
 
   const load = (e) => {
     e?.preventDefault()
@@ -99,6 +109,7 @@ export default function TrainingView({ api, toast }) {
 
   const handleTrain = async (e) => {
     e.preventDefault()
+    if (training || loading) return
     if (!validateTraining()) return
 
     setTraining(true)
@@ -126,6 +137,7 @@ export default function TrainingView({ api, toast }) {
         const err = await res.json().catch(() => ({ error: 'training failed' }))
         throw new Error(err.error || `Training failed: ${res.status}`)
       }
+      if (abortRef.current !== controller) return
       toast('Training entry added — re-upload config to see effect', 'success')
       // Clear form
       setSelectedLine(null)
@@ -140,6 +152,8 @@ export default function TrainingView({ api, toast }) {
       setUnrecognized(newUnrecognized)
       setTotalAfter(newUnrecognized.length)
     } catch (err) {
+      if (abortRef.current !== controller) return
+      setError(err.name === 'AbortError' ? 'Training timed out and may have completed. Check saved patterns before retrying.' : err.message)
       if (err.name === 'AbortError') {
         toast('Training request timed out', 'error')
       } else {
@@ -147,8 +161,7 @@ export default function TrainingView({ api, toast }) {
       }
     } finally {
       clearTimeout(timeoutId)
-      abortRef.current = null
-      setTraining(false)
+      if (abortRef.current === controller) { abortRef.current = null; setTraining(false) }
     }
   }
 
@@ -171,18 +184,23 @@ export default function TrainingView({ api, toast }) {
         description="Label unrecognized config lines to teach Cortex new patterns — no code changes required."
       />
 
-      <form onSubmit={load} noValidate style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      <form onSubmit={load} noValidate className="assessment-toolbar">
+        <label htmlFor="training-session">Saved session</label>
         <input
+          id="training-session"
+          disabled={loading || training}
           type="text"
           value={inputSession}
           onChange={e => setInputSession(e.target.value)}
           placeholder="Session name"
           style={{ flex: 1, maxWidth: 300 }}
         />
-        <button type="submit" className="btn-primary" disabled={loading || !inputSession.trim()}>
+        <button type="submit" className="btn-primary" disabled={loading || training || !inputSession.trim()}>
           {loading ? <><Spinner size={14} /> Loading...</> : 'Load Unrecognized Lines'}
         </button>
       </form>
+
+      {!session && !loading && <div className="empty-state card"><h2>Choose an assessment</h2><p>Open a saved session or upload a configuration to review unrecognized directives. Training records pattern mappings; it does not establish security compliance.</p><Link className="btn-secondary" to="/upload">Upload & collect</Link></div>}
 
       {loading && (
         <div className="empty-state card">
@@ -201,10 +219,10 @@ export default function TrainingView({ api, toast }) {
         </div>
       )}
 
-      {!loading && session && unrecognized.length === 0 && totalBefore === 0 && !error && (
+      {!loading && hasLoaded && unrecognized.length === 0 && !error && (
         <div className="empty-state card">
           <h3>No unrecognized lines</h3>
-          <p>All config lines were recognized, or no session loaded yet.</p>
+          <p>No unrecognized lines were returned. Pattern recognition is not proof that this configuration is secure.</p>
         </div>
       )}
 
@@ -219,6 +237,7 @@ export default function TrainingView({ api, toast }) {
             {unrecognized.map((u, i) => (
               <button
                 type="button"
+                disabled={training}
                 key={i}
                 className="line-item"
                 style={{
