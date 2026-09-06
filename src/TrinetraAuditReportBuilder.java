@@ -126,7 +126,15 @@ public class TrinetraAuditReportBuilder {
         // Every stat_script / config-ingest execution appends its raw stdout/stderr
         // to sessions/<session>/evidence_<session>.json (+ .md transcript).
         // The sections below cite that bundle as the report's evidence.
-        List<Map<String, Object>> scriptEvidence = TrinetraEvidence.load(sanitized);
+        // Scope parity: removed devices are excluded here exactly as they are
+        // from normalized_results above — historical chain retained, reports filtered.
+        Set<String> removedDevices = TrinetraSession.getRemovedDevices(sanitized);
+        List<Map<String, Object>> scriptEvidence = new ArrayList<>();
+        for (Map<String, Object> se : TrinetraEvidence.load(sanitized)) {
+            String did = TrinetraCommon.getString(se, "device_id",
+                TrinetraCommon.getString(se, "target", ""));
+            if (!removedDevices.contains(did)) scriptEvidence.add(se);
+        }
         String evidenceJsonName = "evidence_" + sanitized + ".json";
         String evidenceMdName = "evidence_" + sanitized + ".md";
 
@@ -265,14 +273,16 @@ public class TrinetraAuditReportBuilder {
         }
 
         sb.append("## Test Evidence\n\n");
-        sb.append("| Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Severity | Timestamp | Controls |\n");
-        sb.append("|--------|--------|--------|----------|------------|-----------|---------|---------|----------|-----------|----------|\n");
+        sb.append("Finding classes: **confirmed risk** = insecure directive found; **verified pass** = secure directive found; **insufficient evidence** = check ran but neither directive present; **unsupported check** = requires live verification or unimplemented. Cisco IOS is the only fully supported observation-layer vendor; Juniper/other vendors have no observation-layer support (basic vendor auto-detect and training-map ingestion are unaffected).\n\n");
+        sb.append("| Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Finding class | Severity | Timestamp | Controls |\n");
+        sb.append("|--------|--------|--------|----------|------------|-----------|---------|---------|---------------|----------|-----------|----------|\n");
         for (Map<String, Object> row : rows) {
             @SuppressWarnings("unchecked")
             Map<String, Object> e = (Map<String, Object>) row.get("entry");
             String did = TrinetraCommon.getString(e, "device_id", "?");
             String testId = TrinetraCommon.getString(e, "test_id", "?");
             String severity = resolveSeverity(testId, e);
+            String fclass = TrinetraFindingClassification.classifyEntry(e);
             Map<String, Object> det = deviceDetails.getOrDefault(did, Collections.emptyMap());
             sb.append("| ").append(cell(did))
               .append(" | ").append(cell(TrinetraCommon.getString(e, "vendor", "?")))
@@ -282,11 +292,14 @@ public class TrinetraAuditReportBuilder {
               .append(" | ").append(cell(TrinetraCommon.getString(e, "ingestion_method", "")))
               .append(" | ").append(cell(testId))
               .append(" | ").append(cell(TrinetraCommon.getString(e, "normalized_result", "?")))
+              .append(" | ").append(cell(fclass))
               .append(" | ").append(cell(severity))
               .append(" | ").append(cell(TrinetraCommon.getString(e, "timestamp", "?")))
               .append(" | ").append(cell(joinList(row.get("controls"))))
               .append(" |\n");
         }
+        sb.append("\n");
+        sb.append(renderRemediationSection(rows));
         sb.append("\n---\n\n");
         sb.append(renderScriptEvidenceSection(session, rows, scriptEvidence,
             evidenceJsonName, evidenceMdName, true));
@@ -413,15 +426,16 @@ public class TrinetraAuditReportBuilder {
                 ? section.strip() + "\n\n"
                 : "_No narrative section available for this framework._\n\n");
 
-            sb.append("Test evidence:\n\n");
-            sb.append("| Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Severity | Timestamp |\n");
-            sb.append("|--------|--------|--------|----------|------------|-----------|---------|---------|----------|------------|\n");
+            sb.append("Test evidence (finding classes: confirmed risk / verified pass / insufficient evidence / unsupported check):\n\n");
+            sb.append("| Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Finding class | Severity | Timestamp |\n");
+            sb.append("|--------|--------|--------|----------|------------|-----------|---------|---------|---------------|----------|------------|\n");
             for (Map<String, Object> row : rows) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> entry = (Map<String, Object>) row.get("entry");
                 String did2 = TrinetraCommon.getString(entry, "device_id", "?");
                 String tid2 = TrinetraCommon.getString(entry, "test_id", "?");
                 String sev2 = resolveSeverity(tid2, entry);
+                String fc2 = TrinetraFindingClassification.classifyEntry(entry);
                 Map<String, Object> det2 = deviceDetails.getOrDefault(did2, Collections.emptyMap());
                 sb.append("| ").append(cell(did2))
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "vendor", "?")))
@@ -431,10 +445,13 @@ public class TrinetraAuditReportBuilder {
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "ingestion_method", "")))
                   .append(" | ").append(cell(tid2))
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "normalized_result", "?")))
+                  .append(" | ").append(cell(fc2))
                   .append(" | ").append(cell(sev2))
                   .append(" | ").append(cell(TrinetraCommon.getString(entry, "timestamp", "?")))
                   .append(" |\n");
             }
+            sb.append("\n");
+            sb.append(renderRemediationSection(rows));
             sb.append("\n");
         }
         if (!skippedFw.isEmpty()) {
@@ -501,6 +518,75 @@ public class TrinetraAuditReportBuilder {
         return sb.toString();
     }
 
+    // ── Traceable remediation (review item 1c) ───────────────────────
+    //
+    // Policy: curated Cisco IOS CLI sequences (TrinetraAgr) are shown ONLY for
+    // confirmed-risk rows, each paired with its exact source lines. Rationale:
+    // a confirmed risk means an anchored insecure directive was matched with
+    // comments/banners/negations excluded, so the fix is specific; it is still
+    // gated by an explicit review warning because effective device state was
+    // not proven live. All other classes keep generic cautious guidance so no
+    // device-changing command is shown without triggering evidence.
+    private static String renderRemediationSection(List<Map<String, Object>> rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("### Remediation (traceable)\n\n");
+        List<Map<String, Object>> confirmed = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Object entry = row.get("entry");
+            if (entry instanceof Map
+                && TrinetraFindingClassification.CONFIRMED_RISK.equals(
+                    TrinetraFindingClassification.classifyEntry((Map<String, Object>) entry))) {
+                confirmed.add(row);
+            }
+        }
+        if (confirmed.isEmpty()) {
+            sb.append("_No confirmed-risk findings in this section — no device-changing steps are shown. "
+              + "Review generic guidance per row before any change._\n\n");
+            return sb.toString();
+        }
+        // Deduplicate by test_id+device so re-uploaded history does not repeat steps.
+        Set<String> seen = new LinkedHashSet<>();
+        for (Map<String, Object> row : confirmed) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> e = (Map<String, Object>) row.get("entry");
+            String tid = TrinetraCommon.getString(e, "test_id", "?");
+            String did = TrinetraCommon.getString(e, "device_id", "?");
+            String key = tid + "@" + did;
+            if (!seen.add(key)) continue;
+            String curated = TrinetraAgr.getRemediation(tid);
+            sb.append("Remediation: ").append(tid).append(" on ").append(did)
+              .append(" — confirmed risk.\n\n");
+            List<String> lines = evidenceLinesOf(e);
+            if (!lines.isEmpty()) {
+                sb.append("Triggering source lines: `");
+                sb.append(String.join(" | ", lines).replace("|", "\\|"));
+                sb.append("`\n\n");
+            } else {
+                sb.append("Triggering source lines: recorded in `evidence_*.json` for this test/device.\n\n");
+            }
+            if (!curated.isBlank()) {
+                sb.append("Curated Cisco IOS steps (Documented — review before use; backup, confirm OS version, rollback plan, post-change verify): ")
+                  .append(curated).append("\n\n");
+            } else {
+                sb.append("No curated CLI sequence for this check — use the applicable vendor hardening guide with backup/rollback and post-change verification. "
+                  + "Cortex does not validate or execute remediation commands.\n\n");
+            }
+        }
+        return sb.toString();
+    }
+
+    private static List<String> evidenceLinesOf(Map<String, Object> entry) {
+        List<String> out = new ArrayList<>();
+        Object v = entry.get("evidence_lines");
+        if (v instanceof List) {
+            for (Object o : (List<?>) v) {
+                if (o != null && !String.valueOf(o).isBlank()) out.add(String.valueOf(o));
+                if (out.size() >= 5) break;
+            }
+        }
+        return out;
+    }
+
     // ── Script-output evidence section (shared) ──────────────────────
 
     /**
@@ -528,20 +614,28 @@ public class TrinetraAuditReportBuilder {
             return sb.toString();
         }
         Set<String> wanted = null;
+        Set<String> wantedDevices = null;
         if (rows != null) {
             wanted = new HashSet<>();
+            wantedDevices = new HashSet<>();
             for (Map<String, Object> row : rows) {
                 Object entry = row.get("entry");
                 if (entry instanceof Map) {
                     String tid = TrinetraCommon.getString(entry, "test_id", "");
                     if (!tid.isBlank()) wanted.add(tid);
+                    String did = TrinetraCommon.getString(entry, "device_id", "");
+                    if (!did.isBlank()) wantedDevices.add(did);
                 }
             }
         }
         List<Map<String, Object>> shown = new ArrayList<>();
         for (Map<String, Object> e : scriptEvidence) {
             String tid = TrinetraCommon.getString(e, "test_id", "?");
-            if (wanted == null || wanted.contains(tid)) shown.add(e);
+            String did = TrinetraCommon.getString(e, "device_id",
+                TrinetraCommon.getString(e, "target", ""));
+            if (wanted != null && !wanted.contains(tid)) continue;
+            if (wantedDevices != null && !wantedDevices.contains(did)) continue;
+            shown.add(e);
         }
         if (shown.isEmpty()) {
             sb.append("_This framework has no script executions in the evidence bundle yet._\n\n");

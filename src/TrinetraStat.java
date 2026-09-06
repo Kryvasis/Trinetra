@@ -605,6 +605,9 @@ public class TrinetraStat {
             normalizedEntry.put("test_id", code);
             normalizedEntry.put("raw_output", stdout);
             normalizedEntry.put("normalized_result", verdict.name().toLowerCase());
+            normalizedEntry.put("assessment_kind", "live_probe");
+            normalizedEntry.put("finding_class", TrinetraFindingClassification.classify(code, verdict.name().toLowerCase(), "live_probe"));
+            normalizedEntry.put("evidence_lines", new ArrayList<>());
             // timestamp auto-filled by appendNormalizedResult
             TrinetraSession.appendNormalizedResult(sanitized, normalizedEntry);
 

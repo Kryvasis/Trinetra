@@ -926,6 +926,99 @@ def device_scope(name, device_id):
         return error_response("Device not found" if rc == 2 else "Could not update device scope", 404 if rc == 2 else 500)
     return jsonify({"session": name, "device_id": device_id, "removed": request.method == "DELETE", "evidence_retained": True})
 
+
+# ── GET /api/session/<name>/compare — assessment comparison (review item 2) ──
+# Compares the two most recent assessments per V-code for one device, using only
+# the existing hash-chained normalized_results history — no new storage.
+# Scope note: the data model has no explicit assessment IDs (append-only per-test
+# history), so latest-two-per-V-code is the only honest comparison available.
+_COMPARE_CAT1 = {"V-003", "V-006", "V-013", "V-057", "V-058", "V-071", "V-107"}
+_COMPARE_CAT2 = {"V-005", "V-007", "V-008", "V-070", "V-087", "V-105", "V-106", "V-144"}
+
+def _compare_class(test_id, verdict, assessment_kind=""):
+    tid = (test_id or "").strip().upper()
+    v = (verdict or "").strip().lower()
+    kind = (assessment_kind or "").strip().lower()
+    if tid == "UNRECOGNIZED":
+        return "unsupported check"
+    if v in ("error", "not_tested"):
+        return "unsupported check"
+    is_live = kind in ("live_probe", "stat_script")
+    if tid in _COMPARE_CAT2 and not is_live:
+        return "unsupported check"
+    if v == "fail":
+        return "confirmed risk"
+    if v in ("pass", "success"):
+        return "verified pass"
+    return "insufficient evidence"
+
+
+def _compare_transition(before_cls, after_cls):
+    if before_cls == "confirmed risk" and after_cls == "verified pass":
+        return "resolved"
+    if before_cls == "verified pass" and after_cls == "confirmed risk":
+        return "newly failing"
+    if before_cls in ("insufficient evidence", "unsupported check") and after_cls in ("insufficient evidence", "unsupported check"):
+        return "still unresolved"
+    if before_cls == after_cls:
+        return "unchanged"
+    return "unchanged"
+
+
+@app.route("/api/session/<name>/compare", methods=["GET"])
+def compare_assessments(name):
+    if not validate_session(name):
+        return error_response(f"invalid session name: {name!r}", 400)
+    device_id = request.args.get("device_id") or request.args.get("deviceId")
+    if not device_id or not validate_device(device_id):
+        return error_response("device_id query parameter is required", 400)
+    brain_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"brain_state_{name}.json")
+    if not os.path.exists(brain_path):
+        return error_response(f"session not found: {name}", 404)
+    try:
+        with open(brain_path, "r") as f:
+            brain_data = json.load(f)
+    except (OSError, ValueError):
+        return error_response("Assessment evidence could not be read. Restore a valid backup before trusting results.", 500)
+    entries = [e for e in (brain_data.get("normalized_results") or [])
+               if isinstance(e, dict) and e.get("device_id") == device_id]
+    if not entries:
+        return error_response(f"no assessments recorded for device {device_id!r}", 404)
+    by_test = {}
+    for e in entries:
+        tid = e.get("test_id") or "?"
+        by_test.setdefault(tid, []).append(e)
+    comparisons = []
+    for tid in sorted(by_test):
+        ordered = sorted(by_test[tid], key=lambda x: str(x.get("timestamp") or ""))
+        after = ordered[-1]
+        before = ordered[-2] if len(ordered) >= 2 else ordered[-1]
+        after_v = (after.get("normalized_result") or "").lower()
+        before_v = (before.get("normalized_result") or "").lower()
+        after_cls = after.get("finding_class") or _compare_class(tid, after_v, after.get("assessment_kind") or "")
+        before_cls = before.get("finding_class") or _compare_class(tid, before_v, before.get("assessment_kind") or "")
+        comparisons.append({
+            "test_id": tid,
+            "before": {"verdict": before_v, "finding_class": before_cls,
+                       "timestamp": before.get("timestamp")},
+            "after": {"verdict": after_v, "finding_class": after_cls,
+                      "timestamp": after.get("timestamp")},
+            "transition": _compare_transition(before_cls, after_cls),
+            "assessments_compared": len(ordered),
+        })
+    summary = {"resolved": 0, "newly failing": 0, "unchanged": 0, "still unresolved": 0}
+    for c in comparisons:
+        summary[c["transition"]] = summary.get(c["transition"], 0) + 1
+    return jsonify({
+        "session": name,
+        "device_id": device_id,
+        "basis": ("Latest-two assessments per V-code from the hash-chained normalized_results history; "
+                  "no new storage. Explicit assessment-ID selection is not supported by the current "
+                  "append-only per-test data model, so this scope was chosen."),
+        "comparisons": comparisons,
+        "summary": summary,
+    }), 200
+
 # ── POST /api/session/<name>/train — add training entry (no code change) ──
 @app.route("/api/session/<name>/train", methods=["POST"])
 def train_vendor(name):
@@ -1246,15 +1339,44 @@ def audit_report_pdf(name):
             story.append(Spacer(1, 12))
 
         # Advice must not invent platform-specific commands or claim AI provenance.
-        failed_rows = [r for r in evidence_rows if col_index.get("verdict", -1) >= 0
-                       and len(r) > col_index["verdict"] and r[col_index["verdict"]].lower() == "fail"]
+        # Finding classes use the same four terms as UI + markdown: confirmed risk /
+        # verified pass / insufficient evidence / unsupported check.
+        fc_idx = col_index.get("finding class", -1)
+        v_idx = col_index.get("verdict", -1)
+        def _row_class(r):
+            if 0 <= fc_idx < len(r) and r[fc_idx].strip().lower() in (
+                    "confirmed risk", "verified pass", "insufficient evidence", "unsupported check"):
+                return r[fc_idx].strip().lower()
+            if 0 <= v_idx < len(r):
+                vv = r[v_idx].strip().lower()
+                if vv == "fail":
+                    return "confirmed risk"
+                if vv == "pass":
+                    return "verified pass"
+                if vv == "manual_review":
+                    return "insufficient evidence"
+            return "unsupported check"
+        failed_rows = [r for r in evidence_rows if _row_class(r) == "confirmed risk"]
         if failed_rows:
-            story.append(Paragraph("Review plan for failed checks", heading_style))
-            story.append(Paragraph("Validate the original evidence and affected service first. Confirm the exact vendor, OS version and business requirements. Use the applicable vendor guide to prepare a reviewed change with backup, rollback and post-change verification. Cortex does not validate or execute remediation commands.", normal_style))
+            story.append(Paragraph("Review plan for confirmed risks", heading_style))
+            story.append(Paragraph("Each item below cites its triggering source lines from the session evidence bundle. Curated Cisco IOS steps are shown only here (Documented — review before use; backup, confirm OS version, rollback plan, post-change verify). All other finding classes use generic guidance. Cortex does not validate or execute remediation commands.", normal_style))
             for row in failed_rows[:60]:
-                tid = row[col_index.get("test id", 2)]
-                device = row[col_index.get("device", 0)]
-                story.append(Paragraph(xml_escape(f"{tid} on {device}: operator review required."), normal_style))
+                tid = row[col_index.get("test id", 2)] if col_index.get("test id", 2) < len(row) else "?"
+                device = row[col_index.get("device", 0)] if col_index.get("device", 0) < len(row) else "?"
+                story.append(Paragraph(xml_escape(f"{tid} on {device}: confirmed risk — operator review required."), normal_style))
+        # Traceable remediation lines from the markdown (curated steps for confirmed risks only).
+        remediation_lines = [line for line in md_content.splitlines()
+                             if line.startswith("Remediation:")]
+        if remediation_lines:
+            story.append(Paragraph("Traceable remediation (confirmed risks only)", heading_style))
+            for line in remediation_lines[:60]:
+                story.append(Paragraph(xml_escape(line), normal_style))
+            story.append(Spacer(1, 6))
+            curated = [line for line in md_content.splitlines()
+                       if line.startswith("Curated Cisco IOS steps")]
+            for line in curated[:60]:
+                story.append(Paragraph(xml_escape(line), small_style))
+            story.append(Spacer(1, 12))
 
         config_lines = [line for line in md_content.splitlines()
                         if line.startswith(("Config review:", "Config observation:", "Config limitation:"))]

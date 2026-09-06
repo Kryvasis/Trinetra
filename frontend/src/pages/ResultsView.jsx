@@ -6,6 +6,17 @@ import { rememberSession, validSession } from '../utils/activeSession'
 
 const FRAMEWORKS = ['CIS', 'ISO27001', 'NIST_800-53', 'STIG', 'PCI-DSS', 'SOC2']
 const format = value => String(value || '').replace(/_/g, ' ')
+// Mirror of TrinetraConfigIngestor Category 2 (requires live verification).
+const CAT2 = new Set(['V-005', 'V-007', 'V-008', 'V-070', 'V-087', 'V-105', 'V-106', 'V-144'])
+const findingClass = row => {
+  if (row.finding_class) return row.finding_class
+  const tid = String(row.test_id || '').toUpperCase()
+  if (tid === 'UNRECOGNIZED' || row.result === 'error' || row.result === 'not_tested' || CAT2.has(tid)) return 'unsupported check'
+  if (row.result === 'pass') return 'verified pass'
+  if (row.result === 'fail') return 'confirmed risk'
+  return 'insufficient evidence'
+}
+const classBadge = cls => cls === 'confirmed risk' ? 'fail' : cls === 'verified pass' ? 'pass' : 'review'
 
 export default function ResultsView({ api, toast }) {
   const [params] = useSearchParams()
@@ -115,10 +126,10 @@ export default function ResultsView({ api, toast }) {
         </details>)}
       </section>}
       <section className="card" aria-labelledby="mapped-heading">
-        <h2 id="mapped-heading">Mapped-check outcomes</h2><div className="framework-tabs">{Object.entries(score.frameworks || {}).map(([name, data]) => <button key={name} className={`framework-tab ${active === name ? 'active' : ''}`} aria-pressed={active === name} onClick={() => {setActive(name); setPage(0)}}>{format(name)} <span>{rate(data)}</span></button>)}</div>
+        <h2 id="mapped-heading">Mapped-check outcomes</h2><p className="field-help">Every finding carries exactly one label: <strong>confirmed risk</strong> (insecure directive found) · <strong>verified pass</strong> (secure directive found) · <strong>insufficient evidence</strong> (check ran, neither directive present) · <strong>unsupported check</strong> (requires live verification or unimplemented). Cisco IOS is the only fully supported observation-layer vendor; Juniper/other vendors have no observation-layer support.</p><div className="framework-tabs">{Object.entries(score.frameworks || {}).map(([name, data]) => <button key={name} className={`framework-tab ${active === name ? 'active' : ''}`} aria-pressed={active === name} onClick={() => {setActive(name); setPage(0)}}>{format(name)} <span>{rate(data)}</span></button>)}</div>
         {fw && <><div className="assessment-summary"><h3>{format(active)}</h3><span>{rate(fw)} mapped-check pass rate</span></div><p>Passed: {fw.tests_passed} · Failed: {fw.tests_failed} · Manual review: {fw.tests_manual_review} · Errors: {fw.tests_errors} · Not tested: {fw.tests_not_tested}</p>
           {fw.total_tests_mapped === 0 && <p>No recorded checks map to this framework. No pass rate can be established.</p>}
-          {rows.length > 0 && <><div className="table-wrap"><table><thead><tr><th>Device / check</th><th>Outcome</th><th>Evidence / next step</th></tr></thead><tbody>{rows.slice(page * 20, (page + 1) * 20).map((row, index) => <tr key={`${row.device_id}-${row.test_id}-${index}`}><td>{row.device_id}<br /><code>{row.test_id}</code></td><td><span className={`badge badge-${row.result === 'pass' ? 'pass' : row.result === 'fail' ? 'fail' : 'review'}`}>{format(row.result)}</span></td><td>{row.remediation}<small className="evidence-controls">Mapped controls: {(row.controls || []).join(', ')}</small></td></tr>)}</tbody></table></div><div className="assessment-pagination" aria-label="Evidence pages"><span role="status">{page * 20 + 1}–{Math.min((page + 1) * 20, rows.length)} of {rows.length}</span><button className="btn-secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button><button className="btn-secondary" disabled={(page + 1) * 20 >= rows.length} onClick={() => setPage(page + 1)}>Next</button></div></>}
+          {rows.length > 0 && <><div className="table-wrap"><table><thead><tr><th>Device / check</th><th>Finding class</th><th>Evidence / next step</th></tr></thead><tbody>{rows.slice(page * 20, (page + 1) * 20).map((row, index) => <tr key={`${row.device_id}-${row.test_id}-${index}`}><td>{row.device_id}<br /><code>{row.test_id}</code><br /><small>raw verdict: {format(row.result)}</small></td><td><span className={`badge badge-${classBadge(findingClass(row))}`}>{findingClass(row)}</span>{(row.evidence_lines || []).length > 0 && <small className="evidence-controls">Source: {(row.evidence_lines || []).slice(0, 3).join(' | ')}</small>}</td><td>{row.remediation}<small className="evidence-controls">Mapped controls: {(row.controls || []).join(', ')}</small></td></tr>)}</tbody></table></div><div className="assessment-pagination" aria-label="Evidence pages"><span role="status">{page * 20 + 1}–{Math.min((page + 1) * 20, rows.length)} of {rows.length}</span><button className="btn-secondary" disabled={page === 0} onClick={() => setPage(page - 1)}>Previous</button><button className="btn-secondary" disabled={(page + 1) * 20 >= rows.length} onClick={() => setPage(page + 1)}>Next</button></div></>}
         </>}
       </section>
       <section className="report-actions"><h2>Export assessment</h2><p>Generates a fresh report for the displayed frameworks. Existing AI integration may be used if configured. Avoid changing session evidence during export.</p><button className="btn-primary" onClick={download} disabled={exporting || loading}>{exporting ? <><Spinner size={14} /> Generating PDF…</> : 'Download PDF report'}</button>{exportError && <p role="alert">{exportError}</p>}</section>

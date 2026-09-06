@@ -32,6 +32,16 @@ public class TrinetraAgr {
     // ── Remediation hints per V-code — step-by-step CLI sequences (item 6) ──
     // Reformatted from single-paragraph hints into numbered device-specific steps where fix requires multiple CLI invocations.
     // All remediation content is correct per vendor documentation; only structuring changed.
+    //
+    // Traceability policy (review item 1c): these curated Cisco IOS sequences are
+    // shown ONLY for confirmed-risk findings (Category 1 FAIL with an exact
+    // triggering directive and source lines). Rationale: detection confidence is
+    // high there (anchored directive match, comments/negations excluded), so the
+    // fix is specific and safe to display WITH the mandatory review warning
+    // (backup/rollback/vendor-guide check — effective state is still unproven).
+    // Everything else (verified-pass, insufficient-evidence, unsupported-check)
+    // keeps generic cautious guidance so we never present a device-changing
+    // command without triggering evidence.
     private static final Map<String, String> REMEDIATION = new LinkedHashMap<>();
     static {
         REMEDIATION.put("V-003", "1. Enter config mode: `configure terminal`. 2. Identify service: `show running-config | include transport|http`. 3. Disable unused: `line vty 0 4` → `no transport input telnet`; `no ip http server`. 4. Restrict with ACL: `access-list 10 permit 10.0.0.0 0.255.255.255` → `line vty 0 4` → `access-class 10 in`. 5. Save: `write memory`.");
@@ -50,6 +60,16 @@ public class TrinetraAgr {
         REMEDIATION.put("V-106", "1. Identify bucket: `aws s3api get-bucket-acl --bucket <bucket>` (GCP: `gsutil iam get gs://<bucket>`; Azure: `az storage container show --name <container>`). 2. Set private: `aws s3api put-bucket-acl --bucket <bucket> --acl private` (GCP: `gsutil iam ch -d allUsers gs://<bucket>`). 3. Enable encryption: `aws s3api put-bucket-encryption --bucket <bucket> --server-side-encryption-configuration '{\"Rules\":[{\"ApplyServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]}'`. 4. Enable logging/versioning: `aws s3api put-bucket-logging --bucket <bucket> --bucket-logging-status '{\"LoggingEnabled\":{\"TargetBucket\":\"log-bucket\"}}'`. 5. Verify: `aws s3api get-bucket-acl --bucket <bucket>` shows private.");
         REMEDIATION.put("V-107", "1. Review IAM: `show running-config | include username|privilege` (Juniper: `show configuration system login`). 2. Apply least privilege: `username <user> privilege 5 secret <pwd>` (Juniper: `set system login user <user> class operator`). 3. Remove excess: `no username <user> privilege 15` (Juniper: `delete system login user <user>`). 4. Verify: `show running-config | include username` + `show aaa local user lockout`.");
         REMEDIATION.put("V-144", "1. Check params: `show version` + `sysctl -a | grep kernel.randomize` (NX-OS: `show running-config | include ip source-route`). 2. Harden: `no ip source-route` + `ip tcp synwait-time 10` (Juniper: `set system internet-options no-source-route`) + `sysctl -w kernel.randomize_va_space=2`. 3. Persist: `copy running-config startup-config` (Linux: `sysctl -p /etc/sysctl.conf`). 4. Verify: `show running-config | include source-route`.");
+    }
+
+    /**
+     * Curated remediation for one V-code, or "" when none is curated.
+     * Callers MUST gate on confirmed-risk before displaying (see policy above).
+     */
+    public static String getRemediation(String vCode) {
+        if (vCode == null) return "";
+        String r = REMEDIATION.get(vCode.trim().toUpperCase(Locale.ROOT));
+        return r != null ? r : "";
     }
 
     /**

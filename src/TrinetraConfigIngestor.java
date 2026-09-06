@@ -249,9 +249,24 @@ public class TrinetraConfigIngestor {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
             String rawForCheck = configContent != null ? configContent : "";
-            // These V-code rules consume runtime tool output, not router configuration.
-            // Even grep absence cannot establish a negative finding from this evidence type.
-            TrinetraStat.Verdict verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
+            // Category 1: config-syntax-native verdict (PASS/FAIL/MANUAL_REVIEW).
+            // Category 2: inherently requires live state — MANUAL_REVIEW/unsupported.
+            TrinetraStat.Verdict verdict;
+            String detail;
+            List<String> triggerLines;
+            if (isConfigCategory1(vcode)) {
+                verdict = evaluateConfigControl(vcode, rawForCheck);
+                triggerLines = findTriggerLines(vcode, rawForCheck);
+                detail = switch (verdict) {
+                    case PASS -> "Config-syntax check: secure directive present for " + vcode + ".";
+                    case FAIL -> "Config-syntax check: insecure directive present for " + vcode + ".";
+                    default -> "Config check ran but the config contained neither the insecure nor the secure directive for " + vcode + " — insufficient evidence.";
+                };
+            } else {
+                verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
+                triggerLines = new ArrayList<>();
+                detail = "Requires live network verification — not determinable from static config alone (Category 2, unsupported check).";
+            }
 
             // Build finding similar to TrinetraStat.statRun but with ingestion_method
             Map<String, Object> finding = TrinetraCommon.newMap();
@@ -269,7 +284,9 @@ public class TrinetraConfigIngestor {
             finding.put("ended_at", TrinetraCommon.nowIso());
             finding.put("exit_code", 0);
             finding.put("verdict", verdict.name().toLowerCase());
-            finding.put("verdict_detail", "Runtime evidence required. This rule expects live tool output; a supplied configuration cannot prove its pass/fail criteria.");
+            finding.put("verdict_detail", detail);
+            finding.put("finding_class", TrinetraFindingClassification.classify(vcode, verdict.name().toLowerCase(), "configuration_only"));
+            finding.put("evidence_lines", new ArrayList<>(triggerLines));
             finding.put("eval_method", def.decisionRule.evalMethod);
             finding.put("pass_criteria", def.decisionRule.passCriteria);
             finding.put("fail_criteria", def.decisionRule.failCriteria);
@@ -298,6 +315,8 @@ public class TrinetraConfigIngestor {
             norm.put("ingestion_method", methodTag);
             norm.put("assessment_kind", "configuration_only");
             norm.put("verdict_detail", finding.get("verdict_detail"));
+            norm.put("finding_class", TrinetraFindingClassification.classify(vcode, verdict.name().toLowerCase(), "configuration_only"));
+            norm.put("evidence_lines", new ArrayList<>(triggerLines));
             if (!reviewRecorded) {
                 norm.put("configuration_review", TrinetraConfigObservations.review(canonicalVendor, rawForCheck));
                 reviewRecorded = true;
@@ -402,17 +421,29 @@ public class TrinetraConfigIngestor {
         String joinedLower = lower; // for substring checks
         switch (vcode.toUpperCase()) {
             case "V-013": {
-                // Insecure: enable password (plaintext) or username ... password (not secret)
-                boolean insecure = Pattern.compile("(?i)^\\s*enable\\s+password\\b", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)username\\s+\\S+\\s+password\\s", Pattern.MULTILINE).matcher(cfg).find();
+                // Insecure: enable password (plaintext) or username ... password (not secret).
+                // Secure: enable secret / username ... secret / service password-encryption / aaa new-model.
+                // Lines list already excludes blank/comment (!/#) lines; skip "no ..." remediation lines
+                // so "no enable secret" is neither insecure nor secure evidence.
+                boolean insecure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches("\\s*enable\\s+password\\b.*")) insecure = true;
+                    if (ll.matches(".*username\\s+\\S+\\s+password\\s.*")) insecure = true;
+                    if (ll.contains("plain-text-password")) insecure = true;
+                }
                 if (insecure) return TrinetraStat.Verdict.FAIL;
-                boolean secure = Pattern.compile("(?i)enable\\s+secret", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)username\\s+\\S+\\s+secret\\b", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)service\\s+password-encryption", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)aaa\\s+new-model", Pattern.MULTILINE).matcher(cfg).find();
-                // Juniper: encrypted-password is secure, plain-text-password is insecure
-                if (lower.contains("plain-text-password")) return TrinetraStat.Verdict.FAIL;
-                if (lower.contains("encrypted-password")) secure = true;
+                boolean secure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches(".*enable\\s+secret\\b.*")) secure = true;
+                    if (ll.matches(".*username\\s+\\S+\\s+secret\\b.*")) secure = true;
+                    if (ll.matches(".*service\\s+password-encryption\\b.*")) secure = true;
+                    if (ll.matches(".*aaa\\s+new-model\\b.*")) secure = true;
+                    if (ll.contains("encrypted-password")) secure = true;
+                }
                 if (secure) return TrinetraStat.Verdict.PASS;
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
@@ -430,10 +461,12 @@ public class TrinetraConfigIngestor {
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
             case "V-071": {
-                // Insecure: transport input telnet, ip http server (without no), exec-timeout 0 0
+                // Insecure: transport input telnet, bare "ip http server", exec-timeout 0 0.
+                // "no ..." lines are remediation, never violations — skip them for insecure.
                 boolean insecure = false;
                 for (String l : lines) {
                     String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
                     if (ll.matches(".*transport\\s+input\\s+.*\\btelnet\\b.*")) insecure = true;
                     if (ll.matches("^\\s*ip\\s+http\\s+server\\s*$")) insecure = true; // exactly ip http server, not "no ..."
                     if (ll.matches(".*exec-timeout\\s+0\\s+0.*")) insecure = true;
@@ -452,11 +485,19 @@ public class TrinetraConfigIngestor {
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
             case "V-006": {
-                boolean insecure = Pattern.compile("(?i)ip\\s+ssh\\s+version\\s+1\\b").matcher(cfg).find()
-                    || lower.contains("set system services ssh protocol-version v1");
+                // ip ssh version 1 (insecure) vs 2 (secure). Lines-based so
+                // "! ..." comments and "no ..." remediation never match.
+                boolean insecure = false;
+                boolean secure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches(".*ip\\s+ssh\\s+version\\s+1\\b.*")) insecure = true;
+                    if (ll.contains("set system services ssh protocol-version v1")) insecure = true;
+                    if (ll.matches(".*ip\\s+ssh\\s+version\\s+2\\b.*")) secure = true;
+                    if (ll.contains("protocol-version v2")) secure = true;
+                }
                 if (insecure) return TrinetraStat.Verdict.FAIL;
-                boolean secure = Pattern.compile("(?i)ip\\s+ssh\\s+version\\s+2\\b").matcher(cfg).find()
-                    || lower.contains("protocol-version v2");
                 if (secure) return TrinetraStat.Verdict.PASS;
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
@@ -482,7 +523,8 @@ public class TrinetraConfigIngestor {
                     if (ll.matches("^\\s*no\\s+service\\s+pad\\s*$")) secure = true;
                 }
                 if (secure) return TrinetraStat.Verdict.PASS;
-                if (!cfg.isBlank() && !insecure) return TrinetraStat.Verdict.PASS;
+                // No insecure directive AND no explicit hardening directive:
+                // absence proves nothing — insufficient evidence, not a pass.
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
             case "V-058": {
@@ -536,6 +578,85 @@ public class TrinetraConfigIngestor {
             default:
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
         }
+    }
+
+    /**
+     * Source lines backing a Category 1 verdict (review item 1c traceability).
+     * Returns 1-based "L&lt;n&gt;: &lt;text&gt;" entries for the insecure directives
+     * when the verdict is FAIL, else the secure directives when PASS, else empty.
+     * Secrets are NOT redacted here (the operator's own config) — the PDF export
+     * omits raw unrecognized lines but finding evidence intentionally cites the
+     * exact triggering directive so remediation is traceable. Capped at 10 lines.
+     */
+    static List<String> findTriggerLines(String vcode, String configContent) {
+        List<String> out = new ArrayList<>();
+        if (vcode == null || configContent == null) return out;
+        String[] raw = configContent.split("\\r?\\n", -1);
+        List<String> lines = new ArrayList<>();
+        List<Integer> numbers = new ArrayList<>();
+        for (int i = 0; i < raw.length; i++) {
+            String t = raw[i].trim();
+            if (t.isEmpty() || t.startsWith("!") || t.startsWith("#")) continue;
+            lines.add(t);
+            numbers.add(i + 1);
+        }
+        java.util.function.BiPredicate<String, String> insecureMatch = (vc, ll) -> {
+            if (ll.startsWith("no ")) return false;
+            return switch (vc.toUpperCase()) {
+                case "V-003" -> ll.matches("^\\s*ip\\s+http\\s+server\\s*$")
+                    || ll.matches(".*snmp-server\\s+community\\s+(public|private).*")
+                    || ll.matches(".*transport\\s+input\\s+.*telnet.*")
+                    || ll.matches("^\\s*ip\\s+source-route\\s*$")
+                    || ll.matches("^\\s*service\\s+pad\\s*$");
+                case "V-006" -> ll.matches(".*ip\\s+ssh\\s+version\\s+1\\b.*");
+                case "V-013" -> ll.matches("\\s*enable\\s+password\\b.*")
+                    || ll.matches(".*username\\s+\\S+\\s+password\\s.*")
+                    || ll.contains("plain-text-password");
+                case "V-057" -> ll.matches(".*snmp-server\\s+community\\s+(public|private)\\b.*");
+                case "V-058" -> false; // V-058 FAIL is absence-based; no single trigger line
+                case "V-071" -> ll.matches(".*transport\\s+input\\s+.*\\btelnet\\b.*")
+                    || ll.matches("^\\s*ip\\s+http\\s+server\\s*$")
+                    || ll.matches(".*exec-timeout\\s+0\\s+0.*");
+                case "V-107" -> ll.matches(".*username\\s+\\S+\\s+password\\s.*");
+                default -> false;
+            };
+        };
+        java.util.function.BiPredicate<String, String> secureMatch = (vc, ll) -> {
+            if (ll.startsWith("no ") && !vc.equalsIgnoreCase("V-003")) {
+                // "no ..." remediation lines are secure evidence only for V-003's
+                // explicit "no ip http server" form handled below; otherwise skip.
+                if (!(vc.equalsIgnoreCase("V-071") && ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$"))) return false;
+            }
+            return switch (vc.toUpperCase()) {
+                case "V-003" -> ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$")
+                    || ll.matches("^\\s*no\\s+ip\\s+source-route\\s*$")
+                    || ll.matches("^\\s*no\\s+service\\s+pad\\s*$");
+                case "V-006" -> ll.matches(".*ip\\s+ssh\\s+version\\s+2\\b.*");
+                case "V-013" -> ll.matches(".*enable\\s+secret\\b.*")
+                    || ll.matches(".*username\\s+\\S+\\s+secret\\b.*")
+                    || ll.matches(".*service\\s+password-encryption\\b.*")
+                    || ll.matches(".*aaa\\s+new-model\\b.*")
+                    || ll.contains("encrypted-password");
+                case "V-057" -> false; // V-057 PASS is absence-based
+                case "V-058" -> ll.matches(".*logging\\s+host\\b.*") || ll.matches(".*logging\\s+trap\\b.*");
+                case "V-071" -> (ll.contains("transport input ssh") && !ll.contains("telnet"))
+                    || ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$")
+                    || ll.matches(".*exec-timeout\\s+[1-9].*");
+                case "V-107" -> ll.matches(".*username\\s+\\S+\\s+secret\\b.*");
+                default -> false;
+            };
+        };
+        String vc = vcode.toUpperCase();
+        for (int i = 0; i < lines.size() && out.size() < 10; i++) {
+            if (insecureMatch.test(vc, lines.get(i).toLowerCase()))
+                out.add("L" + numbers.get(i) + ": " + lines.get(i));
+        }
+        if (!out.isEmpty()) return out;
+        for (int i = 0; i < lines.size() && out.size() < 10; i++) {
+            if (secureMatch.test(vc, lines.get(i).toLowerCase()))
+                out.add("L" + numbers.get(i) + ": " + lines.get(i));
+        }
+        return out;
     }
 
     /**

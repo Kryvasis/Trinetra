@@ -94,8 +94,12 @@ public class TrinetraComplianceScorer {
                 detail.put("test_id", testId);
                 detail.put("device_id", device);
                 detail.put("result", verdict);
+                detail.put("finding_class", TrinetraFindingClassification.classify(testId, verdict,
+                    TrinetraCommon.getString(entry, "assessment_kind", "")));
                 detail.put("timestamp", entry.get("timestamp"));
                 detail.put("controls", controlIds);
+                Object evLines = entry.get("evidence_lines");
+                detail.put("evidence_lines", evLines instanceof List ? new ArrayList<>((List<?>) evLines) : new ArrayList<>());
                 detail.put("remediation", TrinetraCommon.getString(entry, "verdict_detail", "Review source evidence, applicability and vendor guidance before any change."));
                 acc.details.add(detail);
                 if (isPassed) {
