@@ -296,9 +296,93 @@ API launcher. Existing sessions and configuration are left intact.
 ## Tests
 
 ```bash
-make test-java    # 11 suites, temp trinetra.root, now includes new 11-col header expectations (Ingestion)
+make test-java    # 11 Java suites, temp trinetra.root (isolated, real sessions untouched)
 make test-cpp     # Iskabon C++ suites
 make test         # both
-python3 -m pytest bridge/tests/test_bridge.py -v       # 20 bridge tests (14+5 new + STIG/filter/bulk/severity/OS)
-python3 -m pytest bridge/tests/ -v                    # 25 total (incl. fail-remediation + training loop + config-upload differentiation)
+python3 -m pytest bridge/tests/test_compare.py -q       # fast compare-endpoint regression (2 tests, no probes)
+python3 -m pytest bridge/tests/test_device_scope.py bridge/tests/test_compare.py -q  # scope + compare
+python3 -m pytest bridge/tests/test_fail_remediation.py -q  # remediation-path regression (~75s, uses local ingest)
+python3 -m pytest bridge/tests -q                    # full bridge suite: 269 tests across 13 files (some need nmap/testssl; slow)
+node --test tests/active-session.mjs tests/assessment-summary.mjs  # frontend: 5 tests (run from frontend/)
+trinetra -doctor  # or: java -Dtrinetra.root=$PWD -cp "out:lib/*" Trinetra -doctor (expect 124 definitions, All sessions valid)
 ```
+
+---
+
+## Tester Guide — handle everything smoothly
+
+*Read this if you are testing the build. It covers setup, the happy-path flows, what to expect at each step, and how to recover. Estimated full pass: ~30 min (core flows ~15 min, automated suites ~15 min).*
+
+### 0. Prerequisites (one-time)
+
+```bash
+sudo apt install python3 python3-venv default-jdk make   # Java 21 tested, Python 3.10+
+cd /home/kali/Desktop/Trinetra
+make compile          # expect: Build successful: out/
+```
+
+### 1. Start the stack (two terminals)
+
+Terminal A (backend):
+```bash
+make start              # venv + deps + compile, serves http://127.0.0.1:5000 ; Ctrl+C to stop
+# alternative without venv: python3 -m bridge.app
+```
+Terminal B (frontend):
+```bash
+cd frontend && npm install && npm run dev   # serves http://127.0.0.1:5173, proxies /api → :5000
+```
+Health check: `curl http://127.0.0.1:5000/api/health` → `{"status":"ok",...}`.
+
+### 2. Test data (use these, don't invent your own first)
+
+- `demo/sample_configs/cisco-lab-01.txt` — Cisco IOS XE 17.6.5, mostly hardened + weak SNMP (`snmp-server community public RO`) + `custom-vendor-feature enable zone-trust` unrecognized line for the training flow.
+- `demo/sample_configs/juniper-lab-01.txt` — Juniper JUNOS multi-device flow.
+- Insecure vs fixed pair (for the comparison view): any two configs for the **same device_id** where the second removes `ip http server` / `ip ssh version 1` / `snmp-server community public` and adds `no ip http server` / `ip ssh version 2` / `enable secret`.
+
+### 3. Flow A — upload, results, four-way labels (core)
+
+1. Open `http://127.0.0.1:5173` → **Upload & collect** → session `test-<your-initials>` → device `cisco-lab-01` → vendor Auto-detect → attach `cisco-lab-01.txt` → Run Compliance Scan. Expect per-file `success` with pass/fail/unrecognized counts.
+2. **Results** → load the session → check every row shows exactly one badge: **confirmed risk** (insecure directive found), **verified pass** (secure directive found), **insufficient evidence** (Cat-1 ran, neither directive present), **unsupported check** (Cat-2 live-only or stub). Raw verdict (`pass/fail/manual_review`) appears as subtext — the badge is authoritative.
+3. Same session: `GET /api/session/<s>/score` → each row has `finding_class` + `evidence_lines` (e.g. `L37: snmp-server community public RO`); open `sessions/<s>/audit_report_<s>.md` → `Finding class` column + `### Remediation (traceable)` (curated Cisco IOS steps **only** under confirmed-risk rows, each with triggering source lines); download the PDF → same four terms in the evidence table + `Traceable remediation` section. All three surfaces must agree.
+4. Scope note to verify: Cisco IOS is fully supported; Juniper/other rows show `parser: unsupported` in Configuration observations (basic vendor auto-detect + training still work — that gap is only the observation layer).
+
+### 4. Flow B — training loop
+
+1. **Training** → load session → `custom-vendor-feature enable zone-trust` listed under `cisco-lab-01`.
+2. Select it → Vendor `Cisco`, category `Vendor-Specific Hardening`, control `CIS-v8-4.6`, remediation `Enable zone-trust…` → Add → toast confirms → re-upload same file → unrecognized count drops. No code change, no restart.
+
+### 5. Flow C — comparison view (before/after)
+
+1. Upload insecure config as device `cmp-dev` in session `cmp-test`, then upload the fixed config as the **same** `cmp-dev`.
+2. **Devices** → load `cmp-test` → **Compare** on `cmp-dev`. Expect e.g. `resolved: 5` (V-003/006/057/058/071 confirmed-risk → verified-pass), `still unresolved: 8` (Cat-2 both times), `unchanged: 2`. Basis text explains latest-two-per-V-code scope (no assessment IDs exist in the append-only model).
+3. API equivalent: `GET /api/session/cmp-test/compare?device_id=cmp-dev` → `summary` + per-V-code `before/after/transition`.
+
+### 6. Flow D — evidence bundle + tamper reveal
+
+1. After any run, check `sessions/<s>/evidence_<s>.json` (machine-readable, one entry per script execution with stdout/stderr) and `evidence_<s>.md` (readable transcript) — both cited in the audit report’s `Script Output Evidence` section.
+2. Tamper reveal (use `DEMO_SCRIPT.md` Step 8 verbatim): back up `brain_state_<s>.json`, flip one `normalized_result`, run `TrinetraBridgeHelper status <s>` → `entry hash mismatch…`; reload Results → integrity banner + PDF `Status: BROKEN`; restore backup → `INTACT`. Presenter line: detects accidental/incidental tampering, **not** a privileged attacker with full filesystem access (that needs external anchoring, out of scope).
+
+### 7. Automated suites (what to run, what to expect)
+
+| Suite | Command (repo root unless noted) | Expect |
+|---|---|---|
+| Java | `make test-java` | all suites pass, incl. MultiVendorE2E |
+| Bridge fast | `python3 -m pytest bridge/tests/test_compare.py -q` | 2 passed (~1s) |
+| Bridge scope | `python3 -m pytest bridge/tests/test_device_scope.py bridge/tests/test_compare.py -q` | 6 passed (~55s) |
+| Bridge remediation | `python3 -m pytest bridge/tests/test_fail_remediation.py -q` | 2 passed (~75s) |
+| Bridge full | `python3 -m pytest bridge/tests -q` | 269 collected; slow ones need nmap/testssl — failures there mean missing tools, not finding-logic regressions |
+| Frontend | `node --test tests/active-session.mjs tests/assessment-summary.mjs` (in `frontend/`) | 5 passed |
+| Doctor | `trinetra -doctor` | 124 definitions, `All sessions valid` |
+
+`npm run lint` needs full devDeps (`eslint`); if `eslint: not found`, skip and note it — JSX changes are small and mirror existing patterns.
+
+### 8. Cleanup & recovery
+
+```bash
+rm -rf sessions/cmp-test sessions/test-<your-initials>   # disposable sessions only
+git checkout -- brain_state.json                          # test runs dirty this runtime index; never commit it
+git status --short                                        # code changes only: src/, bridge/app.py, frontend/src, DEMO_SCRIPT.md, tests
+```
+- Backend down → `python3 -m bridge.app` from root. React blank → fall back to `http://127.0.0.1:5000` Flask page. Java stale → `make compile`. Corrupt session → delete its `sessions/<name>` dir and re-upload.
+- Never commit `brain_state.json`, `sessions/*/`, `out/`, `config.json` (API keys).
