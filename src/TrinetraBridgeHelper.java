@@ -107,6 +107,9 @@ public class TrinetraBridgeHelper {
         out.put("device_ingestion", TrinetraSession.getAllDeviceIngestion(sanitized));
         out.put("device_details", TrinetraSession.getAllDeviceDetails(sanitized));
         out.put("unrecognized_by_device", TrinetraSession.getAllUnrecognizedLines(sanitized));
+        out.put("evidence_count", TrinetraEvidence.count(sanitized));
+        out.put("evidence_json", "evidence_" + sanitized + ".json");
+        out.put("evidence_md", "evidence_" + sanitized + ".md");
         out.put("brain_state_exists", !brainState.isEmpty());
         if (!brainState.isEmpty()) {
             out.put("brain_state_last_updated", TrinetraCommon.getString(brainState, "last_updated", ""));

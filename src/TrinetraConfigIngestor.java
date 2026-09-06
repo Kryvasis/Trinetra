@@ -305,6 +305,11 @@ public class TrinetraConfigIngestor {
             TrinetraSession.appendNormalizedResult(sanitized, norm);
 
             findings.add(finding);
+            try {
+                TrinetraEvidence.recordConfigEvidence(sanitized, finding);
+            } catch (Exception ex) {
+                TrinetraCommon.logWarn("Evidence bundle write failed for " + vcode + ": " + ex.getMessage());
+            }
             if (success) passed++; else if (verdict == TrinetraStat.Verdict.FAIL) failed++;
         }
 
@@ -331,6 +336,11 @@ public class TrinetraConfigIngestor {
             uncFinding.put("status", "manual_review");
             uncFinding.put("success", false);
             TrinetraSession.appendFinding(sanitized, uncFinding);
+            try {
+                TrinetraEvidence.recordConfigEvidence(sanitized, uncFinding);
+            } catch (Exception ex) {
+                TrinetraCommon.logWarn("Evidence bundle write failed for UNRECOGNIZED: " + ex.getMessage());
+            }
         }
 
         // A successful explicit re-upload returns the device to active scope.

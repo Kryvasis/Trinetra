@@ -1264,6 +1264,25 @@ def audit_report_pdf(name):
                 story.append(Paragraph(xml_escape(line), normal_style))
             story.append(Spacer(1, 12))
 
+        # Script-output evidence bundle (per-session JSON + MD, cited by the report)
+        script_lines = [line for line in md_content.splitlines()
+                        if line.startswith("Script evidence:")]
+        evidence_count = status_data.get("evidence_count", 0)
+        if script_lines or evidence_count:
+            story.append(Paragraph("Script output evidence", heading_style))
+            story.append(Paragraph(xml_escape(
+                f"{evidence_count or len(script_lines)} script execution(s) recorded in "
+                f"evidence_{name}.json / evidence_{name}.md (sessions/{name}/). "
+                "Each verdict in this PDF traces to one raw stdout/stderr entry in that bundle."
+            ), normal_style))
+            for line in script_lines[:60]:
+                story.append(Paragraph(xml_escape(line), normal_style))
+            if len(script_lines) > 60:
+                story.append(Paragraph(xml_escape(
+                    f"Showing 60 of {len(script_lines)} script-evidence lines. See evidence_{name}.json for the full bundle."
+                ), normal_style))
+            story.append(Spacer(1, 12))
+
         # Unrecognized lines section if any
         unrec = status_data.get("unrecognized_by_device", {})
         if unrec:

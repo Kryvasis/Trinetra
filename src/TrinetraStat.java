@@ -607,6 +607,13 @@ public class TrinetraStat {
             normalizedEntry.put("normalized_result", verdict.name().toLowerCase());
             // timestamp auto-filled by appendNormalizedResult
             TrinetraSession.appendNormalizedResult(sanitized, normalizedEntry);
+
+            // Per-session script-output evidence bundle (JSON + MD) cited by the report.
+            try {
+                TrinetraEvidence.recordStatEvidence(sanitized, finding, effectiveVendorCanon, target);
+            } catch (Exception ex) {
+                TrinetraCommon.logWarn("Evidence bundle write failed for " + code + ": " + ex.getMessage());
+            }
         } else {
             TrinetraCommon.logError(code + " -> Failed to append finding to session JSON");
         }
