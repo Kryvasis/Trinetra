@@ -18,8 +18,10 @@ public class SecurityBaseline {
     public Authentication authentication = new Authentication();
     public Snmp snmp = new Snmp();
     public Logging logging = new Logging();
+    public Cryptography cryptography = new Cryptography();
+    public Acl acl = new Acl();
     public List<String> evidenceLines = new ArrayList<>();
-    public String parserVersion = "baseline-v1";
+    public String parserVersion = "baseline-v2";
 
     public static class ManagementPlane {
         public Boolean sshEnabled;
@@ -69,6 +71,27 @@ public class SecurityBaseline {
         public Boolean enabled;
         public List<String> hosts = new ArrayList<>();
         public List<String> evidence = new ArrayList<>();
+    }
+
+    public static class Cryptography {
+        public Boolean strongCryptoEnabled;
+        public List<String> enabledCiphers = new ArrayList<>();
+        public List<String> weakCiphersFound = new ArrayList<>();
+        public List<String> evidence = new ArrayList<>();
+        public Boolean tls12OrHigher;
+        public List<String> tlsEvidence = new ArrayList<>();
+    }
+
+    public static class Acl {
+        public Boolean hasGranularAcls;
+        public List<AclEntry> entries = new ArrayList<>();
+        public List<String> evidence = new ArrayList<>();
+        public static class AclEntry {
+            public String name;
+            public String type; // "standard" | "extended" | "sg" | "nacl" | "sonic_acl"
+            public String action; // "permit" | "deny"
+            public String evidence;
+        }
     }
 
     /** Serialize to map for JSON persistence */
@@ -131,6 +154,31 @@ public class SecurityBaseline {
         log.put("hosts", new ArrayList<>(logging.hosts));
         log.put("evidence", new ArrayList<>(logging.evidence));
         m.put("logging", log);
+
+        Map<String, Object> crypto = new LinkedHashMap<>();
+        crypto.put("strong_crypto_enabled", cryptography.strongCryptoEnabled);
+        crypto.put("enabled_ciphers", new ArrayList<>(cryptography.enabledCiphers));
+        crypto.put("weak_ciphers_found", new ArrayList<>(cryptography.weakCiphersFound));
+        crypto.put("evidence", new ArrayList<>(cryptography.evidence));
+        crypto.put("tls12_or_higher", cryptography.tls12OrHigher);
+        crypto.put("tls_evidence", new ArrayList<>(cryptography.tlsEvidence));
+        m.put("cryptography", crypto);
+
+        Map<String, Object> aclMap = new LinkedHashMap<>();
+        aclMap.put("has_granular_acls", acl.hasGranularAcls);
+        aclMap.put("evidence", new ArrayList<>(acl.evidence));
+        List<Map<String, Object>> aclEntries = new ArrayList<>();
+        for (Acl.AclEntry e : acl.entries) {
+            Map<String, Object> em = new LinkedHashMap<>();
+            em.put("name", e.name);
+            em.put("type", e.type);
+            em.put("action", e.action);
+            em.put("evidence", e.evidence);
+            aclEntries.add(em);
+        }
+        aclMap.put("entries", aclEntries);
+        m.put("acl", aclMap);
+
         m.put("evidence_lines", new ArrayList<>(evidenceLines));
         return m;
     }
@@ -208,6 +256,36 @@ public class SecurityBaseline {
             b.logging.enabled = (Boolean) lm.get("enabled");
             b.logging.hosts = toStringList(lm.get("hosts"));
             b.logging.evidence = toStringList(lm.get("evidence"));
+        }
+        Object cryptoObj = m.get("cryptography");
+        if (cryptoObj instanceof Map) {
+            Map<String, Object> cm = (Map<String, Object>) cryptoObj;
+            b.cryptography.strongCryptoEnabled = (Boolean) cm.get("strong_crypto_enabled");
+            b.cryptography.enabledCiphers = toStringList(cm.get("enabled_ciphers"));
+            b.cryptography.weakCiphersFound = toStringList(cm.get("weak_ciphers_found"));
+            b.cryptography.evidence = toStringList(cm.get("evidence"));
+            b.cryptography.tls12OrHigher = (Boolean) cm.get("tls12_or_higher");
+            b.cryptography.tlsEvidence = toStringList(cm.get("tls_evidence"));
+        }
+        Object aclObj = m.get("acl");
+        if (aclObj instanceof Map) {
+            Map<String, Object> am = (Map<String, Object>) aclObj;
+            b.acl.hasGranularAcls = (Boolean) am.get("has_granular_acls");
+            b.acl.evidence = toStringList(am.get("evidence"));
+            Object entriesObj = am.get("entries");
+            if (entriesObj instanceof List) {
+                for (Object o : (List<?>) entriesObj) {
+                    if (o instanceof Map) {
+                        Map<String, Object> em = (Map<String, Object>) o;
+                        Acl.AclEntry e = new Acl.AclEntry();
+                        e.name = TrinetraCommon.getString(em, "name", "");
+                        e.type = TrinetraCommon.getString(em, "type", "");
+                        e.action = TrinetraCommon.getString(em, "action", "");
+                        e.evidence = TrinetraCommon.getString(em, "evidence", "");
+                        b.acl.entries.add(e);
+                    }
+                }
+            }
         }
         b.evidenceLines = toStringList(m.get("evidence_lines"));
         return b;

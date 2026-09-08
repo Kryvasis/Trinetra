@@ -1183,6 +1183,144 @@ def ml_status():
     except Exception as e:
         return error_response(f"ml status failed: {e}", 500)
 
+# ── NLP Pattern Recognition (Gemini) — true semantic interpretation ──
+@app.route("/api/nlp/suggest", methods=["POST"])
+def nlp_suggest():
+    data = request.get_json(silent=True) or {}
+    line = data.get("line") or data.get("text") or ""
+    if not isinstance(line, str) or not line.strip():
+        return error_response("line is required", 400)
+    vendor = data.get("vendor") or data.get("vendor_hint") or ""
+    if len(line) > 500:
+        return error_response("line too long (max 500)", 400)
+    if any(c in line for c in [';', '&', '|', '`', '\n', '\r']):
+        return error_response("injection characters detected", 400)
+    try:
+        rc, out, err = run_java_helper("TrinetraBridgeHelper", ["nlp-suggest", line.strip(), vendor if isinstance(vendor, str) else ""], timeout=30)
+        if rc != 0 and "LLM unavailable" not in (out + err):
+            # Try to parse even if non-zero, fallback to empty
+            try:
+                data = json.loads(out.strip())
+                return jsonify(data), 200
+            except:
+                pass
+            return jsonify({"line": line.strip(), "nlp": None, "note": "NLP unavailable"}), 200
+        try:
+            data = json.loads(out.strip().split("\n")[-1] if "\n" in out else out.strip())
+            # Find JSON part
+            j_start = out.find("{")
+            j_end = out.rfind("}")
+            if j_start >= 0 and j_end >= 0:
+                data = json.loads(out[j_start:j_end+1])
+            return jsonify(data), 200
+        except Exception as je:
+            return jsonify({"line": line.strip(), "nlp": None, "error": f"parse failed: {je}", "raw": out[:500]}), 200
+    except Exception as e:
+        return jsonify({"line": line.strip(), "nlp": None, "error": str(e)[:200]}), 200
+
+# ── Vendor Auto-Discovery (Iskabon + Trinetra) — zero-code new vendor learning ──
+@app.route("/api/vendor/discovery", methods=["GET"])
+def vendor_discovery():
+    try:
+        p = Path(TRINETRA_ROOT) / "config" / "vendor_discovery_map.json"
+        if not p.exists():
+            return jsonify({"oids": {}, "os_families": {}, "pending_oids": {}, "banner_learned": {}}), 200
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return jsonify(data), 200
+    except Exception as e:
+        return error_response(f"discovery map read failed: {e}", 500)
+
+@app.route("/api/vendor/discovery/report", methods=["POST"])
+def vendor_discovery_report():
+    """Report an unknown vendor/OID/banner — auto-promotes after 3 sightings (clustering)."""
+    data = request.get_json(silent=True) or {}
+    oid = (data.get("oid") or data.get("sysObjectID") or "").strip()
+    banner = (data.get("banner") or data.get("raw_banner") or "").strip()
+    vendor_guess = (data.get("vendor_guess") or data.get("vendor") or "").strip()
+    if not oid and not banner and not vendor_guess:
+        return error_response("oid or banner or vendor_guess required", 400)
+    if oid and not re.match(r"^1\.3\.6\.1\.4\.1\.\d+(\.\d+)*$", oid):
+        return error_response("invalid OID format", 400)
+    if vendor_guess and (len(vendor_guess) > 32 or contains_injection(vendor_guess)):
+        return error_response("invalid vendor_guess", 400)
+    try:
+        p = Path(TRINETRA_ROOT) / "config" / "vendor_discovery_map.json"
+        raw = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"oids": {}, "os_families": {}, "pending_oids": {}, "banner_learned": {}}
+        # Banner learning: if banner contains SSH vendor, auto-extract
+        if banner and not vendor_guess:
+            m = re.search(r"SSH-\d+\.\d+-([A-Za-z0-9-]+)[_\- ]", banner)
+            if m:
+                vendor_guess = m.group(1).strip()
+        if oid and vendor_guess:
+            # Direct promotion if vendor_guess provided
+            enterprise = ".".join(oid.split(".")[:7])  # 1.3.6.1.4.1.<num>
+            if enterprise not in raw.get("oids", {}):
+                raw.setdefault("oids", {})[enterprise] = vendor_guess
+                # Also ensure OS family table has it
+                raw.setdefault("os_families", {})[vendor_guess.lower()] = vendor_guess
+                p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+                return jsonify({"learned": True, "enterprise": enterprise, "vendor": vendor_guess, "method": "direct"}), 200
+        if oid:
+            enterprise = ".".join(oid.split(".")[:7])
+            pending = raw.setdefault("pending_oids", {})
+            entry = pending.get(enterprise, {"count": 0, "raw_oids": [], "banner_samples": []})
+            entry["count"] = int(entry.get("count", 0)) + 1
+            if oid not in entry.get("raw_oids", []):
+                entry.setdefault("raw_oids", []).append(oid)
+            if banner and banner not in entry.get("banner_samples", []):
+                entry.setdefault("banner_samples", []).append(banner[:200])
+            if vendor_guess and "vendor_guess" not in entry:
+                entry["vendor_guess"] = vendor_guess
+            pending[enterprise] = entry
+            # Auto-promote after 3 sightings with consistent banner vendor
+            if entry["count"] >= 3 and entry.get("vendor_guess"):
+                raw.setdefault("oids", {})[enterprise] = entry["vendor_guess"]
+                raw.setdefault("os_families", {})[entry["vendor_guess"].lower()] = entry["vendor_guess"]
+                # Move to learned
+                raw.setdefault("banner_learned", {})[entry["vendor_guess"]] = f"auto-learned from {enterprise} after 3 sightings"
+                del pending[enterprise]
+                p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+                return jsonify({"learned": True, "enterprise": enterprise, "vendor": entry["vendor_guess"], "method": "auto-promote-3x"}), 200
+            p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+            return jsonify({"learned": False, "pending": entry, "need": 3 - entry["count"]}), 200
+        if vendor_guess and banner:
+            raw.setdefault("banner_learned", {})[vendor_guess] = banner[:200]
+            raw.setdefault("os_families", {})[vendor_guess.lower()] = vendor_guess
+            p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+            return jsonify({"learned": True, "vendor": vendor_guess, "method": "banner"}), 200
+        return jsonify({"learned": False}), 200
+    except Exception as e:
+        return error_response(f"discovery report failed: {e}", 500)
+
+@app.route("/api/vendor/discovery/learn", methods=["POST"])
+def vendor_discovery_learn():
+    """Manual teaching: directly add OID or vendor mapping (low-code, no redeploy)."""
+    data = request.get_json(silent=True) or {}
+    oid = (data.get("oid") or "").strip()
+    vendor = (data.get("vendor") or "").strip()
+    os_family = (data.get("os_family") or "").strip()
+    if not vendor or not validate_vendor(vendor):
+        return error_response("valid vendor required", 400)
+    if oid and not re.match(r"^1\.3\.6\.1\.4\.1\.\d+(\.\d+)*$", oid):
+        return error_response("invalid OID", 400)
+    if os_family and (len(os_family) > 32 or contains_injection(os_family)):
+        return error_response("invalid os_family", 400)
+    try:
+        p = Path(TRINETRA_ROOT) / "config" / "vendor_discovery_map.json"
+        raw = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"oids": {}, "os_families": {}, "pending_oids": {}, "banner_learned": {}}
+        if oid:
+            enterprise = ".".join(oid.split(".")[:7])
+            raw.setdefault("oids", {})[enterprise] = vendor
+        if os_family:
+            raw.setdefault("os_families", {})[os_family.lower()] = vendor
+        else:
+            raw.setdefault("os_families", {})[vendor.lower()] = vendor
+        raw.setdefault("banner_learned", {})[vendor] = f"manual learn {oid or vendor}"
+        p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        return jsonify({"learned": True, "vendor": vendor, "oid": oid, "os_family": os_family or vendor.lower()}), 200
+    except Exception as e:
+        return error_response(f"learn failed: {e}", 500)
+
 # ── GET /api/session/<name>/audit-report/pdf — PDF export ──
 @app.route("/api/session/<name>/audit-report/pdf", methods=["GET"])
 def audit_report_pdf(name):

@@ -190,6 +190,53 @@ public class CiscoBaselineAdapter {
                 b.logging.enabled = false;
                 b.logging.evidence.add(evidence);
             }
+
+            // Cryptography — strong vs weak ciphers (CIS 4.1, NIST SC-13)
+            // Weak: 3des, des, rc4, md5, null, export
+            if (ll.contains("ssh server algorithm encryption") || ll.contains("ssh server algorithm mac") || ll.contains("ssl cipher") || ll.contains("tls cipher")) {
+                if (ll.matches(".*(3des|des-cbc|rc4|md5|null|export).*")) {
+                    b.cryptography.weakCiphersFound.add(line.trim());
+                    b.cryptography.evidence.add(evidence);
+                    b.cryptography.strongCryptoEnabled = false;
+                    b.evidenceLines.add(evidence);
+                }
+                if (ll.matches(".*(aes128-ctr|aes256-ctr|aes128-gcm|aes256-gcm|chacha20).*")) {
+                    b.cryptography.enabledCiphers.add(line.trim());
+                    b.cryptography.evidence.add(evidence);
+                    if (b.cryptography.weakCiphersFound.isEmpty()) b.cryptography.strongCryptoEnabled = true;
+                }
+                // TLS 1.2+
+                if (ll.contains("tls1.2") || ll.contains("tls 1.2") || ll.contains("tlsv1.2")) {
+                    b.cryptography.tls12OrHigher = true;
+                    b.cryptography.tlsEvidence.add(evidence);
+                }
+            }
+            if (ll.contains("ip ssh version 2") && !isNo) {
+                b.cryptography.tls12OrHigher = true; // SSHv2 implies strong crypto baseline
+                b.cryptography.tlsEvidence.add(evidence);
+            }
+
+            // ACLs — granular ACLs (CIS 4.6, NIST AC-4)
+            if (ll.matches("(?i)^access-list\\s+\\d+\\s+(permit|deny).*") || ll.matches("(?i)^ip\\s+access-list\\s+.*") || ll.contains("access-group") || ll.contains("access-class")) {
+                SecurityBaseline.Acl.AclEntry e = new SecurityBaseline.Acl.AclEntry();
+                e.evidence = evidence;
+                Matcher mAclName = Pattern.compile("(?i)access-list\\s+(\\S+)").matcher(line);
+                if (mAclName.find()) e.name = mAclName.group(1);
+                else {
+                    Matcher mAcl2 = Pattern.compile("(?i)ip\\s+access-list\\s+\\S+\\s+(\\S+)").matcher(line);
+                    if (mAcl2.find()) e.name = mAcl2.group(1);
+                    else e.name = "acl";
+                }
+                e.type = ll.contains("extended") ? "extended" : ll.contains("standard") ? "standard" : "extended";
+                e.action = ll.contains("permit") ? "permit" : ll.contains("deny") ? "deny" : "unknown";
+                b.acl.entries.add(e);
+                b.acl.evidence.add(evidence);
+                b.acl.hasGranularAcls = true;
+                if (ll.contains("permit ip") && ll.contains("any any") && !isNo) {
+                    // Overly permissive — still counts as ACL but flagged
+                    b.cryptography.evidence.add(evidence);
+                }
+            }
         }
 
         // Defaults where not observed: absence not a pass; leave null/empty

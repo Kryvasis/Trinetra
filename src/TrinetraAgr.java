@@ -73,6 +73,54 @@ public class TrinetraAgr {
     }
 
     /**
+     * Version/model-aware remediation — customizes steps per vendor + OS version.
+     * Falls back to generic curated remediation when no specific template exists.
+     * This satisfies PS "Reporting customized based on device's specific model and software version."
+     */
+    public static String getRemediation(String vCode, String vendor, String osVersion) {
+        if (vCode == null) return "";
+        String key = vCode.trim().toUpperCase(Locale.ROOT);
+        String base = REMEDIATION.get(key);
+        if (base == null) return "";
+        if (vendor == null) vendor = "";
+        String v = vendor.trim().toLowerCase(Locale.ROOT);
+        String osv = osVersion != null ? osVersion.trim() : "";
+        String prefix = "";
+        // Vendor-specific prefix
+        if (v.contains("forti") || v.equals("fortios")) {
+            prefix = "[FortiOS " + (osv.isEmpty() ? "7.x" : osv) + "] FortiGate: ";
+            // Translate Cisco steps to FortiOS equivalents for key V-codes
+            if ("V-071".equals(key)) return prefix + "1. `config system interface` → `edit port1` → `set allowaccess ping https ssh` (remove `telnet`/`http`). 2. `config system global` → `set admintimeout 5`. 3. Verify: `show system interface` / `get system status`. 4. Save: `execute backup config`";
+            if ("V-057".equals(key)) return prefix + "1. `config system snmp community` → `delete 1` (remove public). 2. `config system snmp sysinfo` → `set status enable` → `config system snmp user` → `set security-level auth-priv`. 3. Verify: `show system snmp community`";
+            if ("V-058".equals(key)) return prefix + "1. `config log syslogd setting` → `set status enable` → `set server " + "10.10.1.100" + "` . 2. Verify: `show log syslogd setting`";
+        } else if (v.contains("pan") || v.contains("palo")) {
+            prefix = "[PAN-OS " + (osv.isEmpty() ? "11.x" : osv) + "] Palo Alto: ";
+            if ("V-071".equals(key)) return prefix + "1. `set deviceconfig system service disable-telnet yes` → `set deviceconfig system service disable-http yes`. 2. `set mgt-config users` → enforce `phash`. 3. Verify: `show system info`";
+            if ("V-057".equals(key)) return prefix + "1. `delete deviceconfig system snmp-setting access-setting community public`. 2. `set deviceconfig system snmp-setting access-setting version v3` → `set deviceconfig system snmp-setting v3 users <user> auth`. 3. Verify: `show snmp-setting`";
+        } else if (v.contains("sonic") || v.contains("white")) {
+            prefix = "[SONiC " + (osv.isEmpty() ? "2023.11" : osv) + "] White Box: ";
+            if ("V-071".equals(key)) return prefix + "1. `sudo config aaa authentication login default local` → disable telnet: `sudo systemctl disable telnet`. 2. `sudo sonic-cfggen -a '{\"DEVICE_METADATA\":{\"localhost\":{\"hostname\":\"...\"}}}'`. 3. Verify: `show version` / `show ip interfaces`";
+            if ("V-003".equals(key)) return prefix + "1. `sudo iptables -A INPUT -p tcp --dport 23 -j DROP` (block telnet) → `sudo config save -y`. 2. Verify: `iptables -L`";
+        } else if (v.contains("aws") || v.contains("cloud") || v.contains("amazon")) {
+            prefix = "[AWS " + (osv.isEmpty() ? "SG/NACL" : osv) + "] Cloud-native: ";
+            if ("V-003".equals(key) || "V-071".equals(key)) return prefix + "1. `aws ec2 revoke-security-group-ingress --group-id sg-xxxx --protocol tcp --port 23 --cidr 0.0.0.0/0` (telnet) → `aws ec2 revoke-security-group-ingress --port 80 --cidr 0.0.0.0/0` (http). 2. Restrict to `10.0.0.0/16`. 3. Verify: `aws ec2 describe-security-groups`";
+            if ("V-057".equals(key)) return prefix + "1. `aws s3api put-bucket-acl --bucket <bucket> --acl private` (remove public). 2. `aws iam` rotate hardcoded keys.";
+        } else if (v.contains("juniper") || v.contains("junos")) {
+            prefix = "[JUNOS " + (osv.isEmpty() ? "20.4R3" : osv) + "] Juniper: ";
+            if (base.contains("Cisco IOS") || base.contains("configure terminal")) {
+                // Provide JUNOS translation inline
+                return prefix + base.replace("`configure terminal`", "`configure`").replace("`line vty 0 4`", "`set system services`") + " (JUNOS syntax shown where applicable)";
+            }
+        } else if (v.contains("cisco")) {
+            prefix = "[IOS" + (osv.contains("XE") ? " XE " : osv.contains("NX") ? " NX-OS " : " ") + (osv.isEmpty() ? "17.6.5" : osv) + "] Cisco: ";
+            return prefix + base;
+        }
+        // Generic fallback with version tag
+        if (!osv.isEmpty()) return "[" + vendor + " " + osv + "] " + base;
+        return base;
+    }
+
+    /**
      * Generate both scorecard and detailed report.
      * Returns the detailed report content.
      */

@@ -28,6 +28,7 @@ export default function TrainingView({ api, toast }) {
   const [training, setTraining] = useState(false)
   const [trainErrors, setTrainErrors] = useState({})
   const [mlSuggestions, setMlSuggestions] = useState({}) // line -> {label, confidence, source}
+  const [nlpSuggestions, setNlpSuggestions] = useState({}) // line -> {category, control, remediation, confidence, reasoning}
   const [mlStatus, setMlStatus] = useState(null)
   const abortRef = useRef(null)
   useEffect(() => () => { abortRef.current?.abort(); abortRef.current = null }, [])
@@ -40,7 +41,7 @@ export default function TrainingView({ api, toast }) {
   }, [sessionParam, session])
 
   const fetchMlSuggestions = async (lines) => {
-    if (!lines || lines.length === 0) { setMlSuggestions({}); return }
+    if (!lines || lines.length === 0) { setMlSuggestions({}); setNlpSuggestions({}); return }
     // batch up to 20 lines for quick UI
     const slice = lines.slice(0, 20)
     try {
@@ -61,6 +62,19 @@ export default function TrainingView({ api, toast }) {
       const j = await r.json()
       setMlStatus(j)
     } catch {}
+    // NLP Pattern Recognition + semantic interpretation (Gemini) — parallel, never overwrites KNN
+    try {
+      const nlpResults = await Promise.all(slice.slice(0,5).map(async item => {
+        try {
+          const r = await fetch(`${api}/nlp/suggest`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ line: item.line, vendor }) })
+          const j = await r.json()
+          return [item.line, j.nlp || null]
+        } catch { return [item.line, null] }
+      }))
+      const nmap = {}
+      for (const [k,v] of nlpResults) if (v) nmap[k]=v
+      setNlpSuggestions(nmap)
+    } catch { setNlpSuggestions({}) }
   }
 
   const fetchUnrecognized = async (sessName) => {
@@ -196,10 +210,15 @@ export default function TrainingView({ api, toast }) {
   const selectLine = (line) => {
     setSelectedLine(line)
     setPattern(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\.\*/g, '.*'))
+    const nlp = nlpSuggestions[line]
     const ml = mlSuggestions[line]
-    if (ml && ml.label) {
+    if (nlp && nlp.category) {
+      setCategory(nlp.category)
+      setControlMapping(nlp.control || '')
+      setRemediation(nlp.remediation || '')
+      toast(`NLP suggests: ${nlp.category} → ${nlp.control} (${Math.round(nlp.confidence*100)}% Gemini: ${nlp.reasoning?.slice(0,60)}…) — verify before adding`, 'info')
+    } else if (ml && ml.label) {
       setCategory(ml.label)
-      // if label looks like V-code, keep controls empty for user to confirm; else treat as category
       if (/^V-\d+/.test(ml.label)) {
         setControlMapping(ml.label)
         setCategory('ML-suggested: ' + ml.label)
@@ -209,7 +228,7 @@ export default function TrainingView({ api, toast }) {
       setCategory('')
       setControlMapping('')
     }
-    setRemediation('')
+    if (!nlp) setRemediation('')
     setOsVersionTrain('')
     setTrainErrors({})
   }
@@ -275,6 +294,7 @@ export default function TrainingView({ api, toast }) {
             </div>
             {unrecognized.map((u, i) => {
               const ml = mlSuggestions[u.line]
+              const nlp = nlpSuggestions[u.line]
               return (
               <button
                 type="button"
@@ -292,6 +312,7 @@ export default function TrainingView({ api, toast }) {
                 <span style={{ fontSize: 11, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{u.device}</span>
                 <span className="line-text">{u.line}</span>
                 {ml && <span className="badge" style={{ marginLeft:8, background:'var(--surface3)', fontSize:10 }} title={`ML: ${ml.source} conf ${ml.confidence}`}>AI: {ml.label} {Math.round(ml.confidence*100)}%</span>}
+                {nlp && <span className="badge" style={{ marginLeft:8, background:'var(--accent)', color:'#fff', fontSize:10 }} title={`NLP: ${nlp.reasoning}`}>NLP: {nlp.category} {Math.round(nlp.confidence*100)}%</span>}
               </button>
               )
             })}
@@ -315,6 +336,8 @@ export default function TrainingView({ api, toast }) {
                     <option value="Juniper">Juniper</option>
                     <option value="FortiOS">FortiOS</option>
                     <option value="PAN-OS">PAN-OS</option>
+                    <option value="SONiC">SONiC</option>
+                    <option value="AWS">AWS</option>
                     <option value="Generic">Generic</option>
                   </select>
                 </div>

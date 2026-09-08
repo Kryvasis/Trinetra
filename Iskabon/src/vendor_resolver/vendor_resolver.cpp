@@ -25,9 +25,9 @@ bool same_vendor(const std::string& a, const std::string& b) {
            lb.find(la) != std::string::npos;
 }
 
-/// OS family -> hardware vendor.  Extend here as new families appear.
+/// OS family -> hardware vendor.  Now dynamic via config/vendor_discovery_map.json + static fallback.
 const std::map<std::string, std::string>& os_family_table() {
-    static const std::map<std::string, std::string> kOsFamilyTable = {
+    static std::map<std::string, std::string> kOsFamilyTable = {
         {"ios",      "Cisco"},
         {"ios-xe",   "Cisco"},
         {"ios-xr",   "Cisco"},
@@ -36,7 +36,42 @@ const std::map<std::string, std::string>& os_family_table() {
         {"fortios",  "Fortinet"},
         {"tmos",     "F5"},
         {"procurve", "HP"},
+        {"sonic",    "SONiC"},
+        {"cumulus",  "Cumulus"},
+        {"eos",      "Arista"},
     };
+    static bool loaded = false;
+    if (!loaded) {
+        const char* roots[] = {"config/vendor_discovery_map.json", "../config/vendor_discovery_map.json", "../../config/vendor_discovery_map.json"};
+        for (auto p : roots) {
+            std::ifstream f(p);
+            if (!f) continue;
+            std::string raw((std::istreambuf_iterator<char>(f)), {});
+            size_t pos = raw.find("\"os_families\"");
+            if (pos == std::string::npos) continue;
+            size_t lb = raw.find('{', pos);
+            size_t rb = raw.find('}', lb);
+            if (lb == std::string::npos || rb == std::string::npos) continue;
+            std::string block = raw.substr(lb, rb - lb + 1);
+            for (size_t i = 0; i < block.size();) {
+                size_t q1 = block.find('"', i);
+                if (q1 == std::string::npos) break;
+                size_t q2 = block.find('"', q1+1);
+                if (q2 == std::string::npos) break;
+                std::string k = block.substr(q1+1, q2-q1-1);
+                size_t q3 = block.find('"', q2+1);
+                if (q3 == std::string::npos) break;
+                size_t q4 = block.find('"', q3+1);
+                if (q4 == std::string::npos) break;
+                std::string v = block.substr(q3+1, q4-q3-1);
+                if (!k.empty() && !k.starts_with("_") && v.size()>=2) kOsFamilyTable[to_lower(k)] = v;
+                i = q4+1;
+            }
+            loaded = true;
+            break;
+        }
+        if (!loaded) loaded = true;
+    }
     return kOsFamilyTable;
 }
 

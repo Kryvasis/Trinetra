@@ -64,6 +64,25 @@ public class TrinetraConfigIngestor {
         panos.put("(?i)syslog", "V-058");
         KNOWN_PATTERNS.put("PAN-OS", panos);
 
+        Map<String, String> sonic = new LinkedHashMap<>();
+        sonic.put("(?i)sonic|config_db|DEVICE_METADATA", "V-003");
+        sonic.put("(?i)ssh.*version\\s+1", "V-006");
+        sonic.put("(?i)telnet", "V-071");
+        sonic.put("(?i)access-list|iptables|acl", "V-003");
+        sonic.put("(?i)snmp.*public", "V-057");
+        sonic.put("(?i)syslog|logging", "V-058");
+        KNOWN_PATTERNS.put("SONiC", sonic);
+
+        Map<String, String> aws = new LinkedHashMap<>();
+        aws.put("(?i)SecurityGroups|GroupId|0\\.0\\.0\\.0/0", "V-003");
+        aws.put("(?i)FromPort.*23|telnet.*0\\.0\\.0\\.0/0", "V-071");
+        aws.put("(?i)FromPort.*80|http.*0\\.0\\.0\\.0/0", "V-003");
+        aws.put("(?i)password|secret", "V-013");
+        aws.put("(?i)snmp.*public", "V-057");
+        aws.put("(?i)flow.*log|cloudtrail", "V-058");
+        aws.put("(?i)tls1\\.0|tls1\\.1|3des|rc4", "V-006");
+        KNOWN_PATTERNS.put("AWS", aws);
+
         Map<String, String> generic = new LinkedHashMap<>();
         generic.put("(?i)password", "V-013");
         generic.put("(?i)telnet", "V-071");
@@ -100,7 +119,56 @@ public class TrinetraConfigIngestor {
      */
     public static String autoDetectVendor(String configContent) {
         if (configContent == null || configContent.isBlank()) return "Generic";
+        // Auto-discover new vendor via banner first — highest priority for zero-code discovery
+        java.util.regex.Matcher mBanner = java.util.regex.Pattern.compile("SSH-\\d+\\.\\d+-([A-Za-z0-9-]+)[_\\- ]").matcher(configContent);
+        if (mBanner.find()) {
+            String guessed = mBanner.group(1).trim();
+            if (guessed.length() >= 3 && guessed.length() <= 32) {
+                String lowerGuessed = guessed.toLowerCase();
+                // Don't re-learn known vendors
+                if (!java.util.Set.of("cisco","juniper","fortios","fortigate","fortinet","pan-os","panos","paloalto","sonic","aws","generic").contains(lowerGuessed)) {
+                    VendorConnectorRegistry.register(guessed, () -> new GenericSSHConnector() {
+                        @Override public String getVendorName() { return guessed; }
+                    });
+                    // Record banner learned for persistence
+                    try {
+                        java.nio.file.Path p = java.nio.file.Path.of(TrinetraCommon.PROJECT_ROOT, "config", "vendor_discovery_map.json");
+                        if (java.nio.file.Files.exists(p)) {
+                            String raw = java.nio.file.Files.readString(p);
+                            Object parsed = TrinetraJson.parse(raw);
+                            if (parsed instanceof Map) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> map = (Map<String, Object>) parsed;
+                                Object bannerObj = map.get("banner_learned");
+                                Map<String, Object> bannerMap = bannerObj instanceof Map ? (Map<String, Object>) bannerObj : new java.util.LinkedHashMap<>();
+                                if (!bannerMap.containsKey(guessed)) {
+                                    bannerMap.put(guessed, "SSH banner " + guessed + " auto-discovered");
+                                    map.put("banner_learned", bannerMap);
+                                    java.nio.file.Files.writeString(p, TrinetraJson.prettyJson(map));
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                    return guessed;
+                } else {
+                    // Known vendor via banner — return canonical
+                    if (lowerGuessed.equals("cisco") || lowerGuessed.equals("juniper") || lowerGuessed.contains("forti") || lowerGuessed.contains("pan") || lowerGuessed.contains("sonic") || lowerGuessed.equals("aws")) {
+                        // Let specific checks below handle
+                    } else {
+                        return guessed;
+                    }
+                }
+            }
+        }
         String lower = configContent.toLowerCase();
+        // AWS Cloud-native — Security Groups / NACL JSON
+        if (lower.contains("\"securitygroups\"") || lower.contains("\"networkacls\"") || lower.contains("\"groupid\": \"sg-") || lower.contains("0.0.0.0/0") && lower.contains("fromport")) {
+            return "AWS";
+        }
+        // SONiC — White Box (DEVICE_METADATA / config_db.json / sonic-cfggen)
+        if (lower.contains("sonic") || lower.contains("device_metadata") || lower.contains("config_db") || lower.contains("\"sonic\"")) {
+            return "SONiC";
+        }
         // FortiOS — distinctive "config system" + fortigate/fortios
         if (lower.contains("fortigate") || lower.contains("fortios") || (lower.contains("config system") && lower.contains("allowaccess"))) {
             return "FortiOS";
@@ -117,6 +185,35 @@ public class TrinetraConfigIngestor {
         if (lower.contains("hostname") || lower.contains("interface ") || lower.contains("cisco") || lower.contains("enable secret") || lower.contains("line vty") || lower.contains("ip ssh")) {
             return "Cisco";
         }
+        // Check for explicit vendor hint in first 2k chars: "Vendor: XYZ" or "hostname xyz-vendor-"
+        String head = configContent.length() > 2000 ? configContent.substring(0, 2000) : configContent;
+        java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("(?i)vendor\\s*[:=]\\s*([A-Za-z0-9_-]{3,32})").matcher(head);
+        if (m2.find()) {
+            String guessed = m2.group(1).trim();
+            VendorConnectorRegistry.register(guessed, () -> new GenericSSHConnector() {
+                @Override public String getVendorName() { return guessed; }
+            });
+            return guessed;
+        }
+        // Fallback: check discovery map for previously learned banner vendors
+        try {
+            java.nio.file.Path p = java.nio.file.Path.of(TrinetraCommon.PROJECT_ROOT, "config", "vendor_discovery_map.json");
+            if (java.nio.file.Files.exists(p)) {
+                String raw = java.nio.file.Files.readString(p);
+                Object parsed = TrinetraJson.parse(raw);
+                if (parsed instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> map = (Map<String, Object>) parsed;
+                    Object bannerObj = map.get("banner_learned");
+                    if (bannerObj instanceof Map) {
+                        for (Object k : ((Map<?,?>) bannerObj).keySet()) {
+                            String vendor = String.valueOf(k).trim();
+                            if (lower.contains(vendor.toLowerCase(Locale.ROOT))) return vendor;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
         return "Generic";
     }
 
@@ -856,10 +953,13 @@ public class TrinetraConfigIngestor {
                 case "Juniper" -> JuniperBaselineAdapter.parse(configContent, rawVendor);
                 case "FortiOS" -> FortiGateBaselineAdapter.parse(configContent, rawVendor);
                 case "PAN-OS" -> PaloAltoBaselineAdapter.parse(configContent, rawVendor);
+                case "SONiC" -> SonicBaselineAdapter.parse(configContent, rawVendor);
+                case "AWS" -> AwsBaselineAdapter.parse(configContent, rawVendor);
                 default -> {
-                    // Generic baseline: try Cisco heuristics as fallback, then return minimal
+                    // Generic baseline: preserve discovered vendor name (e.g., Arista) but use Generic heuristics
                     SecurityBaseline g = new SecurityBaseline();
-                    g.vendor = "Generic";
+                    // Preserve auto-discovered vendor name instead of overwriting to "Generic"
+                    g.vendor = canonicalVendor != null && !canonicalVendor.isBlank() ? canonicalVendor : "Generic";
                     g.rawVendor = rawVendor != null ? rawVendor : canonicalVendor;
                     // Lightweight heuristic: scan for generic keywords
                     String lower = configContent != null ? configContent.toLowerCase() : "";

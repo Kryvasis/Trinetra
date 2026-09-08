@@ -373,7 +373,7 @@ public class TrinetraAuditReportBuilder {
                 String sev = resolveSeverity(tid, entry);
                 sb.append("| ").append(cell(tid)).append(" | ").append(cell(verdict)).append(" | ").append(cell(fc)).append(" | ").append(cell(sev)).append(" | ").append(cell(joinList(row.get("controls")))).append(" | ").append(cell(String.join(" | ", evidenceLinesOf(entry)))).append(" |\n");
             }
-            sb.append("\n").append(renderRemediationSection(rows)).append("\n");
+            sb.append("\n").append(renderRemediationSection(rows, deviceDetail.isEmpty() ? Map.of() : Map.of(deviceId, deviceDetail))).append("\n");
         }
         sb.append("---\n\n");
         sb.append(renderScriptEvidenceSection(session, null, scriptEvidence, evidenceJsonName, evidenceMdName, false));
@@ -519,7 +519,7 @@ public class TrinetraAuditReportBuilder {
               .append(" |\n");
         }
         sb.append("\n");
-        sb.append(renderRemediationSection(rows));
+        sb.append(renderRemediationSection(rows, deviceDetails));
         sb.append("\n---\n\n");
         sb.append(renderScriptEvidenceSection(session, rows, scriptEvidence,
             evidenceJsonName, evidenceMdName, true));
@@ -748,8 +748,12 @@ public class TrinetraAuditReportBuilder {
     // not proven live. All other classes keep generic cautious guidance so no
     // device-changing command is shown without triggering evidence.
     private static String renderRemediationSection(List<Map<String, Object>> rows) {
+        return renderRemediationSection(rows, Map.of());
+    }
+
+    private static String renderRemediationSection(List<Map<String, Object>> rows, Map<String, Map<String, Object>> deviceDetails) {
         StringBuilder sb = new StringBuilder();
-        sb.append("### Remediation (traceable)\n\n");
+        sb.append("### Remediation (traceable, version-aware)\n\n");
         List<Map<String, Object>> confirmed = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             Object entry = row.get("entry");
@@ -773,9 +777,13 @@ public class TrinetraAuditReportBuilder {
             String did = TrinetraCommon.getString(e, "device_id", "?");
             String key = tid + "@" + did;
             if (!seen.add(key)) continue;
-            String curated = TrinetraAgr.getRemediation(tid);
+            Map<String, Object> det = deviceDetails.getOrDefault(did, Map.of());
+            String vendor = TrinetraCommon.getString(det, "vendor", TrinetraCommon.getString(e, "vendor", ""));
+            String osVer = TrinetraCommon.getString(det, "os_version", "");
+            String curated = TrinetraAgr.getRemediation(tid, vendor, osVer);
+            if (curated.isBlank()) curated = TrinetraAgr.getRemediation(tid);
             sb.append("Remediation: ").append(tid).append(" on ").append(did)
-              .append(" — confirmed risk.\n\n");
+              .append(" — confirmed risk. [").append(vendor.isEmpty() ? "generic" : vendor).append(osVer.isEmpty() ? "" : " " + osVer).append("]\n\n");
             List<String> lines = evidenceLinesOf(e);
             if (!lines.isEmpty()) {
                 sb.append("Triggering source lines: `");
@@ -785,7 +793,7 @@ public class TrinetraAuditReportBuilder {
                 sb.append("Triggering source lines: recorded in `evidence_*.json` for this test/device.\n\n");
             }
             if (!curated.isBlank()) {
-                sb.append("Curated Cisco IOS steps (Documented — review before use; backup, confirm OS version, rollback plan, post-change verify): ")
+                sb.append("Device-specific steps (Documented — review before use; backup, confirm OS version, rollback plan, post-change verify): ")
                   .append(curated).append("\n\n");
             } else {
                 sb.append("No curated CLI sequence for this check — use the applicable vendor hardening guide with backup/rollback and post-change verification. "
