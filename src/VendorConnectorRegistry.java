@@ -21,8 +21,12 @@ public final class VendorConnectorRegistry {
         // Built-in plugins (three-step recipe: implement + register here).
         FACTORIES.put("cisco", CiscoConnector::new);
         FACTORIES.put("juniper", JuniperConnector::new);
-        // Register additional vendors here, e.g.:
-        //   FACTORIES.put("fortinet", FortinetConnector::new);
+        FACTORIES.put("fortios", FortiGateConnector::new);
+        FACTORIES.put("fortigate", FortiGateConnector::new);
+        FACTORIES.put("fortinet", FortiGateConnector::new);
+        FACTORIES.put("pan-os", PaloAltoConnector::new);
+        FACTORIES.put("panos", PaloAltoConnector::new);
+        FACTORIES.put("paloalto", PaloAltoConnector::new);
     }
 
     private VendorConnectorRegistry() {}

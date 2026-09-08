@@ -313,6 +313,8 @@ export default function TrainingView({ api, toast }) {
                   <select value={vendor} onChange={e => setVendor(e.target.value)}>
                     <option value="Cisco">Cisco</option>
                     <option value="Juniper">Juniper</option>
+                    <option value="FortiOS">FortiOS</option>
+                    <option value="PAN-OS">PAN-OS</option>
                     <option value="Generic">Generic</option>
                   </select>
                 </div>

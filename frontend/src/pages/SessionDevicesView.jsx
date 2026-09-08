@@ -284,6 +284,15 @@ export default function SessionDevicesView({ api, toast }) {
                             >
                               Training
                             </Link>
+                            <a
+                              href={`${api}/session/${encodeURIComponent(session)}/devices/${encodeURIComponent(d.device_id)}/pdf`}
+                              className="btn-secondary"
+                              style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              Device PDF
+                            </a>
                           </div>
                         </td>
                       </tr>

@@ -184,6 +184,226 @@ public class TrinetraAuditReportBuilder {
         return out;
     }
 
+    /**
+     * Per-device report — single PDF per device as required by PS.
+     * Filters evidence to one device_id; baseline and device_details are included.
+     */
+    public static Map<String, Object> buildDeviceReport(String sessionName, String deviceId, Set<String> frameworkFilter) {
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String did = deviceId != null ? deviceId.trim() : "";
+        if (did.isEmpty()) return null;
+
+        Map<String, Object> brainState = TrinetraCommon.readJsonFile(
+            TrinetraCommon.sessionBrainState(sanitized));
+        if (brainState.isEmpty()) return null;
+
+        // Device existence check
+        Map<String, String> allVendors = TrinetraSession.getAllDeviceVendors(sanitized);
+        SecurityBaseline baseline = TrinetraSession.getDeviceBaseline(sanitized, did);
+        if (!allVendors.containsKey(did) && baseline == null) {
+            // Also check normalized_results for device
+            boolean found = false;
+            for (Map<String, Object> e : TrinetraSession.getActiveNormalizedResults(sanitized)) {
+                if (did.equals(TrinetraCommon.getString(e, "device_id", ""))) { found = true; break; }
+            }
+            if (!found) return null;
+        }
+
+        // Rebuild scorer artifacts (filtered by framework if requested)
+        Path scorePath = TrinetraComplianceScorer.scoreAndWrite(sanitized, frameworkFilter);
+        Map<String, Object> score = TrinetraCommon.readJsonFile(scorePath);
+
+        Path narrPath = TrinetraCommon.sessionDir(sanitized)
+            .resolve("compliance_narrative_" + sanitized + ".md");
+        String narrative;
+        String narrativeSource;
+        Map<String, Object> meta = TrinetraNarrativeGenerator.generateReport(sanitized, score);
+        narrativeSource = TrinetraCommon.getString(meta, "source",
+            TrinetraNarrativeGenerator.SOURCE_TEMPLATE);
+        narrative = orEmpty(TrinetraCommon.readFileIfExists(narrPath));
+        boolean templateMode =
+            TrinetraNarrativeGenerator.SOURCE_TEMPLATE.equals(narrativeSource);
+
+        // Filtered evidence: only this device
+        List<Map<String, Object>> results = new ArrayList<>();
+        for (Map<String, Object> e : TrinetraSession.getActiveNormalizedResults(sanitized)) {
+            if (did.equals(TrinetraCommon.getString(e, "device_id", ""))) results.add(e);
+        }
+
+        Map<String, List<Map<String, Object>>> evidenceByTest = new LinkedHashMap<>();
+        for (Map<String, Object> e : results) {
+            evidenceByTest.computeIfAbsent(TrinetraCommon.getString(e, "test_id", "?"), k -> new ArrayList<>()).add(e);
+        }
+        Map<String, List<Map<String, Object>>> evidenceByFramework = new LinkedHashMap<>();
+        for (Map.Entry<String, List<Map<String, Object>>> t : evidenceByTest.entrySet()) {
+            Map<String, List<String>> mappings = TrinetraCompliance.getControlMappings(t.getKey());
+            for (Map.Entry<String, List<String>> fw : mappings.entrySet()) {
+                if (frameworkFilter != null && !frameworkFilter.isEmpty()) {
+                    String norm = fw.getKey().toLowerCase().replaceAll("[\\s\\-]", "_");
+                    boolean match = false;
+                    for (String f : frameworkFilter) {
+                        if (norm.equals(f.toLowerCase().replaceAll("[\\s\\-]", "_"))) { match = true; break; }
+                    }
+                    if (!match) continue;
+                }
+                for (Map<String, Object> entry : t.getValue()) {
+                    Map<String, Object> row = TrinetraCommon.newMap();
+                    row.put("entry", entry);
+                    row.put("controls", fw.getValue());
+                    evidenceByFramework.computeIfAbsent(fw.getKey(), k -> new ArrayList<>()).add(row);
+                }
+            }
+        }
+
+        Map<String, String> narrativeSections = extractFrameworkSections(narrative, score);
+        Map<String, Map<String, Object>> deviceDetails = TrinetraSession.getAllDeviceDetails(sanitized);
+        // Include baseline map for report
+        Map<String, SecurityBaseline> baselines = TrinetraSession.getAllDeviceBaselines(sanitized);
+
+        Set<String> removed = TrinetraSession.getRemovedDevices(sanitized);
+        List<Map<String, Object>> scriptEvidence = new ArrayList<>();
+        for (Map<String, Object> se : TrinetraEvidence.load(sanitized)) {
+            String sDid = TrinetraCommon.getString(se, "device_id", TrinetraCommon.getString(se, "target", ""));
+            if (did.equals(sDid) && !removed.contains(sDid)) scriptEvidence.add(se);
+        }
+        String evidenceJsonName = "evidence_" + sanitized + ".json";
+        String evidenceMdName = "evidence_" + sanitized + ".md";
+
+        Map<String, Object> frameworks = TrinetraCommon.getMap(score, "frameworks");
+        double aggregate = round1(meanPercentageFiltered(frameworks, evidenceByFramework));
+
+        TrinetraSession.ChainVerifyResult chain = TrinetraSession.verifyChain(sanitized);
+        List<String> auditUuids = TrinetraAudit.listAuditUuids(sanitized);
+
+        String safeDid = TrinetraCommon.sanitizeName(did);
+        Path devicePath = TrinetraCommon.sessionDir(sanitized)
+            .resolve("audit_report_" + safeDid + "_" + sanitized + ".md");
+        String deviceReport = renderDeviceReport(sanitized, did, score, frameworks,
+            evidenceByFramework, narrativeSections, narrative, templateMode, aggregate,
+            chain, auditUuids, deviceDetails.getOrDefault(did, Map.of()),
+            baselines.get(did), scriptEvidence, evidenceJsonName, evidenceMdName, frameworkFilter);
+        TrinetraCommon.atomicWriteFile(devicePath, deviceReport + renderConfigurationReviews(score) + renderBaselineSection(baselines.get(did)));
+
+        Map<String, Object> out = TrinetraCommon.newMap();
+        out.put("session_name", sanitized);
+        out.put("device_id", did);
+        out.put("combined_path", devicePath.toString());
+        out.put("device_path", devicePath.toString());
+        // Also generate per-framework per-device files for completeness
+        List<String> frameworkPaths = new ArrayList<>();
+        for (String fw : frameworks.keySet()) {
+            List<Map<String, Object>> rows = evidenceByFramework.getOrDefault(fw, List.of());
+            if (rows.isEmpty()) continue;
+            Path p = TrinetraCommon.sessionDir(sanitized).resolve("report_" + fw + "_" + safeDid + "_" + sanitized + ".md");
+            TrinetraCommon.atomicWriteFile(p,
+                renderFrameworkReport(sanitized + " — " + did, fw, frameworks.get(fw), rows,
+                    narrativeSections.get(fw), templateMode, deviceDetails, scriptEvidence, evidenceJsonName, evidenceMdName));
+            frameworkPaths.add(p.toString());
+        }
+        out.put("framework_paths", frameworkPaths);
+        out.put("derived_aggregate_pct", aggregate);
+        out.put("narrative_source", narrativeSource);
+        out.put("chain_status", chain.toString());
+        out.put("baseline", baselines.get(did) != null ? baselines.get(did).toMap() : Map.of());
+        return out;
+    }
+
+    private static String renderDeviceReport(String session, String deviceId,
+                                             Map<String, Object> score,
+                                             Map<String, Object> frameworks,
+                                             Map<String, List<Map<String, Object>>> evidence,
+                                             Map<String, String> sections,
+                                             String fullNarrative,
+                                             boolean templateMode,
+                                             double aggregate,
+                                             TrinetraSession.ChainVerifyResult chain,
+                                             List<String> auditUuids,
+                                             Map<String, Object> deviceDetail,
+                                             SecurityBaseline baseline,
+                                             List<Map<String, Object>> scriptEvidence,
+                                             String evidenceJsonName,
+                                             String evidenceMdName,
+                                             Set<String> filter) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("# Device Audit Report — ").append(deviceId).append(" (Session ").append(session).append(")\n\n");
+        sb.append("| Field | Value |\n|-------|-------|\n");
+        sb.append("| **Session** | ").append(cell(session)).append(" |\n");
+        sb.append("| **Device ID** | ").append(cell(deviceId)).append(" |\n");
+        sb.append("| **Vendor** | ").append(cell(TrinetraCommon.getString(deviceDetail, "vendor",
+            baseline != null ? baseline.vendor : "unknown"))).append(" |\n");
+        sb.append("| **Serial** | ").append(cell(TrinetraCommon.getString(deviceDetail, "serial_number", ""))).append(" |\n");
+        sb.append("| **Hardware** | ").append(cell(TrinetraCommon.getString(deviceDetail, "hardware_model", ""))).append(" |\n");
+        sb.append("| **OS Version** | ").append(cell(TrinetraCommon.getString(deviceDetail, "os_version", ""))).append(" |\n");
+        if (baseline != null) {
+            sb.append("| **Baseline Parser** | ").append(cell(baseline.parserVersion)).append(" |\n");
+            sb.append("| **Baseline Vendor** | ").append(cell(baseline.vendor)).append(" |\n");
+        }
+        sb.append("| **Generated** | ").append(TrinetraCommon.nowIso()).append(" |\n");
+        sb.append("| **Narrative provenance** | ").append(templateMode ? "TEMPLATE-GENERATED" : "Gemini LLM (number-validated)").append(" |\n");
+        sb.append("| **Frameworks filtered** | ").append(filter == null || filter.isEmpty() ? "all" : String.join(", ", filter)).append(" |\n\n");
+
+        sb.append("## Executive Summary (Device)\n\n");
+        sb.append("**Device mapped-check pass rate (derived): ").append(aggregate).append("%** — per-device aggregate, not certification. Historical chain retained.\n\n");
+        for (Map.Entry<String, Object> e : frameworks.entrySet()) {
+            String fw = e.getKey();
+            List<Map<String, Object>> rows = evidence.getOrDefault(fw, List.of());
+            if (rows.isEmpty()) continue;
+            Map<String, Object> fwScore = (Map<String, Object>) e.getValue();
+            sb.append("### ").append(displayName(fw)).append("\n\n");
+            sb.append("- Mapped-check pass rate (session): **").append(pctOf(fwScore)).append("%**\n");
+            long pass = rows.stream().filter(r -> {
+                Map<String, Object> entry = (Map<String, Object>) r.get("entry");
+                return "pass".equalsIgnoreCase(TrinetraCommon.getString(entry, "normalized_result", ""));
+            }).count();
+            long fail = rows.stream().filter(r -> {
+                Map<String, Object> entry = (Map<String, Object>) r.get("entry");
+                return "fail".equalsIgnoreCase(TrinetraCommon.getString(entry, "normalized_result", ""));
+            }).count();
+            sb.append("- This device: ").append(pass).append(" pass / ").append(fail).append(" fail / ").append(rows.size()).append(" total mapped\n");
+            String section = sections.get(fw);
+            if (section != null && !section.isBlank()) sb.append("\n").append(section.strip()).append("\n");
+            sb.append("\n**Evidence (device):**\n\n");
+            sb.append("| Test ID | Verdict | Finding class | Severity | Controls | Evidence |\n");
+            sb.append("|---------|---------|---------------|----------|----------|----------|\n");
+            for (Map<String, Object> row : rows) {
+                Map<String, Object> entry = (Map<String, Object>) row.get("entry");
+                String tid = TrinetraCommon.getString(entry, "test_id", "?");
+                String verdict = TrinetraCommon.getString(entry, "normalized_result", "?");
+                String fc = TrinetraFindingClassification.classifyEntry(entry);
+                String sev = resolveSeverity(tid, entry);
+                sb.append("| ").append(cell(tid)).append(" | ").append(cell(verdict)).append(" | ").append(cell(fc)).append(" | ").append(cell(sev)).append(" | ").append(cell(joinList(row.get("controls")))).append(" | ").append(cell(String.join(" | ", evidenceLinesOf(entry)))).append(" |\n");
+            }
+            sb.append("\n").append(renderRemediationSection(rows)).append("\n");
+        }
+        sb.append("---\n\n");
+        sb.append(renderScriptEvidenceSection(session, null, scriptEvidence, evidenceJsonName, evidenceMdName, false));
+        sb.append("---\n\n## Appendix\n\n");
+        sb.append("| Session | ").append(cell(session)).append(" |\n");
+        sb.append("| Device | ").append(cell(deviceId)).append(" |\n");
+        sb.append("| Chain | ").append(cell(chain.toString())).append(" |\n");
+        sb.append("| Audit UUIDs | ").append(auditUuids.isEmpty() ? "_none_" : cell(String.join("<br>", auditUuids))).append(" |\n\n");
+        sb.append(chain.intact ? "**Status: INTACT.**" : "**Status: BROKEN.**").append("\n");
+        return sb.toString();
+    }
+
+    private static String renderBaselineSection(SecurityBaseline baseline) {
+        if (baseline == null) return "\n## Baseline (vendor-neutral)\n\n_No baseline captured (legacy session — re-upload)._\n";
+        StringBuilder sb = new StringBuilder("\n## Baseline (vendor-neutral, semantic)\n\n");
+        sb.append("```json\n").append(TrinetraJson.prettyJson(baseline.toMap())).append("\n```\n");
+        return sb.toString();
+    }
+
+    private static double meanPercentageFiltered(Map<String, Object> frameworks, Map<String, List<Map<String, Object>>> filtered) {
+        if (filtered.isEmpty()) return 0.0;
+        double sum = 0; int n = 0;
+        for (String fw : filtered.keySet()) {
+            Object o = frameworks.get(fw);
+            if (o instanceof Map) { sum += pctOf((Map<?,?>)o); n++; }
+        }
+        // Device aggregate weighted by filtered rows: use simple mean of framework percentages that have device rows
+        return n == 0 ? 0.0 : sum / n;
+    }
+
     private static String renderConfigurationReviews(Map<String, Object> score) {
         StringBuilder text = new StringBuilder("\n## Configuration observations\n\n");
         text.append("Config limitation: Explicit text observations are not runtime findings or benchmark passes. Absence of a risky directive is not proof of safety. Historical verdicts are retained; re-upload to use current evaluation rules.\n\n");

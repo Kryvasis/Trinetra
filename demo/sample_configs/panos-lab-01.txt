@@ -1,0 +1,17 @@
+# PAN-OS 11.1 — Trinetra Compliance Scanner Demo
+# Device: panos-lab-01
+# Vendor: Palo Alto PAN-OS
+# OS: PAN-OS 11.1.0
+set deviceconfig system hostname panos-lab-01
+set deviceconfig system ip-address 10.10.4.1 netmask 255.255.255.0
+set deviceconfig system service disable-telnet yes
+set deviceconfig system service disable-http yes
+set deviceconfig system login-banner "Authorized access only"
+set mgt-config users admin phash $1$xyz$abc123
+set mgt-config users admin permissions role-based superuser yes
+set deviceconfig system snmp-setting access-setting version v2c
+set deviceconfig system snmp-setting access-setting community public
+set log-setting syslog 1 server 10.10.1.100 port 514
+set deviceconfig system idle-timeout 10
+# --- UNRECOGNIZED LINE (for training demo) ---
+set custom-pan-feature enable zone-trust

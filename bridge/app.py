@@ -1516,6 +1516,125 @@ def audit_report_pdf(name):
         import traceback
         return error_response(f"PDF generation failed: {e}", 500, {"trace": traceback.format_exc()})
 
+# ── GET /api/session/<name>/devices/<device_id>/pdf — Per-device PDF (PS single PDF per device) ──
+@app.route("/api/session/<name>/devices/<device_id>/pdf", methods=["GET"])
+@app.route("/api/session/<name>/devices/<device_id>/audit-report/pdf", methods=["GET"])
+@app.route("/api/session/<name>/audit-report/device/<device_id>/pdf", methods=["GET"])
+def device_audit_pdf(name, device_id):
+    if not validate_session(name) or not validate_device(device_id):
+        return error_response("invalid session or device identifier", 400)
+    fw_filter = get_framework_filter()
+    fw_arg = ",".join(fw_filter) if fw_filter else "_"
+    rc, out, err = run_java_helper("TrinetraBridgeHelper", ["device-audit-report", name, device_id, fw_arg], timeout=120)
+    if rc != 0:
+        msg = (err.strip() or out.strip()) or "device report failed"
+        if "not found" in msg.lower():
+            return error_response(msg, 404, {"stdout": out, "stderr": err})
+        return error_response(msg, 500, {"stdout": out, "stderr": err})
+    try:
+        data = json.loads(out.strip())
+        device_path = data.get("device_path") or data.get("combined_path")
+        if not device_path or not os.path.exists(device_path):
+            return error_response("device report not found after generation", 500, {"stdout": out, "stderr": err})
+        with open(device_path, "r") as f:
+            md_content = f.read()
+        rc2, out2, _ = run_java_helper("TrinetraBridgeHelper", ["status", name])
+        status_data = {}
+        if rc2 == 0:
+            try: status_data = json.loads(out2.strip())
+            except: pass
+        # Reuse PDF logic but title is device-specific
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from xml.sax.saxutils import escape as xml_escape
+        import io
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=16)
+        styles = getSampleStyleSheet()
+        title_style = styles["Heading1"]; heading_style = styles["Heading2"]; normal_style = styles["Normal"]
+        small_style = ParagraphStyle('small', parent=normal_style, fontSize=7, leading=9)
+        header_cell_style = ParagraphStyle('headerCell', parent=normal_style, fontSize=6, leading=7, textColor=colors.whitesmoke, alignment=1)
+        story = []
+        det = status_data.get("device_details", {}).get(device_id, {}) if isinstance(status_data.get("device_details"), dict) else {}
+        vendor = status_data.get("device_vendors", {}).get(device_id, det.get("vendor", "unknown")) if isinstance(status_data.get("device_vendors"), dict) else det.get("vendor", "unknown")
+        story.append(Paragraph(f"Device Audit Report — {xml_escape(device_id)} ({xml_escape(str(vendor))})", title_style))
+        story.append(Paragraph(f"Session {xml_escape(name)} — single device report. Configuration evidence assessment, not a compliance certification.", normal_style))
+        story.append(Spacer(1, 12))
+        meta = [
+            ["Session", name],
+            ["Device ID", device_id],
+            ["Vendor", str(vendor)],
+            ["Serial", str(det.get("serial_number", ""))],
+            ["Hardware", str(det.get("hardware_model", ""))],
+            ["OS Version", str(det.get("os_version", ""))],
+            ["Generated", __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00","Z")],
+            ["Chain", (status_data.get("chain", {}).get("detail", "unknown") if isinstance(status_data.get("chain"), dict) else "unknown")],
+        ]
+        t = Table(meta, colWidths=[2*__import__("reportlab.lib.units").lib.units.inch, 8*__import__("reportlab.lib.units").lib.units.inch])
+        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.grey),('FONTSIZE',(0,0),(-1,-1),8),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+        story.append(t); story.append(Spacer(1,12))
+        # Evidence table from device markdown
+        import re as _re
+        header_row = None; evidence_rows = []; col_index = {}; in_evidence=False; seen=set()
+        for line in md_content.splitlines():
+            if "| Test ID" in line or ("| Device" in line and "Vendor" in line):
+                header_row = markdown_cells(line); col_index={c.lower():i for i,c in enumerate(header_row)}; in_evidence=True; continue
+            if in_evidence and line.strip().startswith("|"):
+                if set(line.strip().replace("|","").replace("-","").replace(":","").strip())==set() or line.strip().startswith("|---") or line.strip().startswith("|--------"):
+                    continue
+                parts = markdown_cells(line)
+                if parts and parts[0].lower()=="device" and "vendor" in " ".join(parts).lower():
+                    continue
+                if len(parts)>=2 and tuple(parts) not in seen:
+                    evidence_rows.append(parts); seen.add(tuple(parts))
+            elif in_evidence and not line.strip().startswith("|"):
+                in_evidence=False
+        if evidence_rows and header_row:
+            story.append(Paragraph("Evidence — This Device Only", heading_style))
+            pdf_header=[Paragraph(f"<b>{xml_escape(h)}</b>", header_cell_style) for h in header_row[:10]]
+            table_data=[pdf_header]
+            for row in evidence_rows[:80]:
+                while len(row)<len(header_row): row.append("")
+                pdf_row=[Paragraph(xml_escape(p), small_style) for p in row[:len(header_row)]]
+                table_data.append(pdf_row)
+            ncols=len(header_row); width_map={"device":1.0,"vendor":0.9,"serial":0.9,"hardware":1.0,"os version":1.0,"test id":0.8,"verdict":0.9,"finding class":1.1,"severity":0.8,"controls":1.4}
+            col_widths=[width_map.get(h.lower(),0.9)*__import__("reportlab.lib.units").lib.units.inch for h in header_row]
+            total_w=sum(col_widths)
+            if total_w>10.5*__import__("reportlab.lib.units").lib.units.inch:
+                scale=(10.5*__import__("reportlab.lib.units").lib.units.inch)/total_w
+                col_widths=[w*scale for w in col_widths]
+            et=Table(table_data, repeatRows=1, colWidths=col_widths)
+            et.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor("#4472C4")),('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),('ALIGN',(0,0),(-1,-1),'CENTER'),('FONTSIZE',(0,0),(-1,-1),6),('GRID',(0,0),(-1,-1),0.5,colors.grey),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor("#F2F2F2")])]))
+            story.append(et); story.append(Spacer(1,12))
+        # Remediation
+        rem_lines=[l for l in md_content.splitlines() if l.startswith("Remediation:") or l.startswith("Curated Cisco")]
+        if rem_lines:
+            story.append(Paragraph("Traceable remediation (confirmed risks only)", heading_style))
+            for l in rem_lines[:60]:
+                story.append(Paragraph(xml_escape(l), small_style))
+        # Baseline section
+        if "## Baseline" in md_content:
+            story.append(Spacer(1,12)); story.append(Paragraph("Baseline (vendor-neutral)", heading_style))
+            in_baseline=False; baseline_text=[]
+            for l in md_content.splitlines():
+                if l.startswith("## Baseline"): in_baseline=True; continue
+                if in_baseline:
+                    if l.startswith("```"): continue
+                    if l.startswith("#"): break
+                    if l.strip(): baseline_text.append(l)
+                    if len(baseline_text)>40: break
+            for l in baseline_text[:40]:
+                story.append(Paragraph(xml_escape(l[:200]), small_style))
+        doc.build(story)
+        pdf_bytes=buffer.getvalue(); buffer.close()
+        from flask import Response
+        return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f"attachment; filename=audit_report_{device_id}_{name}.pdf", "Content-Length": str(len(pdf_bytes))})
+    except Exception as e:
+        import traceback
+        return error_response(f"Device PDF generation failed: {e}", 500, {"trace": traceback.format_exc()})
+
 # ── Minimal upload GUI (plain HTML/JS via Flask) ──
 @app.route("/", methods=["GET"])
 @app.route("/ui", methods=["GET"])

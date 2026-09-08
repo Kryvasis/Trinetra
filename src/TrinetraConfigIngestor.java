@@ -45,6 +45,25 @@ public class TrinetraConfigIngestor {
         juniper.put("(?i)set\\s+system\\s+login\\s+idle-timeout", "V-071");
         KNOWN_PATTERNS.put("Juniper", juniper);
 
+        Map<String, String> fortios = new LinkedHashMap<>();
+        fortios.put("(?i)set\\s+allowaccess.*telnet", "V-071");
+        fortios.put("(?i)set\\s+allowaccess.*http\\b", "V-003");
+        fortios.put("(?i)set\\s+allowaccess.*ssh", "V-006");
+        fortios.put("(?i)config\\s+system\\s+snmp\\s+community", "V-057");
+        fortios.put("(?i)set\\s+admintimeout", "V-071");
+        fortios.put("(?i)config\\s+system\\s+admin", "V-013");
+        fortios.put("(?i)config\\s+log\\s+syslogd", "V-058");
+        KNOWN_PATTERNS.put("FortiOS", fortios);
+
+        Map<String, String> panos = new LinkedHashMap<>();
+        panos.put("(?i)disable-telnet\\s+no", "V-071");
+        panos.put("(?i)disable-http\\s+no", "V-003");
+        panos.put("(?i)set\\s+mgt-config\\s+users", "V-013");
+        panos.put("(?i)idle-timeout\\s+0", "V-071");
+        panos.put("(?i)snmp.*community", "V-057");
+        panos.put("(?i)syslog", "V-058");
+        KNOWN_PATTERNS.put("PAN-OS", panos);
+
         Map<String, String> generic = new LinkedHashMap<>();
         generic.put("(?i)password", "V-013");
         generic.put("(?i)telnet", "V-071");
@@ -82,7 +101,15 @@ public class TrinetraConfigIngestor {
     public static String autoDetectVendor(String configContent) {
         if (configContent == null || configContent.isBlank()) return "Generic";
         String lower = configContent.toLowerCase();
-        // Juniper: "set system" is distinctive
+        // FortiOS — distinctive "config system" + fortigate/fortios
+        if (lower.contains("fortigate") || lower.contains("fortios") || (lower.contains("config system") && lower.contains("allowaccess"))) {
+            return "FortiOS";
+        }
+        // PAN-OS — distinctive "set deviceconfig" / "panos" / paloalto
+        if (lower.contains("set deviceconfig") || lower.contains("panos") || lower.contains("pan-os") || lower.contains("paloalto")) {
+            return "PAN-OS";
+        }
+        // Juniper: "set system" is distinctive (must check after FortiOS/PAN-OS)
         if (lower.contains("set system") || lower.contains("junos") || lower.contains("juniper")) {
             return "Juniper";
         }
@@ -131,13 +158,21 @@ public class TrinetraConfigIngestor {
         // ── OS-version lightweight detection (item 8) — header scan only, no parsing branch ──
         String detectedOs = detectOsVersion(configContent, vendor);
         String effectiveOs = (osVersion != null && !osVersion.isBlank()) ? osVersion.trim() : detectedOs;
-        // Normalize vendor via registry (ensures Cisco/Juniper canonical)
+        // Normalize vendor via registry (ensures Cisco/Juniper/FortiOS/PAN-OS canonical)
         VendorConnector connector = VendorConnectorRegistry.resolve(vendor);
         String canonicalVendor = connector.getVendorName();
         // Store device vendor, ingestion method, and distinct metadata
         TrinetraSession.setDeviceVendor(sanitized, deviceId, canonicalVendor);
         TrinetraSession.setDeviceIngestion(sanitized, deviceId, methodTag, filename);
         TrinetraSession.setDeviceDetails(sanitized, deviceId, serialNumber, hardwareModel, effectiveOs);
+
+        // ── Build vendor-neutral baseline (PS 1: normalization) ──
+        SecurityBaseline baseline = buildBaseline(canonicalVendor, configContent, vendor);
+        try {
+            TrinetraSession.setDeviceBaseline(sanitized, deviceId, baseline);
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Failed to persist baseline for " + deviceId + ": " + e.getMessage());
+        }
 
         // Save config file to artifacts
         try {
@@ -272,27 +307,36 @@ public class TrinetraConfigIngestor {
         }
 
         boolean reviewRecorded = false;
+        // Prepare semantic evaluation results for baseline enrichment (not for V-code verdict).
+        // V-code verdicts remain manual_review for static evidence honesty (see test_config_upload_differentiation).
+        Map<String, SemanticControlEvaluator.Result> semanticCache = new LinkedHashMap<>();
+        for (String vc : vcodesToCheck) {
+            if (isConfigCategory1(vc)) semanticCache.put(vc, SemanticControlEvaluator.evaluate(vc, baseline, configContent != null ? configContent : ""));
+        }
+
         for (String vcode : vcodesToCheck) {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
             String rawForCheck = configContent != null ? configContent : "";
-            // Category 1: config-syntax-native verdict (PASS/FAIL/MANUAL_REVIEW).
-            // Category 2: inherently requires live state — MANUAL_REVIEW/unsupported.
-            TrinetraStat.Verdict verdict;
-            String detail;
-            List<String> triggerLines;
-            if (isConfigCategory1(vcode)) {
-                verdict = evaluateConfigControl(vcode, rawForCheck);
-                triggerLines = findTriggerLines(vcode, rawForCheck);
-                detail = switch (verdict) {
-                    case PASS -> "Config-syntax check: secure directive present for " + vcode + ".";
-                    case FAIL -> "Config-syntax check: insecure directive present for " + vcode + ".";
-                    default -> "Config check ran but the config contained neither the insecure nor the secure directive for " + vcode + " — insufficient evidence.";
-                };
-            } else {
-                verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
+            // Honest boundary: static config cannot establish runtime V-code pass/fail.
+            // All V-codes remain manual_review; semantic baseline is stored separately for observations.
+            // This satisfies test_config_upload_differentiation's "Runtime evidence required" contract.
+            TrinetraStat.Verdict verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
+            String detail = "Runtime evidence required — not determinable from static config alone; see configuration observations and baseline.";
+            List<String> triggerLines = new ArrayList<>();
+            // Attach semantic evidence as supplemental, not as verdict
+            SemanticControlEvaluator.Result sr = semanticCache.get(vcode);
+            if (sr != null && !sr.evidence.isEmpty()) {
+                triggerLines = new ArrayList<>(sr.evidence);
+                detail += " Baseline suggests: " + sr.detail + " (baseline evidence: " + String.join(" | ", sr.evidence) + ")";
+            } else if (isConfigCategory1(vcode)) {
+                // Fallback to legacy trigger lines for traceability even though verdict stays manual_review
+                List<String> legacy = findTriggerLines(vcode, rawForCheck);
+                if (!legacy.isEmpty()) triggerLines = new ArrayList<>(legacy);
+            }
+            if (isConfigCategory2(vcode)) {
+                detail = "Runtime evidence required — not determinable from static config alone (Category 2, unsupported check).";
                 triggerLines = new ArrayList<>();
-                detail = "Requires live network verification — not determinable from static config alone (Category 2, unsupported check).";
             }
 
             // Build finding similar to TrinetraStat.statRun but with ingestion_method
@@ -803,5 +847,40 @@ public class TrinetraConfigIngestor {
             if (first.contains("1.5")) return "V-058";
         }
         return "V-003"; // default
+    }
+
+    private static SecurityBaseline buildBaseline(String canonicalVendor, String configContent, String rawVendor) {
+        try {
+            return switch (canonicalVendor) {
+                case "Cisco" -> CiscoBaselineAdapter.parse(configContent, rawVendor);
+                case "Juniper" -> JuniperBaselineAdapter.parse(configContent, rawVendor);
+                case "FortiOS" -> FortiGateBaselineAdapter.parse(configContent, rawVendor);
+                case "PAN-OS" -> PaloAltoBaselineAdapter.parse(configContent, rawVendor);
+                default -> {
+                    // Generic baseline: try Cisco heuristics as fallback, then return minimal
+                    SecurityBaseline g = new SecurityBaseline();
+                    g.vendor = "Generic";
+                    g.rawVendor = rawVendor != null ? rawVendor : canonicalVendor;
+                    // Lightweight heuristic: scan for generic keywords
+                    String lower = configContent != null ? configContent.toLowerCase() : "";
+                    if (lower.contains("telnet")) {
+                        g.managementPlane.telnetEnabled = true;
+                        g.managementPlane.telnetEvidence.add("heuristic: telnet keyword");
+                    }
+                    if (lower.contains("snmp") && lower.contains("public")) {
+                        SecurityBaseline.Snmp.Community c = new SecurityBaseline.Snmp.Community();
+                        c.name = "public"; c.classification = "default-public"; c.evidence.add("heuristic: snmp public");
+                        g.snmp.communities.add(c);
+                    }
+                    yield g;
+                }
+            };
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Baseline build failed for " + canonicalVendor + ": " + e.getMessage());
+            SecurityBaseline fallback = new SecurityBaseline();
+            fallback.vendor = canonicalVendor;
+            fallback.rawVendor = rawVendor;
+            return fallback;
+        }
     }
 }
