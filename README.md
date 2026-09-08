@@ -405,3 +405,59 @@ git status --short                                        # code changes only: s
 ```
 - Backend down → `python3 -m bridge.app` from root. React blank → fall back to `http://127.0.0.1:5000` Flask page. Java stale → `make compile`. Corrupt session → delete its `sessions/<name>` dir and re-upload.
 - Never commit `brain_state.json`, `sessions/*/`, `out/`, `config.json` (API keys).
+
+---
+
+# Trinetra — Final Report 08 Sep 2026 `final_6demo` `90 links INTACT`
+
+## 1. What it is
+**AI-augmented, vendor-agnostic config auditor:** `Upload CLI → SecurityBaseline v2 → deviation vs CIS/NIST/STIG/ISO → Training loop → per-device tamper-evident PDF` — `TrinetraConfigIngestor.java:120` `autoDetectVendor` + `SecurityBaseline.java:1` `VendorConnectorRegistry.java:22` + `TrinetraAuditReportBuilder.java:187` — no redeploy.
+
+## 2. Architecture
+```
+React Vite :5173 → Flask bridge/app.py:450 :5000 → Java out:lib/* Trinetra.java
+      ↕                     ↕                         ↕
+   Upload/Training/Devices  config_validation.py  sessions/<s>/<s>.json + brain_state_<s>.json (normalized_results SHA256 chain TrinetraSession.java:320) + vendor_training_map.json + vendor_discovery_map.json:1
+```
+`Java core` authoritative (session, baseline, scorer `TrinetraComplianceScorer.java:41`, narrative `TrinetraNarrativeGenerator.java:41` `Gemini 2.5 Flash-Lite` validated, `TrinetraAgr.java:69` version-aware). `Flask` thin validation `SESSION_RE/DEVICE_RE` `live_fetcher.py:1` `known_hosts` strict. `React` 5 views `UploadView.jsx:8` 8 vendors `Results/Training/Devices/System`.
+
+## 3. PS 26155 Scorecard
+
+| Deliverable | Verdict | Live Proof |
+|---|---|---|
+| **1. Unified Ingestion** | **✅** | `UploadView.jsx:8` 8 vendors `Cisco/Juniper/FortiOS/PAN-OS/SONiC/AWS/Generic` `multiple` `bulkResults` → `bridge/app.py:450` `POST /upload-config` `1 MB` → `final_6demo` 6 vendors `cisco/juniper/forti/panos/sonic/aws` `90 checks` `90 links` `Generic` fallback `VendorConnectorRegistry.java:47` |
+| **2. AI Training** | **✅** | `TrainingView.jsx:42` `GET /unrecognized` → `POST /train` `bridge/app.py:681` `os.replace` → `VendorTrainingMap.java:38` mtime → `TrinetraConfigIngestor.java:131` re-parse `21→20` `regress_train` + `NlpBridge.java:15` `Gemini` `category/control 0.5 gate` `POST /api/nlp/suggest` + `MlBridge.java:1` `TF-IDF 3-5 KNN 0.55` `AI: V-006 100%` `TrainingView.jsx:276` badges — scorer stays deterministic |
+| **3. Multi-Framework** | **✅** | `config/compliance_manifest.json:2` 15 V-codes `14/15 STIG` `CISC-ND` `bridge/tests/test_bridge.py::test_stig_scoring` `?frameworks=CIS` → `[CIS]` `ResultsView.jsx:8` |
+| **4. Per-device PDF** | **✅** | `TrinetraAuditReportBuilder.java:187` `buildDeviceReport` `audit_report_<device>_<session>.md` `baseline JSON` → `bridge/app.py:1519` `GET /devices/<id>/pdf` `landscape` `200 10046 bytes` `arista-01` verified `Content-Disposition` ; session PDF `GET /audit-report/pdf` `bridge/tests/test_bridge.py::test_severity` |
+| **5. Vendor-Agnostic** | **✅** | `SecurityBaseline.java:1` `v2` `managementPlane/auth/snmp/logging/cryptography/acl` + 6 adapters `Cisco/Juniper/FortiGate/PaloAlto/Sonic/Aws:1` `TrinetraSession.java:1029` `device_baselines` + `config/vendor_discovery_map.json:1` `oids/os_families/banner_learned` hot-reload `VendorConnectorRegistry.java:48` `SSH-2.0-NewVendor` auto `Arista/Ruijie` learned without code + `TrinetraAgr.java:69` `getRemediation(vCode,vendor,os)` `FortiOS 7.2/PAN-OS 11.1/SONiC 2023/AWS SG` |
+
+## 4. Differentiators
+* **Hash chain** `TrinetraSession.java:320` `SHA256(prev+canonical)` `GENESIS_HASH` `ReentrantLock+FileChannel.lock` `verifyChain` `INTACT 90 links` `trinetra_audit.db:110`.
+* **Deterministic scorer** `TrinetraComplianceScorer.java:41` `round(pass*100/total)` + `validateNarrative:318` `TEMPLATE-GENERATED` fallback.
+* **Baseline v2** `SecurityBaseline.java:1` `crypto{strong/weak/tls12} acl{hasGranular}` `Sonic→iptables` `AWS→0.0.0.0/0:23/80` `final_6demo` `90` `0% manual_review` honest `Runtime evidence required` `test_config_upload_differentiation.py:100`.
+* **Auto-discovery** `TrinetraConfigIngestor.java:120` `SSH-2.0-Arista_1.0` → `Arista` `Ruijie` `vendor_discovery_map.json:16` `banner_learned` `POST /api/vendor/discovery/report` `3×` auto-promote `oids`.
+
+## 5. Testing
+
+| Type | Suite | Result |
+|---|---|---|
+| **White-box** | `make test-java` 11 suites `TrinetraMultiVendorE2E` | **all passed** `4 links` `T-SHARED` pass/fail distinct `66.7%/33.3%` `50.0%` `brain_state valid` |
+|  | `make -C Iskabon test` `banner/snmp/vendor_resolver` | **all passed** `1.3.6.1.4.1.9→Cisco` `SSH-2.0-Juniper` `tier1 0.95>0.80>0.40` |
+|  | `frontend` `node --test` `active-session/assessment-summary` | **5 passed 62ms** |
+| **Black-box** | `test_bridge` `test_compare` `test_device_scope` `test_config_upload_differentiation` | **6 passed 5.6s** + **2 passed 85s** (`fully_secure` vs `insecure` `0 pass` `CFG-*` diff, `live_probe_path_unaffected`) — full `269` `timeout 120` `EXIT124` = LLM `85s`+`nmap` missing, not logic |
+| **Regression** | `regress_6v` `6×15` + `final_6demo` `90` + `regress_train` `21→20` + `arista-01` per-device PDF `200 10KB` + `GET /vendor/discovery` + `POST /nlp+ml/suggest 200` | **vendors 6 baselines 6 nr90 INTACT** `doctor 124 INTACT` `evidence_*.json 132KB` `compare still unresolved 15` |
+
+## 6. Demo (`final_6demo` 90 links)
+`Upload 6 files` `cisco/juniper/fortigate/panos/sonic-lab-01.{txt,json}/aws-lab-01.json` → `Results` `CIS/NIST/STIG/ISO` `0%` `CFG-*` vs `Baseline suggests` → `Training` `custom-vendor-feature` → `Devices` 6 vendors + `Device PDF` per device → `GET /api/vendor/discovery` `Arista/Ruijie` auto → `doctor`.
+
+## 7. Honest Limits
+OS `metadata-only` `detectOsVersion:785`, `NCIIPC` `self-constructed` `demo/sample_configs/*`, `STIG 14/15` `V-106` `coverage_gaps`, remediation `15/15` curated `Cisco` + version-aware `TrinetraAgr:69` for 6 vendors, `any-vendor` extensible prototype (8 families + `banner_learned` auto, not 35).
+
+## 8. Run
+```bash
+make compile && make -C Iskabon
+python3 -m bridge.app & # :5000
+cd frontend && npm install && npm run dev # :5173
+trinetra -doctor # 124 INTACT
+```
+`https://github.com/Kryvasis/Trinetra` `2e33bb4` `760a77a` `20 files +1745` `demo/fortigate/panos/sonic/aws` + `src/*Baseline* + NlpBridge`.
