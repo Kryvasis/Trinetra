@@ -1103,9 +1103,85 @@ def train_vendor(name):
                     except OSError:
                         pass
         # Invalidate Java cache by touching file (VendorTrainingMap.load checks mtime)
+        # Retrain lightweight ML (TF-IDF + KNN) in parallel — never fails the training request
+        try:
+            import ml_knn
+            ml_knn.train()
+        except ImportError:
+            try:
+                from bridge.ml_knn import train as _ml_train
+                _ml_train()
+            except Exception:
+                pass
+        except Exception:
+            pass
         return jsonify({"message": "training entry added", "entry": new_entry, "total_entries": len(data_json["entries"])}), 201
     except Exception as e:
         return error_response(f"failed to add training entry: {e}", 500)
+
+# ── Lightweight ML advisory endpoints (KNN TF-IDF, parallel to regex) ──
+@app.route("/api/ml/suggest", methods=["POST"])
+def ml_suggest():
+    data = request.get_json(silent=True) or {}
+    line = data.get("line") or data.get("text") or ""
+    if not isinstance(line, str) or not line.strip():
+        return error_response("line is required", 400)
+    # vendor hint optional — currently unused but kept for future per-vendor models
+    vendor = data.get("vendor") or data.get("vendor_hint") or ""
+    try:
+        try:
+            from bridge.ml_knn import predict
+        except ImportError:
+            from ml_knn import predict
+        pred = predict(line, vendor if isinstance(vendor, str) else None)
+        return jsonify({"line": line.strip(), "ml": pred, "model": "tfidf_char3-5_knn_k3_cosine", "deterministic_fallback": "regex DecisionEngine remains authoritative"}), 200
+    except Exception as e:
+        return jsonify({"line": line.strip(), "ml": None, "error": str(e)[:200]}), 200
+
+@app.route("/api/ml/train", methods=["POST"])
+def ml_train():
+    try:
+        try:
+            from bridge.ml_knn import train
+        except ImportError:
+            from ml_knn import train
+        ok = train(force=True)
+        # report corpus size
+        from pathlib import Path as _P2
+        import json as _j2
+        corp = _P2(TRINETRA_ROOT) / "config" / "ml_corpus.json"
+        n = len(_j2.loads(corp.read_text())) if corp.exists() else 0
+        return jsonify({"retrained": bool(ok), "corpus_size": n, "model": "tfidf_char3-5_knn_k3_cosine"}), 200
+    except Exception as e:
+        return error_response(f"ml train failed: {e}", 500)
+
+@app.route("/api/ml/status", methods=["GET"])
+def ml_status():
+    try:
+        from pathlib import Path as _P3
+        import json as _j3
+        has_sklearn = True
+        try:
+            import sklearn
+        except ImportError:
+            has_sklearn = False
+        corp = _P3(TRINETRA_ROOT) / "config" / "ml_corpus.json"
+        model = _P3(TRINETRA_ROOT) / "config" / "ml_model.pkl"
+        vec = _P3(TRINETRA_ROOT) / "config" / "ml_vectorizer.pkl"
+        n = len(_j3.loads(corp.read_text())) if corp.exists() else 0
+        return jsonify({
+            "has_sklearn": has_sklearn,
+            "corpus_size": n,
+            "model_exists": model.exists(),
+            "vectorizer_exists": vec.exists(),
+            "model_path": str(model),
+            "threshold": 0.55,
+            "k": 3,
+            "analyzer": "char_wb 3-5 cosine",
+            "fallback": "regex DecisionEngine authoritative, ML advisory only"
+        }), 200
+    except Exception as e:
+        return error_response(f"ml status failed: {e}", 500)
 
 # ── GET /api/session/<name>/audit-report/pdf — PDF export ──
 @app.route("/api/session/<name>/audit-report/pdf", methods=["GET"])

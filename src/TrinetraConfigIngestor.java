@@ -218,7 +218,34 @@ public class TrinetraConfigIngestor {
             }
         }
 
-        // Store unrecognized lines per device
+        // ── Lightweight ML parallel path (KNN TF-IDF char 3-5 cosine) — advisory, never overwrites regex ──
+        // Runs alongside regex DecisionEngine; predictions with confidence>=THRESH are surfaced as ml-advisory
+        // findings and as UI suggestions in Training view. No removal, no authority change.
+        Map<String, MlBridge.MlPrediction> mlAdvisory = new LinkedHashMap<>();
+        Map<String, String> mlLineToVcode = new LinkedHashMap<>();
+        try {
+            if (!unrecognized.isEmpty()) {
+                Map<String, MlBridge.MlPrediction> preds = MlBridge.predictBatch(unrecognized);
+                for (Map.Entry<String, MlBridge.MlPrediction> e : preds.entrySet()) {
+                    String line = e.getKey();
+                    MlBridge.MlPrediction p = e.getValue();
+                    if (p != null && p.confidence >= 0.55) {
+                        mlAdvisory.put(line, p);
+                        String lbl = p.label != null ? p.label.trim() : "";
+                        String vc = null;
+                        if (lbl.matches("(?i)V-\\d+.*")) {
+                            // ML already predicted a V-code (e.g. V-006) — use it directly
+                            vc = lbl.replaceAll("(?i).*?(V-\\d+).*", "$1").toUpperCase();
+                        } else {
+                            vc = mapCategoryToVcode(lbl, List.of(lbl));
+                        }
+                        if (vc != null) mlLineToVcode.put(line, vc);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // Store unrecognized lines per device (regex truth — ML advisory is separate)
         TrinetraSession.setUnrecognizedLines(sanitized, deviceId, unrecognized);
 
         // Run compliance checks against the config content as a whole
@@ -354,11 +381,65 @@ public class TrinetraConfigIngestor {
             uncFinding.put("unrecognized_lines", new ArrayList<>(unrecognized));
             uncFinding.put("status", "manual_review");
             uncFinding.put("success", false);
+            // Attach ML advisory (if any) for Training UI without changing verdict
+            if (!mlAdvisory.isEmpty()) {
+                List<Map<String, Object>> mlList = new ArrayList<>();
+                for (Map.Entry<String, MlBridge.MlPrediction> me : mlAdvisory.entrySet()) {
+                    Map<String, Object> mi = TrinetraCommon.newMap();
+                    mi.put("line", me.getKey());
+                    mi.put("ml_label", me.getValue().label);
+                    mi.put("ml_confidence", me.getValue().confidence);
+                    mi.put("ml_source", me.getValue().source);
+                    mi.put("ml_suggested_vcode", mlLineToVcode.get(me.getKey()));
+                    mlList.add(mi);
+                }
+                uncFinding.put("ml_advisory", mlList);
+            }
             TrinetraSession.appendFinding(sanitized, uncFinding);
             try {
                 TrinetraEvidence.recordConfigEvidence(sanitized, uncFinding);
             } catch (Exception ex) {
                 TrinetraCommon.logWarn("Evidence bundle write failed for UNRECOGNIZED: " + ex.getMessage());
+            }
+        }
+
+        // Persist ML advisory as separate advisory findings (parallel, never authoritative)
+        // Each ML-predicted line becomes a manual_review advisory with ml_suggested_vcode — training can approve
+        if (!mlAdvisory.isEmpty()) {
+            for (Map.Entry<String, MlBridge.MlPrediction> me : mlAdvisory.entrySet()) {
+                String line = me.getKey();
+                MlBridge.MlPrediction pred = me.getValue();
+                String suggestedVcode = mlLineToVcode.get(line);
+                if (suggestedVcode == null) continue;
+                TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(suggestedVcode);
+                if (def == null) continue;
+                Map<String, Object> mlFinding = TrinetraCommon.newMap();
+                mlFinding.put("finding_id", UUID.randomUUID().toString());
+                mlFinding.put("v_code", suggestedVcode + "_ML");
+                mlFinding.put("test_code", suggestedVcode + "_ML");
+                mlFinding.put("v_name", def.name + " (ML-suggested)");
+                mlFinding.put("target", deviceId);
+                mlFinding.put("device_id", deviceId);
+                mlFinding.put("vendor", canonicalVendor);
+                mlFinding.put("ingestion_method", methodTag);
+                mlFinding.put("tool", "ml_knn");
+                mlFinding.put("script", "ml_knn:advisory");
+                mlFinding.put("started_at", TrinetraCommon.nowIso());
+                mlFinding.put("ended_at", TrinetraCommon.nowIso());
+                mlFinding.put("exit_code", 0);
+                mlFinding.put("verdict", "manual_review");
+                mlFinding.put("verdict_detail", "ML advisory (TF-IDF char 3-5 + KNN cosine): line \"" + line.substring(0, Math.min(80, line.length())) + "\" → " + pred.label + " (" + String.format("%.2f", pred.confidence) + ") → " + suggestedVcode + " — human approval required via Training; not counted in compliance %");
+                mlFinding.put("ml_source_line", line);
+                mlFinding.put("ml_label", pred.label);
+                mlFinding.put("ml_confidence", pred.confidence);
+                mlFinding.put("ml_source", pred.source);
+                mlFinding.put("ml_suggested_vcode", suggestedVcode);
+                mlFinding.put("status", "manual_review");
+                mlFinding.put("success", false);
+                mlFinding.put("raw_output", line);
+                mlFinding.put("finding_class", "unsupported check");
+                // Not appended to normalized_results — advisory only, keeps scorer deterministic
+                TrinetraSession.appendFinding(sanitized, mlFinding);
             }
         }
 

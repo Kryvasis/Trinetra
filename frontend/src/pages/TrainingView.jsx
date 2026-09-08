@@ -27,6 +27,8 @@ export default function TrainingView({ api, toast }) {
   const [osVersionTrain, setOsVersionTrain] = useState('')
   const [training, setTraining] = useState(false)
   const [trainErrors, setTrainErrors] = useState({})
+  const [mlSuggestions, setMlSuggestions] = useState({}) // line -> {label, confidence, source}
+  const [mlStatus, setMlStatus] = useState(null)
   const abortRef = useRef(null)
   useEffect(() => () => { abortRef.current?.abort(); abortRef.current = null }, [])
 
@@ -36,6 +38,30 @@ export default function TrainingView({ api, toast }) {
       setInputSession(sessionParam)
     }
   }, [sessionParam, session])
+
+  const fetchMlSuggestions = async (lines) => {
+    if (!lines || lines.length === 0) { setMlSuggestions({}); return }
+    // batch up to 20 lines for quick UI
+    const slice = lines.slice(0, 20)
+    try {
+      const results = await Promise.all(slice.map(async item => {
+        try {
+          const r = await fetch(`${api}/ml/suggest`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ line: item.line, vendor }) })
+          const j = await r.json()
+          return [item.line, j.ml || null]
+        } catch { return [item.line, null] }
+      }))
+      const map = {}
+      for (const [k,v] of results) if (v) map[k]=v
+      setMlSuggestions(map)
+    } catch { setMlSuggestions({}) }
+    // also fetch model status for footer
+    try {
+      const r = await fetch(`${api}/ml/status`)
+      const j = await r.json()
+      setMlStatus(j)
+    } catch {}
+  }
 
   const fetchUnrecognized = async (sessName) => {
     if (training) return
@@ -68,6 +94,8 @@ export default function TrainingView({ api, toast }) {
         toast('No unrecognized lines in this session', 'info')
       } else {
         toast(`Found ${lines.length} unrecognized line(s)`, 'info')
+        // parallel ML advisory (TF-IDF + KNN) — never blocks, fills suggestion badges
+        fetchMlSuggestions(lines)
       }
     } catch (err) {
       if (abortRef.current !== controller) return
@@ -168,8 +196,19 @@ export default function TrainingView({ api, toast }) {
   const selectLine = (line) => {
     setSelectedLine(line)
     setPattern(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\.\*/g, '.*'))
-    setCategory('')
-    setControlMapping('')
+    const ml = mlSuggestions[line]
+    if (ml && ml.label) {
+      setCategory(ml.label)
+      // if label looks like V-code, keep controls empty for user to confirm; else treat as category
+      if (/^V-\d+/.test(ml.label)) {
+        setControlMapping(ml.label)
+        setCategory('ML-suggested: ' + ml.label)
+      }
+      toast(`AI suggests: ${ml.label} (${Math.round(ml.confidence*100)}% via ${ml.source}) — verify before adding`, 'info')
+    } else {
+      setCategory('')
+      setControlMapping('')
+    }
     setRemediation('')
     setOsVersionTrain('')
     setTrainErrors({})
@@ -234,7 +273,9 @@ export default function TrainingView({ api, toast }) {
               <h2 style={{ fontSize: 16, fontWeight: 600 }}>Unrecognized Lines</h2>
               <span className="badge badge-review">{unrecognized.length}</span>
             </div>
-            {unrecognized.map((u, i) => (
+            {unrecognized.map((u, i) => {
+              const ml = mlSuggestions[u.line]
+              return (
               <button
                 type="button"
                 disabled={training}
@@ -250,8 +291,10 @@ export default function TrainingView({ api, toast }) {
               >
                 <span style={{ fontSize: 11, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{u.device}</span>
                 <span className="line-text">{u.line}</span>
+                {ml && <span className="badge" style={{ marginLeft:8, background:'var(--surface3)', fontSize:10 }} title={`ML: ${ml.source} conf ${ml.confidence}`}>AI: {ml.label} {Math.round(ml.confidence*100)}%</span>}
               </button>
-            ))}
+              )
+            })}
           </div>
 
           {/* Right: training form */}
@@ -363,6 +406,9 @@ export default function TrainingView({ api, toast }) {
             Training entries are stored in <code>config/vendor_training_map.json</code> and take effect on the next config upload.
             Re-upload the same config to see the corrected unrecognized count.
           </p>
+          {mlStatus && <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>
+            ML: {mlStatus.has_sklearn ? `TF-IDF char 3-5 + KNN(k=${mlStatus.k}, cosine) — corpus ${mlStatus.corpus_size}, model ${mlStatus.model_exists ? 'ready' : 'training'}` : 'sklearn not installed — regex only fallback'} · Threshold 0.55 · Deterministic scorer remains authoritative, ML is advisory
+          </p>}
         </div>
       )}
     </div>
