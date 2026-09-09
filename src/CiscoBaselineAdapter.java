@@ -54,11 +54,13 @@ public class CiscoBaselineAdapter {
             if (ll.matches(".*ip\\s+ssh\\s+version\\s+1\\b.*") && !isNo) {
                 b.managementPlane.sshEnabled = true;
                 b.managementPlane.sshVersion = "1";
+                b.managementPlane.sshEvidence.clear();
                 b.managementPlane.sshEvidence.add(evidence);
                 b.evidenceLines.add(evidence);
             } else if (ll.matches(".*ip\\s+ssh\\s+version\\s+2\\b.*") && !isNo) {
                 b.managementPlane.sshEnabled = true;
                 b.managementPlane.sshVersion = "2";
+                b.managementPlane.sshEvidence.clear();
                 b.managementPlane.sshEvidence.add(evidence);
                 b.evidenceLines.add(evidence);
             } else if (ll.contains("ip ssh") && !isNo && b.managementPlane.sshEnabled == null) {
@@ -68,10 +70,12 @@ public class CiscoBaselineAdapter {
             // Telnet transport
             if (ll.matches(".*transport\\s+input\\s+.*\\btelnet\\b.*") && !isNo) {
                 b.managementPlane.telnetEnabled = true;
+                b.managementPlane.telnetEvidence.clear();
                 b.managementPlane.telnetEvidence.add(evidence);
                 b.evidenceLines.add(evidence);
             } else if (ll.contains("transport input ssh") && !ll.contains("telnet")) {
-                if (b.managementPlane.telnetEnabled == null) b.managementPlane.telnetEnabled = false;
+                b.managementPlane.telnetEnabled = false;
+                b.managementPlane.telnetEvidence.clear();
                 b.managementPlane.telnetEvidence.add(evidence);
             }
 
@@ -80,10 +84,12 @@ public class CiscoBaselineAdapter {
                 if (isNo) {
                     if (b.managementPlane.httpEnabled == null || b.managementPlane.httpEnabled) {
                         b.managementPlane.httpEnabled = false;
+                        b.managementPlane.httpEvidence.clear();
                         b.managementPlane.httpEvidence.add(evidence);
                     }
                 } else {
                     b.managementPlane.httpEnabled = true;
+                    b.managementPlane.httpEvidence.clear();
                     b.managementPlane.httpEvidence.add(evidence);
                     b.evidenceLines.add(evidence);
                 }
@@ -96,6 +102,7 @@ public class CiscoBaselineAdapter {
             Matcher mTimeout = Pattern.compile("exec-timeout\\s+(\\d+)\\s+(\\d+)", Pattern.CASE_INSENSITIVE).matcher(line);
             if (mTimeout.find()) {
                 b.managementPlane.execTimeout = mTimeout.group(1) + " " + mTimeout.group(2);
+                b.managementPlane.execTimeoutEvidence.clear();
                 b.managementPlane.execTimeoutEvidence.add(evidence);
             }
 
@@ -103,11 +110,28 @@ public class CiscoBaselineAdapter {
             if (ll.matches("^\\s*ip\\s+source-route\\s*$")) {
                 if (isNo) {
                     b.managementPlane.sourceRouteEnabled = false;
+                    b.managementPlane.sourceRouteEvidence.clear();
                     b.managementPlane.sourceRouteEvidence.add(evidence);
                 } else {
                     b.managementPlane.sourceRouteEnabled = true;
+                    b.managementPlane.sourceRouteEvidence.clear();
                     b.managementPlane.sourceRouteEvidence.add(evidence);
                 }
+            }
+
+            // Layer-2 trunk negotiation. Processed in source order so an
+            // explicit later hardening command wins, matching IOS config
+            // semantics for repeated interface directives.
+            if (!isNo && (ll.matches(".*switchport\\s+mode\\s+dynamic\\s+(auto|desirable).*"))) {
+                b.networkSegmentation.dynamicTrunkingEnabled = true;
+                b.networkSegmentation.evidence.clear();
+                b.networkSegmentation.evidence.add(evidence);
+                b.evidenceLines.add(evidence);
+            } else if (!isNo && (ll.matches(".*switchport\\s+nonegotiate.*")
+                    || ll.matches(".*switchport\\s+mode\\s+access.*"))) {
+                b.networkSegmentation.dynamicTrunkingEnabled = false;
+                b.networkSegmentation.evidence.clear();
+                b.networkSegmentation.evidence.add(evidence);
             }
 
             // AAA new-model

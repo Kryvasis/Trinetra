@@ -81,6 +81,8 @@ def test_training_rule_requires_independent_review(tmp_path, monkeypatch):
         "author": "analyst-one",
         "source_reference": "https://www.cisco.com/",
         "confidence": 0.8,
+        "positive_examples": ["service timestamps log datetime msec"],
+        "negative_examples": ["hostname edge-01"],
     })
     assert created.status_code == 201
     entry = created.get_json()["entry"]
@@ -104,6 +106,7 @@ def test_training_rule_requires_independent_review(tmp_path, monkeypatch):
     assert approved_entry["status"] == "active"
     assert approved_entry["reviewer"] == "analyst-two"
     assert approved_entry["version"] == 2
+    assert approved_entry["regression"] == {"passed": True, "matching": 1, "non_matching": 1}
     saved = json.loads((config / "vendor_training_map.json").read_text(encoding="utf-8"))
     assert saved["entries"][0]["status"] == "active"
 

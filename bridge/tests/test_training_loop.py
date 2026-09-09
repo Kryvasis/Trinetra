@@ -1,10 +1,25 @@
 import json
 import uuid
 import shutil
+import pytest
 from pathlib import Path
 from bridge.app import app
 
-def test_training_loop_no_code_change():
+ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture
+def training_files_guard():
+    map_path = ROOT / "config" / "vendor_training_map.json"
+    corpus_path = ROOT / "config" / "ml_corpus.json"
+    original_map = map_path.read_bytes()
+    original_corpus = corpus_path.read_bytes()
+    yield map_path, corpus_path
+    map_path.write_bytes(original_map)
+    corpus_path.write_bytes(original_corpus)
+
+
+def test_training_loop_no_code_change(training_files_guard):
     """
     End-to-end training loop proof:
     1. Feed a config line no existing connector recognizes -> flagged unrecognized
@@ -12,6 +27,7 @@ def test_training_loop_no_code_change():
     3. Re-parse same line -> correctly categorized, zero code changes
     """
     client = app.test_client()
+    _ = training_files_guard
     sess = f"train_loop_{uuid.uuid4().hex[:6]}"
     # Create session
     resp = client.post("/api/session", json={"name": sess, "target": "cisco-train-01"})
@@ -39,16 +55,30 @@ def test_training_loop_no_code_change():
     unrec_before = resp.get_json()["unrecognized_lines"]
     assert custom_line in unrec_before
 
-    # Simulate training: add entry to training map
+    # Save a governed normalization rule as a draft.
     resp = client.post(f"/api/session/{sess}/train", json={
         "vendor": "Cisco",
         "pattern": pattern,
         "security_category": "Custom Training Test",
         "control_mapping": ["CIS-v8-4.6"],
-        "remediation": "no my-unique-train-feature"
+        "remediation": "no my-unique-train-feature",
+        "v_code": "V-003",
+        "baseline_field": "management_plane.http_enabled",
+        "value": "true",
+        "author": "training-author",
+        "positive_examples": [custom_line],
+        "negative_examples": ["hostname R1"],
     })
     assert resp.status_code == 201, resp.get_json()
     assert resp.get_json()["entry"]["pattern"] == pattern
+    entry = resp.get_json()["entry"]
+
+    # A different operator runs regression examples before activation.
+    resp = client.post(f"/api/training-rules/{entry['rule_id']}/review", json={
+        "action": "approve", "reviewer": "training-reviewer"
+    })
+    assert resp.status_code == 200, resp.get_json()
+    assert resp.get_json()["entry"]["regression"]["passed"] is True
 
     # Re-parse same line -> should now be recognized
     resp = client.post(f"/api/session/{sess}/upload-config", json={
@@ -64,15 +94,5 @@ def test_training_loop_no_code_change():
     resp = client.get(f"/api/session/{sess}/unrecognized?device_id=cisco-train-01")
     assert custom_line not in resp.get_json()["unrecognized_lines"]
 
-    # Cleanup: remove training entry
-    map_path = Path("config/vendor_training_map.json")
-    if map_path.exists():
-        data = json.loads(map_path.read_text())
-        data["entries"] = [e for e in data["entries"] if e.get("pattern") != pattern]
-        map_path.write_text(json.dumps(data, indent=2))
-
-    # Cleanup session
-    shutil.rmtree(Path("sessions") / sess, ignore_errors=True)
-    # Also clean up any other test sessions
-    for p in Path("sessions").glob("train_loop_*"):
-        shutil.rmtree(p, ignore_errors=True)
+    # Cleanup session using the repository root, independent of pytest's cwd.
+    shutil.rmtree(ROOT / "sessions" / sess, ignore_errors=True)

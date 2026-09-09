@@ -20,6 +20,7 @@ public class SecurityBaseline {
     public Logging logging = new Logging();
     public Cryptography cryptography = new Cryptography();
     public Acl acl = new Acl();
+    public NetworkSegmentation networkSegmentation = new NetworkSegmentation();
     public List<String> evidenceLines = new ArrayList<>();
     public String parserVersion = "baseline-v2";
 
@@ -110,6 +111,88 @@ public class SecurityBaseline {
         }
     }
 
+    public static class NetworkSegmentation {
+        /** True when dynamic trunk negotiation is explicitly enabled. */
+        public Boolean dynamicTrunkingEnabled;
+        /** True when a cloud rule exposes a sensitive management/data port globally. */
+        public Boolean publicSensitiveIngress;
+        public List<String> evidence = new ArrayList<>();
+    }
+
+    /**
+     * Apply a governed training-rule mutation to an allow-listed baseline field.
+     * Unknown fields and invalid values are rejected instead of using reflection.
+     */
+    public boolean applyTrainingValue(String field, String rawValue, String evidence) {
+        if (field == null || field.isBlank()) return false;
+        String value = rawValue == null ? "" : rawValue.trim();
+        Boolean bool = parseBoolean(value);
+        String safeEvidence = sanitizeEvidence(evidence);
+        switch (field.trim().toLowerCase(Locale.ROOT)) {
+            case "management_plane.ssh_enabled":
+                if (bool == null) return false;
+                managementPlane.sshEnabled = bool; managementPlane.sshEvidence.add(safeEvidence); break;
+            case "management_plane.ssh_version":
+                if (value.isBlank()) return false;
+                managementPlane.sshVersion = value; managementPlane.sshEnabled = true; managementPlane.sshEvidence.add(safeEvidence); break;
+            case "management_plane.telnet_enabled":
+                if (bool == null) return false;
+                managementPlane.telnetEnabled = bool; managementPlane.telnetEvidence.add(safeEvidence); break;
+            case "management_plane.http_enabled":
+                if (bool == null) return false;
+                managementPlane.httpEnabled = bool; managementPlane.httpEvidence.add(safeEvidence); break;
+            case "management_plane.http_secure_only":
+                if (bool == null) return false;
+                managementPlane.httpSecureOnly = bool; managementPlane.httpEvidence.add(safeEvidence); break;
+            case "management_plane.exec_timeout":
+                if (value.isBlank()) return false;
+                managementPlane.execTimeout = value; managementPlane.execTimeoutEvidence.add(safeEvidence); break;
+            case "management_plane.source_route_enabled":
+                if (bool == null) return false;
+                managementPlane.sourceRouteEnabled = bool; managementPlane.sourceRouteEvidence.add(safeEvidence); break;
+            case "authentication.aaa_enabled":
+                if (bool == null) return false;
+                authentication.aaaEnabled = bool; authentication.aaaEvidence.add(safeEvidence); break;
+            case "authentication.has_enable_secret":
+                if (bool == null) return false;
+                authentication.hasEnableSecret = bool; authentication.enableSecretEvidence.add(safeEvidence); break;
+            case "authentication.has_enable_password":
+                if (bool == null) return false;
+                authentication.hasEnablePassword = bool; authentication.enablePasswordEvidence.add(safeEvidence); break;
+            case "authentication.password_encryption_enabled":
+                if (bool == null) return false;
+                authentication.passwordEncryptionEnabled = bool; authentication.passwordEncryptionEvidence.add(safeEvidence); break;
+            case "logging.enabled":
+                if (bool == null) return false;
+                logging.enabled = bool; logging.evidence.add(safeEvidence); break;
+            case "cryptography.strong_crypto_enabled":
+                if (bool == null) return false;
+                cryptography.strongCryptoEnabled = bool; cryptography.evidence.add(safeEvidence); break;
+            case "cryptography.tls12_or_higher":
+                if (bool == null) return false;
+                cryptography.tls12OrHigher = bool; cryptography.tlsEvidence.add(safeEvidence); break;
+            case "acl.has_granular_acls":
+                if (bool == null) return false;
+                acl.hasGranularAcls = bool; acl.evidence.add(safeEvidence); break;
+            case "network_segmentation.dynamic_trunking_enabled":
+                if (bool == null) return false;
+                networkSegmentation.dynamicTrunkingEnabled = bool; networkSegmentation.evidence.add(safeEvidence); break;
+            case "network_segmentation.public_sensitive_ingress":
+                if (bool == null) return false;
+                networkSegmentation.publicSensitiveIngress = bool; networkSegmentation.evidence.add(safeEvidence); break;
+            default:
+                return false;
+        }
+        evidenceLines.add(safeEvidence);
+        return true;
+    }
+
+    private static Boolean parseBoolean(String value) {
+        if ("true".equalsIgnoreCase(value) || "enabled".equalsIgnoreCase(value) || "yes".equalsIgnoreCase(value) || "1".equals(value)) return true;
+        if ("false".equalsIgnoreCase(value) || "disabled".equalsIgnoreCase(value) || "no".equalsIgnoreCase(value) || "0".equals(value)) return false;
+        return null;
+    }
+
     /** Serialize to map for JSON persistence */
     public Map<String, Object> toMap() {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -194,6 +277,12 @@ public class SecurityBaseline {
         }
         aclMap.put("entries", aclEntries);
         m.put("acl", aclMap);
+
+        Map<String, Object> segmentation = new LinkedHashMap<>();
+        segmentation.put("dynamic_trunking_enabled", networkSegmentation.dynamicTrunkingEnabled);
+        segmentation.put("public_sensitive_ingress", networkSegmentation.publicSensitiveIngress);
+        segmentation.put("evidence", sanitizeEvidenceList(networkSegmentation.evidence));
+        m.put("network_segmentation", segmentation);
 
         m.put("evidence_lines", sanitizeEvidenceList(evidenceLines));
         return m;
@@ -302,6 +391,13 @@ public class SecurityBaseline {
                     }
                 }
             }
+        }
+        Object segmentationObj = m.get("network_segmentation");
+        if (segmentationObj instanceof Map) {
+            Map<String, Object> sm = (Map<String, Object>) segmentationObj;
+            b.networkSegmentation.dynamicTrunkingEnabled = (Boolean) sm.get("dynamic_trunking_enabled");
+            b.networkSegmentation.publicSensitiveIngress = (Boolean) sm.get("public_sensitive_ingress");
+            b.networkSegmentation.evidence = toStringList(sm.get("evidence"));
         }
         b.evidenceLines = toStringList(m.get("evidence_lines"));
         return b;

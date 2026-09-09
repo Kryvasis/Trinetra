@@ -25,6 +25,10 @@ public class FortiGateBaselineAdapter {
 
         boolean inSnmpCommunity = false;
         boolean inSyslog = false;
+        boolean inSystemInterface = false;
+        String currentEdit = "";
+        Map<String, String> interfaceAccess = new LinkedHashMap<>();
+        Map<String, String> interfaceAccessEvidence = new LinkedHashMap<>();
         Deque<String> configStack = new ArrayDeque<>();
 
         for (int idx = 0; idx < lines.size(); idx++) {
@@ -38,43 +42,27 @@ public class FortiGateBaselineAdapter {
                 configStack.push(ll);
                 if (ll.contains("snmp community")) inSnmpCommunity = true;
                 if (ll.contains("log syslogd")) inSyslog = true;
-            } else if (ll.equals("end") || ll.equals("next")) {
+                if (ll.contains("system interface")) inSystemInterface = true;
+            } else if (ll.startsWith("edit ")) {
+                currentEdit = ll.substring(5).replace("\"", "").trim();
+            } else if (ll.equals("next")) {
+                currentEdit = "";
+            } else if (ll.equals("end")) {
                 if (!configStack.isEmpty()) {
                     String popped = configStack.pop();
                     if (popped.contains("snmp community")) inSnmpCommunity = false;
                     if (popped.contains("log syslogd")) inSyslog = false;
+                    if (popped.contains("system interface")) inSystemInterface = false;
                 }
-                if (ll.equals("end")) { inSnmpCommunity = false; inSyslog = false; configStack.clear(); }
+                currentEdit = "";
             }
 
             // Interface allowaccess — maps to telnet/http/ssh
             if (ll.contains("set allowaccess")) {
-                if (ll.contains("telnet")) {
-                    b.managementPlane.telnetEnabled = true;
-                    b.managementPlane.telnetEvidence.add(evidence);
-                    b.evidenceLines.add(evidence);
-                } else {
-                    // Explicit allowaccess without telnet => telnet not enabled (hardened)
-                    if (b.managementPlane.telnetEnabled == null) {
-                        b.managementPlane.telnetEnabled = false;
-                        b.managementPlane.telnetEvidence.add(evidence);
-                    }
-                }
-                // HTTP : check for standalone http token (not https)
-                if (ll.matches(".*allowaccess.*\\bhttp\\b.*") && !ll.matches(".*allowaccess.*\\bhttps\\b.*")) {
-                    // pure http without https => insecure
-                    b.managementPlane.httpEnabled = true;
-                    b.managementPlane.httpEvidence.add(evidence);
-                    b.evidenceLines.add(evidence);
-                } else if (ll.contains("https")) {
-                    b.managementPlane.httpSecureOnly = true;
-                    if (b.managementPlane.httpEnabled == null) b.managementPlane.httpEnabled = false;
-                }
-                if (ll.contains("ssh")) {
-                    b.managementPlane.sshEnabled = true;
-                    b.managementPlane.sshEvidence.add(evidence);
-                    if (b.managementPlane.sshVersion == null) b.managementPlane.sshVersion = "2";
-                }
+                String scope = inSystemInterface && !currentEdit.isBlank()
+                    ? currentEdit : "line-" + num;
+                interfaceAccess.put(scope, ll);
+                interfaceAccessEvidence.put(scope, evidence);
             }
 
             // Config system global — idle timeout
@@ -143,6 +131,39 @@ public class FortiGateBaselineAdapter {
                     b.evidenceLines.add(evidence);
                 }
             }
+        }
+
+        // Aggregate effective per-interface allowaccess directives. Repeated
+        // directives in one interface use last-command-wins; one exposed
+        // interface still makes the device-level fact insecure.
+        if (!interfaceAccess.isEmpty()) {
+            boolean telnet = false, http = false, ssh = false, https = false;
+            for (Map.Entry<String, String> item : interfaceAccess.entrySet()) {
+                String value = item.getValue();
+                String ev = interfaceAccessEvidence.get(item.getKey());
+                if (value.matches(".*\\btelnet\\b.*")) {
+                    telnet = true;
+                    b.managementPlane.telnetEvidence.add(ev);
+                    b.evidenceLines.add(ev);
+                }
+                if (value.matches(".*\\bhttp\\b.*")) {
+                    http = true;
+                    b.managementPlane.httpEvidence.add(ev);
+                    b.evidenceLines.add(ev);
+                }
+                if (value.matches(".*\\bssh\\b.*")) {
+                    ssh = true;
+                    b.managementPlane.sshEvidence.add(ev);
+                }
+                if (value.matches(".*\\bhttps\\b.*")) https = true;
+            }
+            b.managementPlane.telnetEnabled = telnet;
+            b.managementPlane.httpEnabled = http;
+            b.managementPlane.httpSecureOnly = https && !http;
+            b.managementPlane.sshEnabled = ssh;
+            if (ssh) b.managementPlane.sshVersion = "2";
+            if (!telnet) b.managementPlane.telnetEvidence.addAll(interfaceAccessEvidence.values());
+            if (!http) b.managementPlane.httpEvidence.addAll(interfaceAccessEvidence.values());
         }
 
         return b;

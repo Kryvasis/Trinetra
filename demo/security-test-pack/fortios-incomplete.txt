@@ -1,0 +1,5 @@
+# SYNTHETIC INCOMPLETE EVIDENCE - not proof of a secure configuration
+# FortiOS 7.4.4
+config system global
+    set hostname "cortex-fortios-incomplete"
+end

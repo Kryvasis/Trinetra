@@ -113,6 +113,30 @@ def capability_report(root: str) -> dict[str, Any]:
             manual.append(control)
     automated = [control for control in in_scope if control not in manual]
     frameworks = sorted({name for control in controls for name in (manifest[control].get("frameworks") or {})})
+    semantic_controls = {"V-003", "V-006", "V-013", "V-057", "V-058", "V-071", "V-104", "V-107", "V-108"}
+    live_controls = {"V-004", "V-005", "V-007", "V-008", "V-070", "V-087", "V-105", "V-106", "V-110", "V-118", "V-144", "V-145"}
+    assessment_type_controls = {"V-010", "V-056", "V-059", "V-073", "V-074", "V-088", "V-113"}
+    configuration_matrix = []
+    for control in controls:
+        if control in semantic_controls:
+            mode = "semantic configuration"
+            outcome = "pass, fail, or insufficient evidence"
+        elif control in live_controls:
+            mode = "live evidence required"
+            outcome = "unsupported from upload"
+        elif control in assessment_type_controls:
+            mode = "different assessment type"
+            outcome = "unsupported from upload"
+        else:
+            mode = "unmapped"
+            outcome = "unsupported from upload"
+        configuration_matrix.append({
+            "control": control,
+            "description": str(manifest[control].get("description") or ""),
+            "mode": mode,
+            "upload_outcome": outcome,
+            "frameworks": sorted((manifest[control].get("frameworks") or {}).keys()),
+        })
     return {
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "manifest_controls": len(controls),
@@ -123,6 +147,13 @@ def capability_report(root: str) -> dict[str, Any]:
         "controls_without_probe_script": len([control for control in controls if control not in scripts]),
         "frameworks": frameworks,
         "manual_review_controls": manual,
+        "configuration_evaluation": {
+            "semantic": len(semantic_controls & set(controls)),
+            "live_evidence_required": len(live_controls & set(controls)),
+            "different_assessment_type": len(assessment_type_controls & set(controls)),
+            "matrix": configuration_matrix,
+            "notice": "Every manifest control is accounted for. Unsupported upload outcomes are not passes or failures.",
+        },
         "vendors": [
             {"vendor": "Cisco IOS XE", "semantic_depth": "extended", "validation": "repository regression suite", "production_validated": False},
             {"vendor": "Juniper JunOS", "semantic_depth": "baseline", "validation": "repository regression suite", "production_validated": False},

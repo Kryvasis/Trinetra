@@ -32,14 +32,20 @@ public class AwsBaselineAdapter {
                 int from = Integer.parseInt(mPort.group(1));
                 int to = Integer.parseInt(mPort.group(2));
                 if (from <= 23 && to >= 23) {
+                    b.networkSegmentation.publicSensitiveIngress = true;
+                    b.networkSegmentation.evidence.add("JSON: 0.0.0.0/0 permits sensitive port 23");
                     b.managementPlane.telnetEnabled = true;
                     b.managementPlane.telnetEvidence.add("JSON: 0.0.0.0/0 permits port 23 (Telnet)");
                 }
                 if (from <= 80 && to >= 80) {
+                    b.networkSegmentation.publicSensitiveIngress = true;
+                    b.networkSegmentation.evidence.add("JSON: 0.0.0.0/0 permits sensitive port 80");
                     b.managementPlane.httpEnabled = true;
                     b.managementPlane.httpEvidence.add("JSON: 0.0.0.0/0 permits port 80 (HTTP)");
                 }
                 if (from <= 22 && to >= 22) {
+                    b.networkSegmentation.publicSensitiveIngress = true;
+                    b.networkSegmentation.evidence.add("JSON: 0.0.0.0/0 permits sensitive port 22");
                     b.managementPlane.sshEnabled = true;
                     // Check for weak ciphers? AWS SG doesn't expose ciphers
                     b.managementPlane.sshEvidence.add("JSON: port 22 open");
@@ -51,6 +57,8 @@ public class AwsBaselineAdapter {
                 b.managementPlane.httpEnabled = true;
                 b.acl.hasGranularAcls = false;
                 b.acl.evidence.add("JSON: Security Group allows all traffic from 0.0.0.0/0");
+                b.networkSegmentation.publicSensitiveIngress = true;
+                b.networkSegmentation.evidence.add("JSON: Security Group allows all traffic from 0.0.0.0/0");
             }
         }
         // Check for granular ACLs: presence of specific CIDR not 0.0.0.0/0
@@ -60,6 +68,8 @@ public class AwsBaselineAdapter {
             SecurityBaseline.Acl.AclEntry e = new SecurityBaseline.Acl.AclEntry();
             e.name = "aws_sg"; e.type = "sg"; e.action = "permit"; e.evidence = "JSON: SG rule";
             b.acl.entries.add(e);
+            if (b.networkSegmentation.publicSensitiveIngress == null)
+                b.networkSegmentation.publicSensitiveIngress = false;
         }
         // Check for logging: CloudTrail / VPC Flow Logs
         if (ll.contains("cloudtrail") || ll.contains("flowlogs") || ll.contains("\"loggroupname\"")) {
@@ -100,6 +110,10 @@ public class AwsBaselineAdapter {
 
             // AWS CLI: aws ec2 authorize-security-group-ingress --group-id sg-123 --protocol tcp --port 23 --cidr 0.0.0.0/0
             if (ll.contains("0.0.0.0/0")) {
+                if (ll.matches(".*(--port\\s+)?(22|23|80|443|3389|5432)\\b.*") || ll.contains("--protocol -1")) {
+                    b.networkSegmentation.publicSensitiveIngress = true;
+                    b.networkSegmentation.evidence.add(evidence);
+                }
                 if (ll.contains("port 23") || ll.contains("--port 23") || ll.contains("telnet")) {
                     b.managementPlane.telnetEnabled = true; b.managementPlane.telnetEvidence.add(evidence);
                 }

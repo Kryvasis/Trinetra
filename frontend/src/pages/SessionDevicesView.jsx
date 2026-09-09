@@ -353,26 +353,27 @@ export default function SessionDevicesView({ api, toast }) {
             </section>
           </section>
 
-          {/* Assessment comparison — latest-two per V-code from hash-chained history, no new storage */}
+          {/* Assessment comparison — two complete hash-chained upload snapshots. */}
           {(compareLoading || compareError || compareData) && (
             <section className="card comparison-panel" aria-live="polite" aria-labelledby="comparison-heading">
               <h2 id="comparison-heading">Assessment comparison{compareDevice ? ` — ${compareDevice}` : ''}</h2>
-              {compareLoading && <p><Spinner size={14} /> Comparing latest two assessments…</p>}
+              {compareLoading && <p><Spinner size={14} /> Comparing the latest complete snapshots…</p>}
               {compareError && !compareLoading && <p role="alert">{compareError}</p>}
               {compareData && !compareLoading && (
                 <>
                   <p className="field-help">{compareData.basis}</p>
-                  <dl className="comparison-summary"><div><dt>Resolved</dt><dd>{compareData.summary?.resolved ?? 0}</dd></div><div><dt>Newly failing</dt><dd>{compareData.summary?.['newly failing'] ?? 0}</dd></div><div><dt>Unchanged</dt><dd>{compareData.summary?.unchanged ?? 0}</dd></div><div><dt>Still unresolved</dt><dd>{compareData.summary?.['still unresolved'] ?? 0}</dd></div></dl>
+                  {compareData.before_assessment_id && <p className="comparison-identities"><span>Before <code>{compareData.before_assessment_id}</code></span><span>After <code>{compareData.after_assessment_id}</code></span></p>}
+                  <dl className="comparison-summary"><div><dt>Resolved</dt><dd>{compareData.summary?.resolved ?? 0}</dd></div><div><dt>Newly failing</dt><dd>{compareData.summary?.['newly failing'] ?? 0}</dd></div><div><dt>Unchanged</dt><dd>{compareData.summary?.unchanged ?? 0}</dd></div><div><dt>Still unresolved</dt><dd>{compareData.summary?.['still unresolved'] ?? 0}</dd></div><div><dt>Not comparable</dt><dd>{compareData.summary?.['not comparable'] ?? 0}</dd></div></dl>
                   <div className="table-wrap" tabIndex={0} role="region" aria-label="Latest assessment comparison">
                     <table>
-                      <caption className="sr-only">Latest two recorded outcomes for this device</caption>
+                      <caption className="sr-only">Two complete recorded assessment snapshots for this device</caption>
                       <thead><tr><th scope="col">Check</th><th scope="col">Before</th><th scope="col">After</th><th scope="col">Change</th></tr></thead>
                       <tbody>
                         {(compareData.comparisons || []).map(c => (
                           <tr key={c.test_id}>
-                            <td><code>{c.test_id}</code><br /><small title="assessments compared">{c.assessments_compared}× assessed</small></td>
-                            <td><span className="badge badge-review">{c.before.finding_class}</span><br /><small>{c.before.verdict}</small></td>
-                            <td><span className="badge badge-review">{c.after.finding_class}</span><br /><small>{c.after.verdict}</small></td>
+                            <td><code>{c.test_id}</code></td>
+                            <td>{c.before ? <><span className="badge badge-review">{c.before.finding_class}</span><br /><small>{c.before.verdict}</small></> : <span className="badge badge-review">Not present</span>}</td>
+                            <td>{c.after ? <><span className="badge badge-review">{c.after.finding_class}</span><br /><small>{c.after.verdict}</small></> : <span className="badge badge-review">Not present</span>}</td>
                             <td><span className={`badge ${c.transition === 'resolved' ? 'badge-pass' : c.transition === 'newly failing' ? 'badge-fail' : 'badge-review'}`}>{c.transition}</span></td>
                           </tr>
                         ))}

@@ -8,6 +8,28 @@ const safeReference = value => {
   try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : '' } catch { return '' }
 }
 
+const CONTROL_IDS = ['V-003','V-004','V-005','V-006','V-007','V-008','V-010','V-013','V-056','V-057','V-058','V-059','V-070','V-071','V-073','V-074','V-087','V-088','V-104','V-105','V-106','V-107','V-108','V-110','V-113','V-118','V-144','V-145']
+const BASELINE_FIELDS = [
+  ['management_plane.ssh_enabled', 'Management · SSH enabled'],
+  ['management_plane.ssh_version', 'Management · SSH version'],
+  ['management_plane.telnet_enabled', 'Management · Telnet enabled'],
+  ['management_plane.http_enabled', 'Management · HTTP enabled'],
+  ['management_plane.http_secure_only', 'Management · HTTPS only'],
+  ['management_plane.exec_timeout', 'Management · idle timeout'],
+  ['management_plane.source_route_enabled', 'Management · source routing'],
+  ['authentication.aaa_enabled', 'Authentication · AAA enabled'],
+  ['authentication.has_enable_secret', 'Authentication · enable secret present'],
+  ['authentication.has_enable_password', 'Authentication · weak enable password present'],
+  ['authentication.password_encryption_enabled', 'Authentication · password encryption'],
+  ['logging.enabled', 'Logging · remote logging enabled'],
+  ['cryptography.strong_crypto_enabled', 'Cryptography · strong algorithms enabled'],
+  ['cryptography.tls12_or_higher', 'Cryptography · TLS 1.2 or newer'],
+  ['acl.has_granular_acls', 'Access control · granular ACLs'],
+  ['network_segmentation.dynamic_trunking_enabled', 'Segmentation · dynamic trunking enabled'],
+  ['network_segmentation.public_sensitive_ingress', 'Cloud perimeter · public sensitive ingress'],
+]
+const BOOLEAN_FIELDS = new Set(BASELINE_FIELDS.map(([value]) => value).filter(value => !['management_plane.ssh_version', 'management_plane.exec_timeout'].includes(value)))
+
 export default function TrainingView({ api, toast }) {
   const [params] = useSearchParams()
   const sessionParam = params.get('session') || ''
@@ -37,6 +59,15 @@ export default function TrainingView({ api, toast }) {
   const [author, setAuthor] = useState('operator')
   const [sourceReference, setSourceReference] = useState('')
   const [confidence, setConfidence] = useState('')
+  const [vCode, setVCode] = useState('')
+  const [baselineField, setBaselineField] = useState('')
+  const [baselineValue, setBaselineValue] = useState('')
+  const [negatedPattern, setNegatedPattern] = useState('')
+  const [negatedValue, setNegatedValue] = useState('')
+  const [contextPattern, setContextPattern] = useState('')
+  const [osVersionPattern, setOsVersionPattern] = useState('')
+  const [nonMatchingExample, setNonMatchingExample] = useState('hostname example-device')
+  const [priority, setPriority] = useState('0')
   const [training, setTraining] = useState(false)
   const [trainErrors, setTrainErrors] = useState({})
   const [mlSuggestions, setMlSuggestions] = useState({}) // line -> {label, confidence, source}
@@ -177,6 +208,15 @@ export default function TrainingView({ api, toast }) {
     if (!category.trim()) e.category = 'Security category is required'
     else if (category.trim().length < 2) e.category = 'Category must be at least 2 characters'
     if (!author.trim()) e.author = 'Rule author is required'
+    if (!vCode) e.vCode = 'Select the manifest control this fact supports'
+    if (!baselineField) e.baselineField = 'Select the normalized baseline field to update'
+    if (!baselineValue.trim()) e.baselineValue = 'Enter the normalized value produced by this match'
+    if (baselineField && BOOLEAN_FIELDS.has(baselineField) && !['true', 'false'].includes(baselineValue.trim().toLowerCase())) e.baselineValue = 'This field requires true or false'
+    if (!nonMatchingExample.trim()) e.nonMatchingExample = 'Provide one command that this rule must not match'
+    if (negatedPattern.trim() && !negatedValue.trim()) e.negatedValue = 'Enter the value produced by the negated pattern'
+    for (const [key, value] of [['negatedPattern', negatedPattern], ['contextPattern', contextPattern], ['osVersionPattern', osVersionPattern]]) {
+      if (value.trim()) { try { new RegExp(value.trim()) } catch { e[key] = 'Invalid regex pattern' } }
+    }
     if (confidence !== '' && (Number.isNaN(Number(confidence)) || Number(confidence) < 0 || Number(confidence) > 1)) e.confidence = 'Confidence must be between 0 and 1'
     setTrainErrors(e)
     if (e.pattern) patternRef.current?.focus()
@@ -201,12 +241,23 @@ export default function TrainingView({ api, toast }) {
         pattern: pattern.trim(),
         security_category: category.trim(),
         control_mapping: controlMapping.split(',').map(s => s.trim()).filter(Boolean),
-        remediation: remediation.trim() || `Configure ${category.trim()} properly`,
+        remediation: remediation.trim(),
         os_version: osVersionTrain.trim() || undefined,
         status: 'draft',
         author: author.trim(),
         source_reference: sourceReference.trim() || undefined,
         confidence: confidence === '' ? undefined : Number(confidence),
+        v_code: vCode,
+        baseline_field: baselineField,
+        value: baselineValue.trim(),
+        negated_pattern: negatedPattern.trim() || undefined,
+        negated_value: negatedValue.trim() || undefined,
+        context_pattern: contextPattern.trim() || undefined,
+        os_version_pattern: osVersionPattern.trim() || undefined,
+        priority: Number(priority) || 0,
+        source_line: selectedLine,
+        positive_examples: [selectedLine],
+        negative_examples: [nonMatchingExample.trim()],
       }
       const res = await fetch(`${api}/session/${encodeURIComponent(session)}/train`, {
         method: 'POST',
@@ -232,6 +283,15 @@ export default function TrainingView({ api, toast }) {
       setOsVersionTrain('')
       setSourceReference('')
       setConfidence('')
+      setVCode('')
+      setBaselineField('')
+      setBaselineValue('')
+      setNegatedPattern('')
+      setNegatedValue('')
+      setContextPattern('')
+      setOsVersionPattern('')
+      setNonMatchingExample('hostname example-device')
+      setPriority('0')
       setTrainErrors({})
       // Re-fetch to show updated count
       setTotalAfter(unrecognized.length)
@@ -273,6 +333,15 @@ export default function TrainingView({ api, toast }) {
     }
     if (!nlp) setRemediation('')
     setOsVersionTrain('')
+    setVCode(/^V-\d+/.test(ml?.label || '') ? ml.label.match(/^V-\d+/)?.[0] || '' : '')
+    setBaselineField('')
+    setBaselineValue('')
+    setNegatedPattern('')
+    setNegatedValue('')
+    setContextPattern('')
+    setOsVersionPattern('')
+    setNonMatchingExample('hostname example-device')
+    setPriority('0')
     setTrainErrors({})
   }
 
@@ -434,6 +503,55 @@ export default function TrainingView({ api, toast }) {
                   />
                 </div>
 
+                <fieldset className="training-normalization">
+                  <legend>Normalized security fact</legend>
+                  <p className="field-help">Define what the command means. Only allow-listed fields can change deterministic evaluation after independent approval.</p>
+                  <div className="training-normalization-grid">
+                    <div className="form-group">
+                      <label htmlFor="training-vcode">Cortex control</label>
+                      <select id="training-vcode" disabled={training} value={vCode} aria-invalid={!!trainErrors.vCode} onChange={e => { setVCode(e.target.value); setTrainErrors(prev => ({ ...prev, vCode: null })) }}>
+                        <option value="">Select a control</option>
+                        {CONTROL_IDS.map(id => <option key={id} value={id}>{id}</option>)}
+                      </select>
+                      {trainErrors.vCode && <div className="field-error">{trainErrors.vCode}</div>}
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="training-baseline-field">Baseline field</label>
+                      <select id="training-baseline-field" disabled={training} value={baselineField} aria-invalid={!!trainErrors.baselineField} onChange={e => { setBaselineField(e.target.value); setBaselineValue(''); setTrainErrors(prev => ({ ...prev, baselineField: null, baselineValue: null })) }}>
+                        <option value="">Select a field</option>
+                        {BASELINE_FIELDS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                      {trainErrors.baselineField && <div className="field-error">{trainErrors.baselineField}</div>}
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="training-baseline-value">Value when matched</label>
+                      {BOOLEAN_FIELDS.has(baselineField) ? <select id="training-baseline-value" disabled={training} value={baselineValue} aria-invalid={!!trainErrors.baselineValue} onChange={e => { setBaselineValue(e.target.value); setTrainErrors(prev => ({ ...prev, baselineValue: null })) }}><option value="">Select a value</option><option value="true">True</option><option value="false">False</option></select> : <input id="training-baseline-value" disabled={training} value={baselineValue} aria-invalid={!!trainErrors.baselineValue} onChange={e => { setBaselineValue(e.target.value); setTrainErrors(prev => ({ ...prev, baselineValue: null })) }} placeholder="Literal or capture such as $1" />}
+                      {trainErrors.baselineValue && <div className="field-error">{trainErrors.baselineValue}</div>}
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="training-priority">Rule priority</label>
+                      <input id="training-priority" type="number" min="-100" max="100" disabled={training} value={priority} onChange={e => setPriority(e.target.value)} />
+                    </div>
+                  </div>
+                </fieldset>
+
+                <details className="training-rule-scope">
+                  <summary>Version, context and negation</summary>
+                  <div className="training-normalization-grid">
+                    <div className="form-group"><label htmlFor="training-os-pattern">OS version regex</label><input id="training-os-pattern" disabled={training} value={osVersionPattern} aria-invalid={!!trainErrors.osVersionPattern} onChange={e => setOsVersionPattern(e.target.value)} placeholder="e.g. IOS XE 17\\..*" />{trainErrors.osVersionPattern && <div className="field-error">{trainErrors.osVersionPattern}</div>}</div>
+                    <div className="form-group"><label htmlFor="training-context-pattern">Parent context regex</label><input id="training-context-pattern" disabled={training} value={contextPattern} aria-invalid={!!trainErrors.contextPattern} onChange={e => setContextPattern(e.target.value)} placeholder="e.g. ^interface .*" />{trainErrors.contextPattern && <div className="field-error">{trainErrors.contextPattern}</div>}</div>
+                    <div className="form-group"><label htmlFor="training-negated-pattern">Negated command regex</label><input id="training-negated-pattern" disabled={training} value={negatedPattern} aria-invalid={!!trainErrors.negatedPattern} onChange={e => setNegatedPattern(e.target.value)} placeholder="e.g. ^no ip custom-service$" />{trainErrors.negatedPattern && <div className="field-error">{trainErrors.negatedPattern}</div>}</div>
+                    <div className="form-group"><label htmlFor="training-negated-value">Value when negated</label><input id="training-negated-value" disabled={training} value={negatedValue} aria-invalid={!!trainErrors.negatedValue} onChange={e => setNegatedValue(e.target.value)} placeholder="e.g. false" />{trainErrors.negatedValue && <div className="field-error">{trainErrors.negatedValue}</div>}</div>
+                  </div>
+                </details>
+
+                <div className="form-group">
+                  <label htmlFor="training-negative-example">Must not match</label>
+                  <input id="training-negative-example" disabled={training} value={nonMatchingExample} aria-invalid={!!trainErrors.nonMatchingExample} onChange={e => { setNonMatchingExample(e.target.value); setTrainErrors(prev => ({ ...prev, nonMatchingExample: null })) }} />
+                  {trainErrors.nonMatchingExample && <div className="field-error">{trainErrors.nonMatchingExample}</div>}
+                  <p className="field-help">Activation is blocked unless the selected command matches and this counterexample does not.</p>
+                </div>
+
                 <div className="form-group">
                   <label htmlFor="training-remediation">Remediation (optional)</label>
                   <textarea
@@ -489,7 +607,7 @@ export default function TrainingView({ api, toast }) {
         <div className="section-heading"><div><h2 id="rule-review-heading">Rule approval queue</h2><p>Draft rules remain inert until a different operator reviews and activates them.</p></div><span className="badge badge-review">{draftRules.length} drafts</span></div>
         <div className="rule-review-toolbar"><label htmlFor="training-reviewer">Independent reviewer</label><input id="training-reviewer" maxLength={80} value={reviewer} onChange={event => setReviewer(event.target.value)} placeholder="Reviewer name" /></div>
         {reviewError && <p className="field-error" role="alert">{reviewError}</p>}
-        {draftRules.length === 0 ? <p className="field-help">No draft rules are waiting for approval.</p> : <div className="rule-review-list">{draftRules.map(rule => <article key={rule.rule_id} className="rule-review-item"><div><strong>{rule.vendor} · {rule.security_category || 'Unclassified'}</strong><code>{rule.pattern}</code><span>Author: {rule.author || 'legacy operator'} · Version {rule.version || 1}</span>{safeReference(rule.source_reference) && <a href={safeReference(rule.source_reference)} target="_blank" rel="noreferrer">Review source</a>}</div><button type="button" className="btn-primary" disabled={!!reviewingRule} onClick={() => reviewRule(rule.rule_id)}>{reviewingRule === rule.rule_id ? <><Spinner size={14} /> Activating…</> : 'Approve and activate'}</button></article>)}</div>}
+        {draftRules.length === 0 ? <p className="field-help">No draft rules are waiting for approval.</p> : <div className="rule-review-list">{draftRules.map(rule => <article key={rule.rule_id} className="rule-review-item"><div><strong>{rule.vendor} · {rule.security_category || 'Unclassified'}</strong><code>{rule.pattern}</code><span>{rule.v_code || 'Recognition only'} · {rule.baseline_field || 'No baseline mutation'}{rule.value ? ` = ${rule.value}` : ''}</span><span>Author: {rule.author || 'legacy operator'} · Version {rule.version || 1} · Regression examples: {(rule.positive_examples || []).length} match / {(rule.negative_examples || []).length} non-match</span>{safeReference(rule.source_reference) && <a href={safeReference(rule.source_reference)} target="_blank" rel="noreferrer">Review source</a>}</div><button type="button" className="btn-primary" disabled={!!reviewingRule} onClick={() => reviewRule(rule.rule_id)}>{reviewingRule === rule.rule_id ? <><Spinner size={14} /> Activating…</> : 'Run checks and activate'}</button></article>)}</div>}
       </section>
 
       {/* Before/after summary */}

@@ -1,4 +1,4 @@
 {
-  "_comment": "Vendor training map \u2014 maps vendor + config line pattern to security category and control mapping. No code changes needed to teach new patterns.",
+  "_comment": "Governed vendor normalization rules. New entries remain draft until independent regression review activates them.",
   "entries": []
 }

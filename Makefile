@@ -22,7 +22,7 @@ JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest \
                      TrinetraComplianceTest TrinetraStatNormalizedResultsTest \
                      TrinetraComplianceScorerTest TrinetraNarrativeGeneratorTest \
                      TrinetraAuditReportBuilderTest TrinetraJuniperConnectorTest \
-                     TrinetraMultiVendorE2ETest
+                     TrinetraMultiVendorE2ETest TrainingNormalizationTest MultiVendorSemanticFixtureTest
 RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 
 # ================================================================

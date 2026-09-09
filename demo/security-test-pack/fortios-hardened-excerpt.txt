@@ -1,0 +1,19 @@
+# SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration
+# FortiOS 7.4.4
+config system interface
+    edit "port1"
+        set allowaccess ping https ssh
+    next
+end
+config system global
+    set admintimeout 5
+end
+config system admin
+    edit "audit"
+        set password ENC REDACTED
+    next
+end
+config log syslogd setting
+    set status enable
+    set server "192.0.2.10"
+end

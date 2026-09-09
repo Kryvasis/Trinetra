@@ -1,0 +1,9 @@
+# SYNTHETIC HARDENING EXCERPT - not a complete deployable configuration
+# JUNOS 20.4R3-S2.4
+set system host-name cortex-juniper-hardened
+delete system services telnet
+delete system services web-management http
+set system services ssh protocol-version v2
+set system login idle-timeout 5
+set system login user audit class read-only authentication encrypted-password "$6$REDACTED"
+set system syslog host 192.0.2.10 any info

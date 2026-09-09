@@ -56,6 +56,78 @@ install_request_boundary(app)
 TRAINING_MAP_LOCK = threading.Lock()
 ACTIVITY_LOCK = threading.Lock()
 
+TRAINABLE_BASELINE_FIELDS = {
+    "management_plane.ssh_enabled",
+    "management_plane.ssh_version",
+    "management_plane.telnet_enabled",
+    "management_plane.http_enabled",
+    "management_plane.http_secure_only",
+    "management_plane.exec_timeout",
+    "management_plane.source_route_enabled",
+    "authentication.aaa_enabled",
+    "authentication.has_enable_secret",
+    "authentication.has_enable_password",
+    "authentication.password_encryption_enabled",
+    "logging.enabled",
+    "cryptography.strong_crypto_enabled",
+    "cryptography.tls12_or_higher",
+    "acl.has_granular_acls",
+    "network_segmentation.dynamic_trunking_enabled",
+    "network_segmentation.public_sensitive_ingress",
+}
+BOOLEAN_BASELINE_FIELDS = TRAINABLE_BASELINE_FIELDS - {
+    "management_plane.ssh_version", "management_plane.exec_timeout"
+}
+
+
+def _compile_training_regex(value, field_name, *, required=False):
+    value = str(value or "").strip()
+    if required and not value:
+        raise ValueError(f"{field_name} is required")
+    if not value:
+        return None
+    if len(value) > 500 or "\n" in value or "\r" in value:
+        raise ValueError(f"{field_name} must be one line up to 500 characters")
+    # Block common nested-quantifier forms that can create catastrophic
+    # backtracking in both the Python approval gate and Java runtime.
+    if re.search(r"\([^)]*[+*][^)]*\)[+*{]", value) or re.search(r"(\.\*){2,}|(\.\+){2,}", value):
+        raise ValueError(f"{field_name} contains an unsafe nested quantifier")
+    try:
+        return re.compile(value, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError(f"{field_name} is not a valid regular expression: {exc}") from exc
+
+
+def _training_examples(value, field_name):
+    if value is None:
+        return []
+    if not isinstance(value, list) or len(value) > 10:
+        raise ValueError(f"{field_name} must be a list of at most 10 examples")
+    result = []
+    for item in value:
+        if not isinstance(item, str) or not item.strip() or len(item) > 500 or "\n" in item or "\r" in item:
+            raise ValueError(f"{field_name} contains an invalid example")
+        result.append(item.strip())
+    return result
+
+
+def _validate_rule_regression(entry):
+    pattern = _compile_training_regex(entry.get("pattern"), "pattern", required=True)
+    negated = _compile_training_regex(entry.get("negated_pattern"), "negated_pattern")
+    _compile_training_regex(entry.get("context_pattern"), "context_pattern")
+    _compile_training_regex(entry.get("os_version_pattern"), "os_version_pattern")
+    positives = _training_examples(entry.get("positive_examples"), "positive_examples")
+    negatives = _training_examples(entry.get("negative_examples"), "negative_examples")
+    if not positives or not negatives:
+        raise ValueError("activation requires at least one matching and one non-matching regression example")
+    failed_positive = [sample for sample in positives if not (pattern.search(sample) or (negated and negated.search(sample)))]
+    failed_negative = [sample for sample in negatives if pattern.search(sample) or (negated and negated.search(sample))]
+    if failed_positive:
+        raise ValueError("a matching regression example is not recognized by the rule")
+    if failed_negative:
+        raise ValueError("a non-matching regression example is incorrectly recognized by the rule")
+    return {"passed": True, "matching": len(positives), "non_matching": len(negatives)}
+
 # ── Validation regexes (reject before subprocess) ──
 SESSION_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
 TEST_ID_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")  # e.g. V-003, T-SHARED, T_CISCO
@@ -1231,12 +1303,10 @@ def device_scope(name, device_id):
 
 
 # ── GET /api/session/<name>/compare — assessment comparison (review item 2) ──
-# Compares the two most recent assessments per V-code for one device, using only
-# the existing hash-chained normalized_results history — no new storage.
-# Scope note: the data model has no explicit assessment IDs (append-only per-test
-# history), so latest-two-per-V-code is the only honest comparison available.
-_COMPARE_CAT1 = {"V-003", "V-006", "V-013", "V-057", "V-058", "V-071", "V-107"}
-_COMPARE_CAT2 = {"V-005", "V-007", "V-008", "V-070", "V-087", "V-105", "V-106", "V-144"}
+# Compares complete assessment snapshots, rather than independently selecting
+# the latest two rows for each control (which could mix different uploads).
+_COMPARE_CAT1 = {"V-003", "V-006", "V-013", "V-057", "V-058", "V-071", "V-104", "V-107", "V-108"}
+_COMPARE_CAT2 = {"V-004", "V-005", "V-007", "V-008", "V-010", "V-056", "V-059", "V-070", "V-073", "V-074", "V-087", "V-088", "V-105", "V-106", "V-110", "V-113", "V-118", "V-144", "V-145"}
 
 def _compare_class(test_id, verdict, assessment_kind=""):
     tid = (test_id or "").strip().upper()
@@ -1287,15 +1357,57 @@ def compare_assessments(name):
                if isinstance(e, dict) and e.get("device_id") == device_id]
     if not entries:
         return error_response(f"no assessments recorded for device {device_id!r}", 404)
-    by_test = {}
+    grouped = {}
     for e in entries:
-        tid = e.get("test_id") or "?"
-        by_test.setdefault(tid, []).append(e)
+        assessment_id = str(e.get("assessment_id") or "").strip()
+        if assessment_id:
+            grouped.setdefault(assessment_id, []).append(e)
+    requested_before = str(request.args.get("before") or "").strip()
+    requested_after = str(request.args.get("after") or "").strip()
+    if grouped:
+        ordered_ids = sorted(
+            grouped,
+            key=lambda aid: max(str(row.get("timestamp") or "") for row in grouped[aid]),
+        )
+        after_id = requested_after or ordered_ids[-1]
+        if after_id not in grouped:
+            return error_response(f"unknown after assessment_id: {after_id}", 404)
+        if requested_before:
+            before_id = requested_before
+        else:
+            after_index = ordered_ids.index(after_id)
+            before_id = ordered_ids[after_index - 1] if after_index > 0 else after_id
+        if before_id not in grouped:
+            return error_response(f"unknown before assessment_id: {before_id}", 404)
+        before_by_test = {row.get("test_id") or "?": row for row in grouped[before_id]}
+        after_by_test = {row.get("test_id") or "?": row for row in grouped[after_id]}
+        test_ids = sorted(set(before_by_test) | set(after_by_test))
+        basis = "Complete hash-chained assessment snapshots for one device."
+    else:
+        # Backward-compatible fallback for sessions created before assessment IDs.
+        by_test = {}
+        for e in entries:
+            by_test.setdefault(e.get("test_id") or "?", []).append(e)
+        before_id = after_id = "legacy-unversioned"
+        before_by_test, after_by_test = {}, {}
+        for tid, rows in by_test.items():
+            ordered = sorted(rows, key=lambda x: str(x.get("timestamp") or ""))
+            after_by_test[tid] = ordered[-1]
+            before_by_test[tid] = ordered[-2] if len(ordered) >= 2 else ordered[-1]
+        test_ids = sorted(by_test)
+        basis = "Legacy fallback: latest two hash-chained rows per control; new uploads use complete assessment snapshots."
     comparisons = []
-    for tid in sorted(by_test):
-        ordered = sorted(by_test[tid], key=lambda x: str(x.get("timestamp") or ""))
-        after = ordered[-1]
-        before = ordered[-2] if len(ordered) >= 2 else ordered[-1]
+    for tid in test_ids:
+        before = before_by_test.get(tid)
+        after = after_by_test.get(tid)
+        if before is None or after is None:
+            comparisons.append({
+                "test_id": tid,
+                "before": None if before is None else {"verdict": before.get("normalized_result"), "finding_class": before.get("finding_class"), "timestamp": before.get("timestamp")},
+                "after": None if after is None else {"verdict": after.get("normalized_result"), "finding_class": after.get("finding_class"), "timestamp": after.get("timestamp")},
+                "transition": "not comparable",
+            })
+            continue
         after_v = (after.get("normalized_result") or "").lower()
         before_v = (before.get("normalized_result") or "").lower()
         after_cls = after.get("finding_class") or _compare_class(tid, after_v, after.get("assessment_kind") or "")
@@ -1307,17 +1419,17 @@ def compare_assessments(name):
             "after": {"verdict": after_v, "finding_class": after_cls,
                       "timestamp": after.get("timestamp")},
             "transition": _compare_transition(before_cls, after_cls),
-            "assessments_compared": len(ordered),
         })
-    summary = {"resolved": 0, "newly failing": 0, "unchanged": 0, "still unresolved": 0}
+    summary = {"resolved": 0, "newly failing": 0, "unchanged": 0, "still unresolved": 0, "not comparable": 0}
     for c in comparisons:
         summary[c["transition"]] = summary.get(c["transition"], 0) + 1
     return jsonify({
         "session": name,
         "device_id": device_id,
-        "basis": ("Latest-two assessments per V-code from the hash-chained normalized_results history; "
-                  "no new storage. Explicit assessment-ID selection is not supported by the current "
-                  "append-only per-test data model, so this scope was chosen."),
+        "before_assessment_id": before_id,
+        "after_assessment_id": after_id,
+        "available_assessment_ids": list(reversed(ordered_ids)) if grouped else [],
+        "basis": basis,
         "comparisons": comparisons,
         "summary": summary,
     }), 200
@@ -1334,21 +1446,34 @@ def train_vendor(name):
     controls = data.get("control_mapping") or data.get("controls") or []
     remediation = data.get("remediation") or ""
     os_version_train = data.get("os_version") or data.get("osVersion") or data.get("os") or ""
-    requested_status = str(data.get("status") or "active").strip().lower()
+    requested_status = str(data.get("status") or "draft").strip().lower()
     author = str(data.get("author") or "local-operator").strip()
     source_reference = str(data.get("source_reference") or "").strip()
     confidence = data.get("confidence")
+    v_code = str(data.get("v_code") or "").strip().upper()
+    baseline_field = str(data.get("baseline_field") or "").strip()
+    baseline_value = str(data.get("value") or "").strip()
+    negated_pattern = str(data.get("negated_pattern") or "").strip()
+    negated_value = str(data.get("negated_value") or "").strip()
+    context_pattern = str(data.get("context_pattern") or "").strip()
+    os_version_pattern = str(data.get("os_version_pattern") or "").strip()
+    positive_examples = data.get("positive_examples")
+    negative_examples = data.get("negative_examples")
+    priority = data.get("priority", 0)
 
     if not vendor or not pattern:
         return error_response("missing required fields: vendor and pattern", 400)
     if not validate_vendor(vendor):
         return error_response(f"invalid vendor: {vendor!r}", 400)
-    if not isinstance(pattern, str) or len(pattern.strip()) == 0 or len(pattern) > 500:
-        return error_response("invalid pattern", 400)
-    # For pattern, allow regex chars like .*+?[]()^$ but still block shell injection
-    # Block ; & | ` \n \r $() and path traversal
-    if any(c in pattern for c in [';', '&', '|', '`', '\n', '\r']) or '$( ' in pattern or '$(' in pattern:
-        return error_response("injection characters detected in pattern", 400)
+    try:
+        _compile_training_regex(pattern, "pattern", required=True)
+        _compile_training_regex(negated_pattern, "negated_pattern")
+        _compile_training_regex(context_pattern, "context_pattern")
+        _compile_training_regex(os_version_pattern, "os_version_pattern")
+        positive_examples = _training_examples(positive_examples, "positive_examples")
+        negative_examples = _training_examples(negative_examples, "negative_examples")
+    except ValueError as exc:
+        return error_response(str(exc), 400)
     if contains_injection(vendor):
         return error_response("injection characters detected in vendor", 400)
     # Validate controls
@@ -1365,8 +1490,8 @@ def train_vendor(name):
         return error_response("invalid remediation", 400)
     if os_version_train and (not isinstance(os_version_train, str) or len(os_version_train) > 128 or contains_injection(os_version_train)):
         return error_response(f"invalid os_version: {os_version_train!r}", 400)
-    if requested_status not in ("draft", "active"):
-        return error_response("status must be draft or active", 400)
+    if requested_status != "draft":
+        return error_response("new training rules must be saved as draft and independently approved", 400)
     if not author or len(author) > 80 or contains_injection(author):
         return error_response("author must be 1–80 safe characters", 400)
     if len(source_reference) > 500 or any(c in source_reference for c in ("\n", "\r")):
@@ -1382,6 +1507,33 @@ def train_vendor(name):
             return error_response("confidence must be a number between 0 and 1", 400)
         if confidence < 0 or confidence > 1:
             return error_response("confidence must be a number between 0 and 1", 400)
+    if v_code:
+        manifest_path = Path(TRINETRA_ROOT) / "config" / "compliance_manifest.json"
+        try:
+            manifest_controls = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return error_response("compliance manifest is unavailable", 500)
+        if v_code not in manifest_controls:
+            return error_response("v_code must identify a control in the compliance manifest", 400)
+    if baseline_field:
+        if baseline_field not in TRAINABLE_BASELINE_FIELDS:
+            return error_response("baseline_field is not in the governed normalization allowlist", 400)
+        if not v_code:
+            return error_response("v_code is required when a rule updates the normalized baseline", 400)
+        if not baseline_value:
+            return error_response("value is required when baseline_field is set", 400)
+        if baseline_field in BOOLEAN_BASELINE_FIELDS and baseline_value.lower() not in {"true", "false", "enabled", "disabled", "yes", "no", "1", "0"}:
+            return error_response("boolean baseline fields require true or false", 400)
+        if negated_pattern and not negated_value:
+            return error_response("negated_value is required when negated_pattern is set", 400)
+    if not positive_examples:
+        positive_examples = [str(data.get("source_line") or "").strip()] if str(data.get("source_line") or "").strip() else []
+    try:
+        priority = int(priority)
+    except (TypeError, ValueError):
+        return error_response("priority must be an integer between -100 and 100", 400)
+    if priority < -100 or priority > 100:
+        return error_response("priority must be an integer between -100 and 100", 400)
 
     # Directly update the JSON file via Python (no Java code change) — this is the training loop
     try:
@@ -1419,6 +1571,22 @@ def train_vendor(name):
             new_entry["history"] = [{"status": requested_status, "actor": author, "at": new_entry["added_at"]}]
             if os_version_train and os_version_train.strip():
                 new_entry["os_version"] = os_version_train.strip()
+            if v_code:
+                new_entry["v_code"] = v_code
+            if baseline_field:
+                new_entry["baseline_field"] = baseline_field
+                new_entry["value"] = baseline_value
+            if negated_pattern:
+                new_entry["negated_pattern"] = negated_pattern
+                new_entry["negated_value"] = negated_value
+            if context_pattern:
+                new_entry["context_pattern"] = context_pattern
+            if os_version_pattern:
+                new_entry["os_version_pattern"] = os_version_pattern
+            new_entry["priority"] = priority
+            new_entry["positive_examples"] = positive_examples
+            new_entry["negative_examples"] = negative_examples
+            new_entry["regression"] = {"passed": False, "reason": "pending independent activation review"}
             data_json["entries"].append(new_entry)
             map_path.parent.mkdir(parents=True, exist_ok=True)
             import tempfile as _tf, os as _os
@@ -1435,21 +1603,6 @@ def train_vendor(name):
                         _os.unlink(tmp)
                     except OSError:
                         pass
-        # Invalidate Java cache by touching file (VendorTrainingMap.load checks mtime)
-        # Retrain lightweight ML (TF-IDF + KNN) in parallel — never fails the training request
-        try:
-            import ml_knn
-            if requested_status == "active":
-                ml_knn.train()
-        except ImportError:
-            try:
-                from bridge.ml_knn import train as _ml_train
-                if requested_status == "active":
-                    _ml_train()
-            except Exception:
-                pass
-        except Exception:
-            pass
         return jsonify({"message": "training entry added", "entry": new_entry, "total_entries": len(data_json["entries"])}), 201
     except Exception as e:
         return error_response(f"failed to add training entry: {e}", 500)
@@ -1504,6 +1657,13 @@ def review_training_rule(rule_id):
                 return error_response("training rule not found", 404)
             if action == "approve" and reviewer.casefold() == str(target.get("author") or "").casefold():
                 return error_response("reviewer must be different from the rule author", 409)
+            if action == "approve":
+                try:
+                    regression = _validate_rule_regression(target)
+                except ValueError as exc:
+                    target["regression"] = {"passed": False, "reason": str(exc)}
+                    return error_response(f"activation regression gate failed: {exc}", 422)
+                target["regression"] = regression
             now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             target["status"] = "active" if action == "approve" else "deprecated"
             target["reviewer"] = reviewer
@@ -1990,7 +2150,7 @@ def audit_report_pdf(name):
         failed_rows = [r for r in evidence_rows if _row_class(r) == "confirmed risk"]
         if failed_rows:
             story.append(Paragraph("Review plan for confirmed risks", heading_style))
-            story.append(Paragraph("Each item below cites its triggering source lines from the session evidence bundle. Curated Cisco IOS steps are shown only here (Documented — review before use; backup, confirm OS version, rollback plan, post-change verify). All other finding classes use generic guidance. Cortex does not validate or execute remediation commands.", normal_style))
+            story.append(Paragraph("Each item below cites its triggering source lines from the session evidence bundle. Review-required guidance is shown only for confirmed configuration risks; operators must confirm model, release, scope, backup, rollback and post-change verification. Cortex does not validate or execute remediation commands.", normal_style))
             for row in failed_rows[:60]:
                 tid = row[col_index.get("test id", 2)] if col_index.get("test id", 2) < len(row) else "?"
                 device = row[col_index.get("device", 0)] if col_index.get("device", 0) < len(row) else "?"

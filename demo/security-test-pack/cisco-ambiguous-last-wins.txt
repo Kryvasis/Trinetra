@@ -1,0 +1,14 @@
+! SYNTHETIC PRECEDENCE TEST - later directives are effective
+hostname cortex-cisco-precedence
+ip ssh version 1
+ip ssh version 2
+ip http server
+no ip http server
+interface GigabitEthernet0/1
+ switchport mode dynamic desirable
+ switchport mode access
+line vty 0 4
+ transport input telnet ssh
+ transport input ssh
+ exec-timeout 5 0
+logging host 192.0.2.10

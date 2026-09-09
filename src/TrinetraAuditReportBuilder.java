@@ -493,7 +493,7 @@ public class TrinetraAuditReportBuilder {
         }
 
         sb.append("## Test Evidence\n\n");
-        sb.append("Finding classes: **confirmed risk** = insecure directive found; **verified pass** = secure directive found; **insufficient evidence** = check ran but neither directive present; **unsupported check** = requires live verification or unimplemented. Cisco IOS is the only fully supported observation-layer vendor; Juniper/other vendors have no observation-layer support (basic vendor auto-detect and training-map ingestion are unaffected).\n\n");
+        sb.append("Finding classes: **confirmed risk** = insecure directive found; **verified pass** = secure directive found; **insufficient evidence** = a supported semantic check lacked decisive syntax; **unsupported check** = this control needs live, inventory, host, cloud-service, or other evidence not present in the upload. Vendor adapters currently cover Cisco, Juniper, FortiOS, PAN-OS, SONiC and AWS at different documented evidence depths; adapter availability is not production validation.\n\n");
         sb.append("| Device | Vendor | Serial | Hardware | OS Version | Ingestion | Test ID | Verdict | Finding class | Severity | Timestamp | Controls |\n");
         sb.append("|--------|--------|--------|----------|------------|-----------|---------|---------|---------------|----------|-----------|----------|\n");
         for (Map<String, Object> row : rows) {
@@ -793,7 +793,7 @@ public class TrinetraAuditReportBuilder {
                 sb.append("Triggering source lines: recorded in `evidence_*.json` for this test/device.\n\n");
             }
             if (!curated.isBlank()) {
-                sb.append("Device-specific steps (Documented — review before use; backup, confirm OS version, rollback plan, post-change verify): ")
+                sb.append("Review-required guidance (confirm model, release, scope, backup, rollback, and post-change verification): ")
                   .append(curated).append("\n\n");
             } else {
                 sb.append("No curated CLI sequence for this check — use the applicable vendor hardening guide with backup/rollback and post-change verification. "

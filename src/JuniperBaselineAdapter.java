@@ -30,11 +30,14 @@ public class JuniperBaselineAdapter {
             boolean isDelete = ll.startsWith("delete ");
 
             // SSH service
-            if (ll.contains("set system services ssh")) {
+            if (ll.contains("system services ssh")) {
                 if (isDelete) {
                     b.managementPlane.sshEnabled = false;
+                    b.managementPlane.sshEvidence.clear();
+                    b.managementPlane.sshEvidence.add(evidence);
                 } else {
                     b.managementPlane.sshEnabled = true;
+                    b.managementPlane.sshEvidence.clear();
                     if (ll.contains("protocol-version v1")) {
                         b.managementPlane.sshVersion = "1";
                         b.managementPlane.sshEvidence.add(evidence);
@@ -50,21 +53,29 @@ public class JuniperBaselineAdapter {
             }
 
             // Telnet service
-            if (ll.contains("set system services telnet")) {
+            if (ll.contains("system services telnet")) {
                 if (isDelete) {
                     b.managementPlane.telnetEnabled = false;
+                    b.managementPlane.telnetEvidence.clear();
+                    b.managementPlane.telnetEvidence.add(evidence);
                 } else {
                     b.managementPlane.telnetEnabled = true;
+                    b.managementPlane.telnetEvidence.clear();
                     b.managementPlane.telnetEvidence.add(evidence);
                     b.evidenceLines.add(evidence);
                 }
             }
 
             // HTTP — JUNOS typically via "set system services web-management"
-            if (ll.contains("web-management") && ll.contains("http")) {
-                if (isDelete) b.managementPlane.httpEnabled = false;
+            if (ll.contains("system services web-management") && ll.contains("http")) {
+                if (isDelete) {
+                    b.managementPlane.httpEnabled = false;
+                    b.managementPlane.httpEvidence.clear();
+                    b.managementPlane.httpEvidence.add(evidence);
+                }
                 else {
                     b.managementPlane.httpEnabled = true;
+                    b.managementPlane.httpEvidence.clear();
                     b.managementPlane.httpEvidence.add(evidence);
                     b.evidenceLines.add(evidence);
                 }
@@ -74,6 +85,7 @@ public class JuniperBaselineAdapter {
             Matcher mIdle = Pattern.compile("idle-timeout\\s+(\\d+)", Pattern.CASE_INSENSITIVE).matcher(line);
             if (mIdle.find()) {
                 b.managementPlane.execTimeout = mIdle.group(1);
+                b.managementPlane.execTimeoutEvidence.clear();
                 b.managementPlane.execTimeoutEvidence.add(evidence);
                 if ("0".equals(mIdle.group(1))) {
                     b.evidenceLines.add(evidence);
@@ -83,9 +95,11 @@ public class JuniperBaselineAdapter {
             // Source route — JUNOS: system internet-options no-source-route
             if (ll.contains("no-source-route")) {
                 b.managementPlane.sourceRouteEnabled = false;
+                b.managementPlane.sourceRouteEvidence.clear();
                 b.managementPlane.sourceRouteEvidence.add(evidence);
             } else if (ll.contains("source-route") && !isDelete) {
                 b.managementPlane.sourceRouteEnabled = true;
+                b.managementPlane.sourceRouteEvidence.clear();
                 b.managementPlane.sourceRouteEvidence.add(evidence);
             }
 

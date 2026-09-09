@@ -1,5 +1,22 @@
 # Cortex upload test pack
 
+## Current regression corpus (2026-09-09)
+
+The pack now contains hardened, insecure, incomplete, and conflicting-command
+synthetic excerpts for Cisco, Juniper, and FortiOS. Run `make test-java`; the
+`MultiVendorSemanticFixtureTest` suite makes 21 deterministic assertions across
+the three vendors. Explicit insecure directives can fail supported semantic
+checks, explicit secure directives can pass only the specific supported check,
+and missing evidence remains `manual_review`. `blank.txt` and
+`not-a-config.html` remain negative upload cases.
+
+Every new upload has an assessment ID, config SHA-256, hash-chained evidence
+reasons, and an immutable JSON snapshot. The older notes below document the
+pre-fix 2026-09-04 baseline and are retained only as engineering history; do not
+use `verify_demo.py` as the current pass/fail authority. These excerpts are not
+deployable configurations, vendor-approved baselines, accuracy evidence, or a
+claim of certification. Follow `validation/README.md` for accuracy measurement.
+
 ## Update after the engineering review (2026-09-04)
 
 The table and findings below are the **historical pre-fix baseline**, not the

@@ -1,0 +1,3 @@
+# SYNTHETIC INCOMPLETE EVIDENCE - not proof of a secure configuration
+# JUNOS 20.4R3-S2.4
+set system host-name cortex-juniper-incomplete

@@ -505,8 +505,10 @@ public class TrinetraSession {
         // Old records and their hashes are never rewritten. finding_class and
         // evidence_lines are part of the hashed record so classification and
         // source-line traceability are tamper-evident alongside the verdict.
-        for (String key : List.of("assessment_kind", "verdict_detail", "configuration_review",
-                                  "finding_class", "evidence_lines")) {
+        for (String key : List.of("assessment_id", "config_sha256", "assessment_kind",
+                                  "verdict_detail", "configuration_review", "finding_class",
+                                  "evidence_reason", "evaluation_source", "configuration_mode",
+                                  "evidence_lines")) {
             if (entry.containsKey(key)) record.put(key, entry.get(key));
         }
 

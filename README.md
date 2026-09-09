@@ -117,13 +117,15 @@ The tool refuses fewer than 20 observations and single-vendor datasets. Its outp
 
 ## Governed training lifecycle
 
-The Training page creates `draft` rules with an author, source reference, confidence, timestamp, version, and history. Drafts are ignored by the Java parser and ML retraining. Activation requires a different reviewer; self-approval is rejected. Review updates are written atomically and active rules remain backward-compatible with legacy entries.
+The Training page creates `draft` rules with an author, source reference, confidence, normalized baseline field, control ID, context/OS constraints, positive and negative regression examples, priority, timestamp, version, and history. Drafts are ignored by the Java parser and ML retraining. Activation requires a different reviewer and passing regression examples; self-approval is rejected. Review updates are written atomically and active rules remain backward-compatible with legacy entries.
 
 This is a governance baseline, not a complete production control plane. Production activation should additionally run fixture/regression gates, reject semantic pattern conflicts, sign approved rule packs, and use authenticated reviewer identities.
 
 ## Assessment history and reports
 
-Sessions retain per-device evidence and expose before/after comparison of the latest observations. Reports are generated from recorded evidence, not from a fresh target scan. Per-device and session PDFs include device metadata, finding class, mapped controls, provenance, and remediation guidance.
+Sessions retain per-device evidence and expose before/after comparison of complete assessment snapshots. Every upload receives an assessment ID and config SHA-256; explicit evidence reasons are included in hash-chained normalized records and an immutable JSON snapshot under session artifacts. Reports are generated from recorded evidence, not from a fresh target scan. Per-device and session PDFs include device metadata, finding class, mapped controls, provenance, and review-required remediation guidance.
+
+Synthetic hardened, insecure, and incomplete fixtures for Cisco, Juniper, and FortiOS live in `demo/security-test-pack/`. Run `make test-java` for their semantic regression checks. To measure a running local service under a repeatable 25-upload workload, run `python3 tools/benchmark_bulk_ingest.py`; its output is a local engineering measurement, not a production capacity claim.
 
 The current signed receipt covers recorded chain hashes. PDF-byte signing, QR verification and external ledger anchoring remain future work and are not claimed.
 

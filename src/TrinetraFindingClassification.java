@@ -21,10 +21,8 @@ import java.util.*;
  *
  * Computed on the fly from (testId, normalized_result, assessment_kind) so
  * historical chain entries classify identically without data migration.
- * Cisco IOS is the only fully supported observation-layer vendor (see
- * TrinetraConfigObservations); classification itself is vendor-agnostic and
- * Juniper/other vendors are NOT downgraded here — the parser-scope gap is
- * disclosed separately in the report/UI, not by relabeling.
+ * Classification is vendor-agnostic; capability depth and validation status
+ * are disclosed separately from the verdict.
  */
 public final class TrinetraFindingClassification {
 

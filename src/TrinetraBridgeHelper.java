@@ -199,6 +199,7 @@ public class TrinetraBridgeHelper {
             serialNumber, hardwareModel, osVersion, ingestionMethod);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("session", TrinetraCommon.sanitizeName(session));
+        out.put("assessment_id", result.assessmentId);
         out.put("device_id", result.deviceId);
         out.put("vendor", result.vendor);
         out.put("ingestion_method", result.ingestionMethod);

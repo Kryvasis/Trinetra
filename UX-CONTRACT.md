@@ -182,3 +182,12 @@ The doctor response partitions real session files into `sessions` and
 - Receipt verification accepts JSON, reports malformed, signature-failed and current-evidence-mismatch states separately, and never treats an embedded public key as external identity proof.
 - New UI-created training rules enter `draft`. Draft and deprecated rules are ignored by the Java parser. A different named reviewer must approve a draft before it becomes active; author, reviewer, timestamps, version, reference, confidence and state history remain in the rule record.
 - `make start` builds the React application and serves the SPA through the loopback Flask service at port 5000. Vite remains a development-only workflow.
+
+## Evidence coverage and assessment identity (2026-09-09)
+
+- Assurance displays every manifest control with one configuration-evaluation mode: semantic configuration, live evidence required, or different assessment type required. The matrix is a bounded table, not a set of decorative cards.
+- Every successful configuration ingestion returns an `assessment_id` and records the source configuration SHA-256. Evidence reason, evaluation source, configuration mode, assessment identity and hash are part of each tamper-evident normalized record.
+- One immutable JSON snapshot is written per upload under `artifacts/assessments/`. Before/after comparison selects two complete snapshots for the same device; legacy sessions without assessment IDs retain a clearly labelled per-control fallback.
+- Missing SNMP or logging directives never become inferred pass/fail outcomes. SSHv2 alone does not prove an administrative interface is safely scoped.
+- Remediation is labelled review-required. Cortex never executes commands, claims vendor certification, or mechanically translates one vendor's CLI into another's.
+- Training rules update only allowlisted normalized fields. New rules require positive and negative examples, compile-safe regexes and independent approval before activation.

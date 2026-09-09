@@ -1,4 +1,4 @@
-"""Regression: /compare endpoint uses last-two-per-V-code history with four-way terms.
+"""Regression: /compare uses assessment snapshots with a legacy fallback.
 
 Fast, no network probes: builds brain_state normalized_results directly.
 """
@@ -63,7 +63,7 @@ def test_compare_resolved_unresolved():
         assert by["V-005"]["after"]["finding_class"] == "unsupported check"
         assert by["V-006"]["transition"] == "unchanged", by["V-006"]
         assert d["summary"]["resolved"] == 1
-        assert "no new storage" in d["basis"]
+        assert "Legacy fallback" in d["basis"]
     finally:
         p = SESSIONS_DIR / sess
         if p.exists():
@@ -83,6 +83,33 @@ def test_compare_regression():
         assert r.status_code == 200
         by = {x["test_id"]: x for x in r.get_json()["comparisons"]}
         assert by["V-071"]["transition"] == "newly failing", by["V-071"]
+    finally:
+        p = SESSIONS_DIR / sess
+        if p.exists():
+            shutil.rmtree(p)
+
+
+def test_compare_uses_complete_assessment_ids():
+    c = _client()
+    sess, dev = f"cmp_{uuid.uuid4().hex[:8]}", "r1"
+    try:
+        _mk_session(c, sess)
+        first, second = "asm-first", "asm-second"
+        rows = [
+            dict(_e(dev, "V-003", "fail", "2026-01-01T00:00:00Z"), assessment_id=first),
+            dict(_e(dev, "V-006", "pass", "2026-01-01T00:00:01Z"), assessment_id=first),
+            dict(_e(dev, "V-003", "pass", "2026-01-02T00:00:00Z"), assessment_id=second),
+            dict(_e(dev, "V-006", "fail", "2026-01-02T00:00:01Z"), assessment_id=second),
+        ]
+        _write_chain(sess, rows)
+        response = c.get(f"/api/session/{sess}/compare?device_id={dev}&before={first}&after={second}")
+        assert response.status_code == 200
+        body = response.get_json()
+        assert body["before_assessment_id"] == first
+        assert body["after_assessment_id"] == second
+        assert body["summary"]["resolved"] == 1
+        assert body["summary"]["newly failing"] == 1
+        assert "Complete hash-chained assessment snapshots" in body["basis"]
     finally:
         p = SESSIONS_DIR / sess
         if p.exists():

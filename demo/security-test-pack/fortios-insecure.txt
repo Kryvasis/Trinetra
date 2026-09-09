@@ -1,0 +1,20 @@
+# SYNTHETIC TEST FIXTURE ONLY - never deploy
+# FortiOS 7.4.4
+config system interface
+    edit "port1"
+        set allowaccess ping http telnet ssh
+    next
+end
+config system global
+    set admintimeout 0
+end
+config system admin
+    edit "admin"
+        set password DEMO-NOT-A-REAL-SECRET
+    next
+end
+config system snmp community
+    edit 1
+        set name "public"
+    next
+end

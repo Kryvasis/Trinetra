@@ -278,6 +278,11 @@
 .assurance-claims > h2 { grid-column: 1 / -1; margin: 0; padding-block: 20px 4px; }
 .assurance-claims > div { min-width: 0; padding: 18px 20px 20px 0; }
 .assurance-claims p { color: var(--text-dim); margin: 7px 0 0; overflow-wrap: anywhere; }
+.coverage-key { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 14px; color: var(--text-faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.coverage-matrix { max-height: 560px; overflow: auto; scrollbar-gutter: stable; }
+.coverage-matrix table { min-width: 980px; }
+.coverage-matrix th { position: sticky; top: 0; z-index: 1; background: var(--surface); }
+.coverage-matrix td:nth-child(2) { min-width: 260px; }
 
 .assurance-grid {
   display: grid;
@@ -406,6 +411,8 @@
 .device-rate > div { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
 .device-rate span { color: var(--text-dim); font-size: 12px; }
 .comparison-panel { margin-top: 24px; }
+.comparison-identities { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0; color: var(--text-faint); font-size: 11px; }
+.comparison-identities code { overflow-wrap: anywhere; color: var(--text-dim); }
 .comparison-summary,
 .outcome-counts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin: 18px 0; background: var(--border); border-radius: 10px; overflow: hidden; }
 .comparison-summary > div,
@@ -450,6 +457,14 @@
 .selected-evidence span { color: var(--text-faint); font-size: 10px; }
 .selected-evidence code { overflow-wrap: anywhere; }
 .mono-input { font-family: var(--mono); }
+.training-normalization { margin: 22px 0; padding: 18px 0; border: 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.training-normalization legend { padding: 0 10px 0 0; color: var(--text); font-size: 13px; font-weight: 600; }
+.training-normalization > .field-help { margin: 2px 0 16px; max-width: 72ch; }
+.training-normalization-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; }
+.training-rule-scope { margin: 0 0 18px; border-bottom: 1px solid var(--border); }
+.training-rule-scope summary { min-height: 42px; display: flex; align-items: center; color: var(--text-dim); cursor: pointer; font-size: 12px; font-weight: 600; }
+.training-rule-scope[open] summary { color: var(--text); }
+.training-rule-scope .training-normalization-grid { padding: 4px 0 6px; }
 .training-submit { width: 100%; }
 .training-progress { margin-top: 20px; }
 .training-progress-metrics { display: flex; flex-wrap: wrap; align-items: center; gap: 18px; }
@@ -471,6 +486,7 @@
   .outcome-counts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .training-lines-panel,
   .training-editor { min-height: 0; }
+  .training-normalization-grid { grid-template-columns: 1fr; }
   .training-empty-state { min-height: 220px; }
 }
 

@@ -7,15 +7,56 @@ import java.util.*;
  */
 public class SemanticControlEvaluator {
 
+    public static final String EXPLICIT_SECURE_DIRECTIVE = "explicit_secure_directive";
+    public static final String EXPLICIT_INSECURE_DIRECTIVE = "explicit_insecure_directive";
+    public static final String INSUFFICIENT_SYNTAX = "insufficient_configuration_evidence";
+    public static final String REQUIRES_LIVE_EVIDENCE = "requires_live_evidence";
+    public static final String UNSUPPORTED_ASSESSMENT_TYPE = "unsupported_assessment_type";
+
+    private static final Set<String> SEMANTIC_CONTROLS = Set.of(
+        "V-003", "V-006", "V-013", "V-057", "V-058", "V-071", "V-104", "V-107", "V-108"
+    );
+    private static final Set<String> LIVE_REQUIRED_CONTROLS = Set.of(
+        "V-004", "V-005", "V-007", "V-008", "V-070", "V-087", "V-105",
+        "V-106", "V-110", "V-118", "V-144", "V-145"
+    );
+    private static final Set<String> OTHER_ASSESSMENT_CONTROLS = Set.of(
+        "V-010", "V-056", "V-059", "V-073", "V-074", "V-088", "V-113"
+    );
+
     public static class Result {
         public final TrinetraStat.Verdict verdict;
         public final String detail;
         public final List<String> evidence;
+        public final String reasonCode;
+        public final String evaluationSource;
         public Result(TrinetraStat.Verdict verdict, String detail, List<String> evidence) {
+            this(verdict, detail, evidence,
+                verdict == TrinetraStat.Verdict.PASS ? EXPLICIT_SECURE_DIRECTIVE
+                    : verdict == TrinetraStat.Verdict.FAIL ? EXPLICIT_INSECURE_DIRECTIVE
+                    : INSUFFICIENT_SYNTAX,
+                "normalized_configuration");
+        }
+        public Result(TrinetraStat.Verdict verdict, String detail, List<String> evidence,
+                      String reasonCode, String evaluationSource) {
             this.verdict = verdict;
             this.detail = detail;
             this.evidence = evidence != null ? new ArrayList<>(evidence) : new ArrayList<>();
+            this.reasonCode = reasonCode;
+            this.evaluationSource = evaluationSource;
         }
+    }
+
+    public static String configurationMode(String vcode) {
+        String vc = vcode == null ? "" : vcode.toUpperCase(Locale.ROOT);
+        if (SEMANTIC_CONTROLS.contains(vc)) return "semantic_configuration";
+        if (LIVE_REQUIRED_CONTROLS.contains(vc)) return "live_evidence_required";
+        if (OTHER_ASSESSMENT_CONTROLS.contains(vc)) return "different_assessment_type_required";
+        return "unmapped";
+    }
+
+    public static boolean isSemanticControl(String vcode) {
+        return vcode != null && SEMANTIC_CONTROLS.contains(vcode.toUpperCase(Locale.ROOT));
     }
 
     public static Result evaluate(String vcode, SecurityBaseline baseline, String rawConfig) {
@@ -28,22 +69,60 @@ public class SemanticControlEvaluator {
             case "V-057": return evalV057(baseline);
             case "V-058": return evalV058(baseline);
             case "V-071": return evalV071(baseline);
+            case "V-104": return evalV104(baseline);
             case "V-107": return evalV107(baseline);
-            // Category 2 — inherently live
-            case "V-005":
-            case "V-007":
-            case "V-008":
-            case "V-070":
-            case "V-087":
-            case "V-105":
-            case "V-106":
-            case "V-144":
-                return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
-                    "Requires live network verification — not determinable from static config alone (Category 2, unsupported check).",
-                    List.of());
+            case "V-108": return evalV108(baseline);
             default:
-                return new Result(TrinetraStat.Verdict.MANUAL_REVIEW, "No semantic rule for " + vc, List.of());
+                if (LIVE_REQUIRED_CONTROLS.contains(vc)) {
+                return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
+                    "Static configuration cannot establish a pass; live verification, inventory, scanner, or external-service evidence is required.",
+                    List.of(), REQUIRES_LIVE_EVIDENCE, "configuration_scope_gate");
+                }
+                if (OTHER_ASSESSMENT_CONTROLS.contains(vc)) {
+                    return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
+                        "This control targets web applications, host filesystems, software inventories, storage, or CI/CD evidence rather than a network-device configuration.",
+                        List.of(), UNSUPPORTED_ASSESSMENT_TYPE, "configuration_scope_gate");
+                }
+                return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
+                    "No configuration evaluator is registered for " + vc + ".",
+                    List.of(), UNSUPPORTED_ASSESSMENT_TYPE, "configuration_scope_gate");
         }
+    }
+
+    private static Result evalV104(SecurityBaseline b) {
+        if (Boolean.TRUE.equals(b.networkSegmentation.dynamicTrunkingEnabled)) {
+            return new Result(TrinetraStat.Verdict.FAIL,
+                "Dynamic trunk negotiation is explicitly enabled, increasing VLAN-hopping exposure.",
+                dedup(b.networkSegmentation.evidence));
+        }
+        if (Boolean.FALSE.equals(b.networkSegmentation.dynamicTrunkingEnabled)) {
+            return new Result(TrinetraStat.Verdict.PASS,
+                "The configuration explicitly disables trunk negotiation or fixes the port in access mode.",
+                dedup(b.networkSegmentation.evidence));
+        }
+        return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
+            "No supported access-port or trunk-negotiation directive was found for V-104.", List.of());
+    }
+
+    private static Result evalV108(SecurityBaseline b) {
+        if (!"AWS".equalsIgnoreCase(b.vendor)) {
+            return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
+                "V-108 applies to cloud firewall/security-group evidence; this device baseline is not an AWS security-group assessment.",
+                List.of(), UNSUPPORTED_ASSESSMENT_TYPE, "applicability_gate");
+        }
+        if (Boolean.TRUE.equals(b.networkSegmentation.publicSensitiveIngress)) {
+            return new Result(TrinetraStat.Verdict.FAIL,
+                "A security-group rule explicitly exposes a sensitive port to 0.0.0.0/0.",
+                dedup(b.networkSegmentation.evidence));
+        }
+        if (Boolean.FALSE.equals(b.networkSegmentation.publicSensitiveIngress)
+                || Boolean.TRUE.equals(b.acl.hasGranularAcls)) {
+            return new Result(TrinetraStat.Verdict.PASS,
+                "The supplied AWS rules explicitly restrict ingress rather than exposing sensitive ports globally.",
+                dedup(b.networkSegmentation.evidence.isEmpty() ? b.acl.evidence : b.networkSegmentation.evidence));
+        }
+        return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
+            "The AWS input did not contain enough security-group ingress evidence to decide V-108.", List.of());
     }
 
     private static Result evalV003(SecurityBaseline b) {
@@ -128,21 +207,18 @@ public class SemanticControlEvaluator {
                 dedup(failEv));
         }
         if (!b.snmp.communities.isEmpty()) {
-            // Has SNMP but not default => pass (assuming at least one custom)
+            // SNMPv1/v2c community strings are shared secrets even when their
+            // values are not the defaults. Their presence is direct evidence
+            // for this hardcoded-secret control, but values stay redacted by
+            // the evidence sanitizer.
             List<String> allEv = new ArrayList<>();
             for (SecurityBaseline.Snmp.Community c : b.snmp.communities) allEv.addAll(c.evidence);
-            return new Result(TrinetraStat.Verdict.PASS,
-                "Config-syntax check: secure directive present for V-057 (no default community).",
+            return new Result(TrinetraStat.Verdict.FAIL,
+                "Config-syntax check: an SNMP community string is embedded in the supplied configuration.",
                 dedup(allEv));
         }
-        // No SNMP at all => pass (no hardcoded secret)
-        if (b.snmp.communities.isEmpty() && !b.evidenceLines.isEmpty()) {
-            return new Result(TrinetraStat.Verdict.PASS,
-                "Config-syntax check: secure directive present for V-057 (no SNMP default community found).",
-                List.of());
-        }
         return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
-            "Config check ran but the config contained neither the insecure nor the secure directive for V-057 — insufficient evidence.",
+            "No SNMP community was observed, but absence from a partial export cannot prove that no hardcoded secret exists.",
             List.of());
     }
 
@@ -162,19 +238,8 @@ public class SemanticControlEvaluator {
                 "Config-syntax check: insecure directive present for V-058 (logging disabled).",
                 dedup(b.logging.evidence));
         }
-        // Heuristic: if config is non-blank but no logging evidence at all => FAIL
-        if (b.evidenceLines.isEmpty() && b.logging.hosts.isEmpty() && b.logging.evidence.isEmpty()) {
-            return new Result(TrinetraStat.Verdict.FAIL,
-                "Config-syntax check: insecure directive present for V-058 (no logging host).",
-                List.of());
-        }
-        if (b.logging.hosts.isEmpty() && b.logging.evidence.isEmpty()) {
-            return new Result(TrinetraStat.Verdict.FAIL,
-                "Config-syntax check: insecure directive present for V-058 (no logging host).",
-                List.of());
-        }
         return new Result(TrinetraStat.Verdict.MANUAL_REVIEW,
-            "Config check ran but the config contained neither the insecure nor the secure directive for V-058 — insufficient evidence.",
+            "No explicit logging state was found; absence from a partial export cannot prove a logging failure.",
             List.of());
     }
 
@@ -198,8 +263,6 @@ public class SemanticControlEvaluator {
         if (b.managementPlane.execTimeout != null && !"0 0".equals(b.managementPlane.execTimeout) && !"0".equals(b.managementPlane.execTimeout)) {
             passEv.addAll(b.managementPlane.execTimeoutEvidence);
         }
-        // Also consider SSH version 2 as admin hardening
-        if ("2".equals(b.managementPlane.sshVersion)) passEv.addAll(b.managementPlane.sshEvidence);
         if (!passEv.isEmpty()) {
             return new Result(TrinetraStat.Verdict.PASS,
                 "Config-syntax check: secure directive present for V-071 (admin interface hardened).",

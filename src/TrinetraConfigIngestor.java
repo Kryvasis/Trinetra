@@ -92,6 +92,7 @@ public class TrinetraConfigIngestor {
     }
 
     public static class IngestResult {
+        public final String assessmentId;
         public final String deviceId;
         public final String vendor;
         public final String ingestionMethod;
@@ -101,7 +102,8 @@ public class TrinetraConfigIngestor {
         public final List<String> unrecognizedLines;
         public final List<Map<String, Object>> findings;
 
-        public IngestResult(String deviceId, String vendor, String method, int total, int passed, int failed, List<String> unrecognized, List<Map<String, Object>> findings) {
+        public IngestResult(String assessmentId, String deviceId, String vendor, String method, int total, int passed, int failed, List<String> unrecognized, List<Map<String, Object>> findings) {
+            this.assessmentId = assessmentId;
             this.deviceId = deviceId;
             this.vendor = vendor;
             this.ingestionMethod = method;
@@ -246,6 +248,9 @@ public class TrinetraConfigIngestor {
             throw new IllegalArgumentException("Webpages are not device configurations. Use Website analysis or provide a device export.");
         }
         String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String assessmentId = "asm-" + UUID.randomUUID();
+        String assessmentStartedAt = TrinetraCommon.nowIso();
+        String configSha256 = TrinetraSession.sha256Hex(configContent == null ? "" : configContent);
         String methodTag = "live_fetch".equals(ingestionMethod) ? "live_fetch" : "config_upload";
         String vendor = vendorHint;
         if (vendor == null || vendor.isBlank() || vendor.equalsIgnoreCase("auto")) {
@@ -265,12 +270,6 @@ public class TrinetraConfigIngestor {
 
         // ── Build vendor-neutral baseline (PS 1: normalization) ──
         SecurityBaseline baseline = buildBaseline(canonicalVendor, configContent, vendor);
-        try {
-            TrinetraSession.setDeviceBaseline(sanitized, deviceId, baseline);
-        } catch (Exception e) {
-            TrinetraCommon.logWarn("Failed to persist baseline for " + deviceId + ": " + e.getMessage());
-        }
-
         // Save config file to artifacts
         try {
             Path artifacts = TrinetraCommon.sessionArtifactsDir(sanitized);
@@ -300,19 +299,30 @@ public class TrinetraConfigIngestor {
         Map<String, String> allKnown = new LinkedHashMap<>(knownForVendor);
         allKnown.putAll(KNOWN_PATTERNS.get("Generic"));
 
+        String currentContext = "";
         for (String rawLine : lines) {
             String line = rawLine.trim();
             if (line.isEmpty() || line.startsWith("!") || line.startsWith("#")) continue; // comments/separators
+            boolean nested = !rawLine.isEmpty() && Character.isWhitespace(rawLine.charAt(0));
+            if (!nested) currentContext = line;
             boolean matched = false;
             // First, check training map (no code change needed)
-            VendorTrainingMap.Entry trained = VendorTrainingMap.findMatch(canonicalVendor, line);
+            VendorTrainingMap.Entry trained = VendorTrainingMap.findMatch(
+                canonicalVendor, effectiveOs, line, nested ? currentContext : line);
             if (trained != null) {
                 recognized.add(line);
-                // Use the first control's mapped test? For training, we map pattern to a V-code via security_category
-                // For simplicity, map trained entries to V-003 (open) or use the first control's test mapping
-                // We'll map to the most relevant V-code based on category
-                String vcode = mapCategoryToVcode(trained.securityCategory, trained.controlMapping);
+                String vcode = !trained.vCode.isBlank()
+                    ? trained.vCode.toUpperCase(Locale.ROOT)
+                    : mapCategoryToVcode(trained.securityCategory, trained.controlMapping);
                 if (vcode != null) lineToVcode.put(line, vcode);
+                if (!trained.baselineField.isBlank()) {
+                    String trainedEvidence = "trained-rule:" + trained.baselineField + ": " + line;
+                    if (!baseline.applyTrainingValue(trained.baselineField,
+                            trained.resolvedValue(line), trainedEvidence)) {
+                        TrinetraCommon.logWarn("Training rule matched but baseline mutation was rejected: "
+                            + trained.baselineField);
+                    }
+                }
                 matched = true;
                 continue;
             }
@@ -348,6 +358,13 @@ public class TrinetraConfigIngestor {
                     }
                 }
             }
+        }
+
+        // Persist after governed training rules have updated the normalized model.
+        try {
+            TrinetraSession.setDeviceBaseline(sanitized, deviceId, baseline);
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Failed to persist baseline for " + deviceId + ": " + e.getMessage());
         }
 
         // ── Lightweight ML parallel path (KNN TF-IDF char 3-5 cosine) — advisory, never overwrites regex ──
@@ -389,13 +406,10 @@ public class TrinetraConfigIngestor {
         TrinetraStat.loadDefinitions();
         List<Map<String, Object>> findings = new ArrayList<>();
         int passed = 0, failed = 0;
-        // Score the full PS-required set (15) so Category 2 appears as
-        // "requires live verification" rather than vanishing into coverage_gaps.
-        // lineToVcode values are included for completeness but the PS set is authoritative.
-        Set<String> psRequired = new LinkedHashSet<>(Arrays.asList(
-            "V-003","V-005","V-006","V-007","V-008","V-013","V-057","V-058","V-070","V-071","V-087","V-105","V-106","V-107","V-144"
-        ));
-        Set<String> vcodesToCheck = new LinkedHashSet<>(psRequired);
+        // Every manifest control receives an explicit configuration-assessment
+        // outcome. Unsupported evidence types remain unresolved with a reason;
+        // they are never silently omitted or converted into a pass.
+        Set<String> vcodesToCheck = loadManifestVcodes();
         vcodesToCheck.addAll(lineToVcode.values());
         // Fallback: also keep the original default set for any non-PS line mappings
         Set<String> defaultChecks = new LinkedHashSet<>(Arrays.asList("V-013", "V-071", "V-006", "V-007", "V-057", "V-058", "V-003"));
@@ -407,25 +421,23 @@ public class TrinetraConfigIngestor {
         String rawForCheck = configContent != null ? configContent : "";
         Map<String, Object> configurationReview =
             TrinetraConfigObservations.review(canonicalVendor, rawForCheck);
-        // Prepare vendor-neutral semantic results as supplemental baseline evidence.
-        // They may enrich an observed risk, but never manufacture a PASS.
+        // Prepare vendor-neutral semantic/applicability results for all controls.
         Map<String, SemanticControlEvaluator.Result> semanticCache = new LinkedHashMap<>();
         for (String vc : vcodesToCheck) {
-            if (isConfigCategory1(vc)) semanticCache.put(vc, SemanticControlEvaluator.evaluate(vc, baseline, rawForCheck));
+            semanticCache.put(vc, SemanticControlEvaluator.evaluate(vc, baseline, rawForCheck));
         }
 
         for (String vcode : vcodesToCheck) {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
-            // Category 2 remains manual_review. Category 1: explicit risk -> FAIL, else semantic PASS/FAIL, else manual_review.
+            // Explicit risk observations take precedence; otherwise the
+            // semantic evaluator supplies a verdict and a machine-readable
+            // evidence reason for every manifest control.
             SemanticControlEvaluator.Result sr = semanticCache.get(vcode);
             TrinetraStat.Verdict verdict;
             String detail;
             List<String> triggerLines = new ArrayList<>();
-            if (isConfigCategory2(vcode)) {
-                verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
-                detail = "Static configuration evidence cannot establish a pass for this runtime-only control; live verification is required (Category 2, unsupported check).";
-            } else if (hasObservedRiskForVcode(vcode, configurationReview)) {
+            if (hasObservedRiskForVcode(vcode, configurationReview)) {
                 verdict = TrinetraStat.Verdict.FAIL;
                 detail = "Explicit insecure directive observed in the supplied configuration. Verify effective context and vendor/version guidance before remediation.";
                 if (sr != null && !sr.evidence.isEmpty()) {
@@ -445,7 +457,8 @@ public class TrinetraConfigIngestor {
                 detail = sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
             } else {
                 verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
-                detail = "No supported explicit insecure directive was observed. Static configuration evidence cannot establish a pass; verify effective state with an approved runtime check.";
+                detail = sr != null ? sr.detail
+                    : "No evaluator is registered for this control and evidence type.";
                 if (sr != null && !sr.evidence.isEmpty()) {
                     triggerLines = SecurityBaseline.sanitizeEvidenceList(sr.evidence);
                     detail += " Baseline suggests: " + sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
@@ -458,6 +471,8 @@ public class TrinetraConfigIngestor {
             // Build finding similar to TrinetraStat.statRun but with ingestion_method
             Map<String, Object> finding = TrinetraCommon.newMap();
             finding.put("finding_id", UUID.randomUUID().toString());
+            finding.put("assessment_id", assessmentId);
+            finding.put("config_sha256", configSha256);
             finding.put("v_code", vcode);
             finding.put("test_code", vcode);
             finding.put("v_name", def.name);
@@ -473,6 +488,9 @@ public class TrinetraConfigIngestor {
             finding.put("verdict", verdict.name().toLowerCase());
             finding.put("verdict_detail", detail);
             finding.put("finding_class", TrinetraFindingClassification.classify(vcode, verdict.name().toLowerCase(), "configuration_only"));
+            finding.put("evidence_reason", sr != null ? sr.reasonCode : SemanticControlEvaluator.UNSUPPORTED_ASSESSMENT_TYPE);
+            finding.put("evaluation_source", sr != null ? sr.evaluationSource : "configuration_scope_gate");
+            finding.put("configuration_mode", SemanticControlEvaluator.configurationMode(vcode));
             finding.put("evidence_lines", new ArrayList<>(triggerLines));
             finding.put("eval_method", def.decisionRule.evalMethod);
             finding.put("pass_criteria", def.decisionRule.passCriteria);
@@ -495,6 +513,8 @@ public class TrinetraConfigIngestor {
             // Also append to normalized_results for scoring
             Map<String, Object> norm = TrinetraCommon.newMap();
             norm.put("device_id", deviceId);
+            norm.put("assessment_id", assessmentId);
+            norm.put("config_sha256", configSha256);
             norm.put("vendor", canonicalVendor);
             norm.put("test_id", vcode);
             norm.put("raw_output", rawForCheck.substring(0, Math.min(2000, rawForCheck.length())));
@@ -503,6 +523,9 @@ public class TrinetraConfigIngestor {
             norm.put("assessment_kind", "configuration_only");
             norm.put("verdict_detail", finding.get("verdict_detail"));
             norm.put("finding_class", TrinetraFindingClassification.classify(vcode, verdict.name().toLowerCase(), "configuration_only"));
+            norm.put("evidence_reason", finding.get("evidence_reason"));
+            norm.put("evaluation_source", finding.get("evaluation_source"));
+            norm.put("configuration_mode", finding.get("configuration_mode"));
             norm.put("evidence_lines", new ArrayList<>(triggerLines));
             if (!reviewRecorded) {
                 norm.put("configuration_review", configurationReview);
@@ -523,6 +546,8 @@ public class TrinetraConfigIngestor {
         if (!unrecognized.isEmpty()) {
             Map<String, Object> uncFinding = TrinetraCommon.newMap();
             uncFinding.put("finding_id", UUID.randomUUID().toString());
+            uncFinding.put("assessment_id", assessmentId);
+            uncFinding.put("config_sha256", configSha256);
             uncFinding.put("v_code", "UNRECOGNIZED");
             uncFinding.put("test_code", "UNRECOGNIZED");
             uncFinding.put("v_name", "Unrecognized config lines");
@@ -575,6 +600,8 @@ public class TrinetraConfigIngestor {
                 if (def == null) continue;
                 Map<String, Object> mlFinding = TrinetraCommon.newMap();
                 mlFinding.put("finding_id", UUID.randomUUID().toString());
+                mlFinding.put("assessment_id", assessmentId);
+                mlFinding.put("config_sha256", configSha256);
                 mlFinding.put("v_code", suggestedVcode + "_ML");
                 mlFinding.put("test_code", suggestedVcode + "_ML");
                 mlFinding.put("v_name", def.name + " (ML-suggested)");
@@ -608,12 +635,55 @@ public class TrinetraConfigIngestor {
             TrinetraSession.setDeviceRemoved(sanitized, deviceId, false);
         TrinetraBrain.updateBrain(sanitized);
 
-        return new IngestResult(deviceId, canonicalVendor, methodTag, findings.size(), passed, failed, unrecognized, findings);
+        persistAssessmentSnapshot(sanitized, assessmentId, assessmentStartedAt,
+            deviceId, canonicalVendor, effectiveOs, methodTag, filename,
+            configSha256, baseline, findings, unrecognized);
+
+        return new IngestResult(assessmentId, deviceId, canonicalVendor, methodTag,
+            findings.size(), passed, failed, unrecognized, findings);
     }
 
-    // ── PS 15-way Classification (Step 1) ──────────────────────────────────
-    // Category 1: genuinely determinable from static config text alone.
-    // Category 2: inherently requires live network/runtime state — config cannot prove it.
+    private static void persistAssessmentSnapshot(String sessionName, String assessmentId,
+                                                   String startedAt, String deviceId,
+                                                   String vendor, String osVersion,
+                                                   String ingestionMethod, String filename,
+                                                   String configSha256, SecurityBaseline baseline,
+                                                   List<Map<String, Object>> findings,
+                                                   List<String> unrecognized) {
+        try {
+            Path assessmentsDir = TrinetraCommon.sessionArtifactsDir(sessionName).resolve("assessments");
+            Files.createDirectories(assessmentsDir);
+            Map<String, Object> snapshot = TrinetraCommon.newMap();
+            snapshot.put("schema_version", 1);
+            snapshot.put("assessment_id", assessmentId);
+            snapshot.put("session", sessionName);
+            snapshot.put("device_id", deviceId);
+            snapshot.put("vendor", vendor);
+            snapshot.put("os_version", osVersion == null ? "" : osVersion);
+            snapshot.put("ingestion_method", ingestionMethod);
+            snapshot.put("source_filename", filename == null ? "" : filename);
+            snapshot.put("config_sha256", configSha256);
+            snapshot.put("started_at", startedAt);
+            snapshot.put("completed_at", TrinetraCommon.nowIso());
+            snapshot.put("baseline", baseline.toMap());
+            snapshot.put("findings", new ArrayList<>(findings));
+            snapshot.put("unrecognized_lines", new ArrayList<>(unrecognized));
+            List<Map<String, Object>> chainRecords = new ArrayList<>();
+            for (Map<String, Object> record : TrinetraSession.getNormalizedResults(sessionName)) {
+                if (assessmentId.equals(TrinetraCommon.getString(record, "assessment_id", "")))
+                    chainRecords.add(record);
+            }
+            snapshot.put("hash_chained_results", chainRecords);
+            Path destination = assessmentsDir.resolve(assessmentId + ".json");
+            Files.writeString(destination, TrinetraJson.prettyJson(snapshot),
+                StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Assessment snapshot write failed for " + assessmentId + ": " + e.getMessage());
+        }
+    }
+
+    // Configuration-semantic controls. All other manifest controls still
+    // receive explicit unresolved/applicability outcomes from the evaluator.
     private static final Set<String> CONFIG_CATEGORY_1 = Set.of(
         "V-003", // open port/unnecessary service — presence of ip http server / telnet / snmp public in config proves unnecessary service is enabled
         "V-006", // weak TLS/SSH version — ip ssh version 1 vs 2 is explicit in config
@@ -621,10 +691,12 @@ public class TrinetraConfigIngestor {
         "V-057", // hardcoded secrets / SNMP community — snmp-server community public/private
         "V-058", // sensitive data in logs — logging host / logging trap presence vs absence
         "V-071", // exposed admin interface — transport input telnet, ip http server, exec-timeout 0 0 vs ssh / no http / timeout 5 0
-        "V-107"  // IAM/policy misconfig — username privilege 15 with password vs secret, aaa
-        // Note: V-005/007/008/070/087/105/106/144 are Category 2 — see below
+        "V-104", // VLAN hopping — explicit dynamic trunking versus access/nonegotiate
+        "V-107", // IAM/policy misconfig — username privilege 15 with password vs secret, aaa
+        "V-108"  // AWS security-group public sensitive ingress
     );
     private static final Set<String> CONFIG_CATEGORY_2 = Set.of(
+        "V-004", // DNS behavior requires resolver/runtime evidence
         "V-005", // banner grabbing — requires live nmap -sV banner fetch, not present in config (banner motd is not version disclosure)
         "V-007", // weak cipher — requires live TLS handshake cipher negotiation; config rarely lists explicit weak ciphers
         "V-008", // expired/self-signed cert — requires live openssl s_client fetch
@@ -632,7 +704,9 @@ public class TrinetraConfigIngestor {
         "V-087", // vulnerable dependencies/SCA — requires filesystem grype/syft scan
         "V-105", // flat network/no segmentation — requires live segmentation probe; ACL presence alone cannot prove reachability
         "V-106", // public cloud storage — requires live cloud API (aws s3api), not device config
-        "V-144"  // kernel hardening — requires live host kernel-hardening-checker
+        "V-144", // kernel hardening — requires live host kernel-hardening-checker
+        "V-145", // binary execution protection requires host/binary inspection
+        "V-010", "V-056", "V-059", "V-073", "V-074", "V-088", "V-110", "V-113", "V-118"
     );
 
     static boolean isConfigCategory1(String vcode) {
@@ -640,6 +714,25 @@ public class TrinetraConfigIngestor {
     }
     static boolean isConfigCategory2(String vcode) {
         return vcode != null && CONFIG_CATEGORY_2.contains(vcode.toUpperCase());
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Set<String> loadManifestVcodes() {
+        Set<String> out = new LinkedHashSet<>();
+        try {
+            Path path = Path.of(TrinetraCommon.PROJECT_ROOT, "config", "compliance_manifest.json");
+            Object parsed = TrinetraJson.parse(TrinetraCommon.readFile(path));
+            if (parsed instanceof Map) {
+                for (Object key : ((Map<Object, Object>) parsed).keySet()) {
+                    String value = String.valueOf(key).toUpperCase(Locale.ROOT);
+                    if (value.matches("V-\\d+")) out.add(value);
+                }
+            }
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Compliance manifest could not be loaded for config coverage: " + e.getMessage());
+        }
+        if (out.isEmpty()) out.addAll(CONFIG_CATEGORY_1);
+        return out;
     }
 
     /**
@@ -962,6 +1055,27 @@ public class TrinetraConfigIngestor {
             if (m.find()) return "JUNOS " + m.group(1).trim();
             if (lower.contains("junos")) return "JUNOS";
             return "JUNOS";
+        }
+        // FortiOS exports commonly contain "FortiOS v7.2.5" or a
+        // FortiGate version/build header.
+        if (lower.contains("fortios") || lower.contains("fortigate")) {
+            java.util.regex.Matcher m = Pattern.compile("(?:fortios|fortigate)[^\\n]*?v?(\\d+(?:\\.\\d+){1,3})", Pattern.CASE_INSENSITIVE).matcher(head);
+            if (m.find()) return "FortiOS " + m.group(1);
+            return "FortiOS";
+        }
+        // PAN-OS XML/API exports and command output.
+        if (lower.contains("pan-os") || lower.contains("palo alto") || lower.contains("<sw-version>")) {
+            java.util.regex.Matcher m = Pattern.compile("(?:<sw-version>|pan-os\\s+v?)([\\d.]+)", Pattern.CASE_INSENSITIVE).matcher(head);
+            if (m.find()) return "PAN-OS " + m.group(1);
+            return "PAN-OS";
+        }
+        if (lower.contains("sonic software version") || lower.contains("sonic_version") || lower.contains("sonic.")) {
+            java.util.regex.Matcher m = Pattern.compile("(?:sonic[._ ](?:software version[: ]*)?)([\\w.\\-]+)", Pattern.CASE_INSENSITIVE).matcher(head);
+            if (m.find()) return "SONiC " + m.group(1);
+            return "SONiC";
+        }
+        if (lower.contains("\"securitygroups\"") || lower.contains("\"networkacls\"") || lower.contains("aws ec2")) {
+            return "AWS EC2 network policy";
         }
         // Generic IOS — e.g. "Cisco IOS Software, Version 15.9(3)M6"
         if (lower.contains("cisco ios software") || lower.contains("cisco ios ")) {

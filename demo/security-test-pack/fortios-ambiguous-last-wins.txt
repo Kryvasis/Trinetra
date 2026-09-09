@@ -1,0 +1,14 @@
+# SYNTHETIC PRECEDENCE TEST - later directive in the same interface is effective
+# FortiOS 7.4.4
+config system interface
+    edit "port1"
+        set allowaccess ping http telnet ssh
+        set allowaccess ping https ssh
+    next
+end
+config system global
+    set admintimeout 5
+end
+config log syslogd setting
+    set server "192.0.2.10"
+end

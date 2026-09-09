@@ -92,14 +92,18 @@ def test_config_upload_category1_differentiates():
         sec_map = {f["v_code"]: f["verdict"] for f in sec_json["findings"] if f.get("v_code") in CATEGORY_1 + CATEGORY_2}
         ins_map = {f["v_code"]: f["verdict"] for f in ins_json["findings"] if f.get("v_code") in CATEGORY_1 + CATEGORY_2}
 
-        # Semantic wiring: Category 1 secure → PASS via baseline, insecure → FAIL; Category 2 → manual_review.
+        # Semantic wiring: explicit supported directives differentiate outcomes.
+        # No SNMP community in a partial export is absence, not proof of no
+        # hardcoded secret, so secure V-057 remains unresolved.
         for vcode in CATEGORY_1:
             assert vcode in sec_map, f"{vcode} missing in secure findings"
             assert vcode in ins_map, f"{vcode} missing in insecure findings"
-            assert sec_map[vcode] == "pass", f"secure {vcode} should be PASS via baseline, got {sec_map[vcode]}"
+            expected_secure = "manual_review" if vcode == "V-057" else "pass"
+            assert sec_map[vcode] == expected_secure, f"secure {vcode} should be {expected_secure}, got {sec_map[vcode]}"
             assert ins_map[vcode] == "fail", f"insecure {vcode} should be FAIL via baseline, got {ins_map[vcode]}"
             sec_detail = next(f["verdict_detail"] for f in sec_json["findings"] if f["v_code"] == vcode)
-            assert "baseline evidence" in sec_detail.lower(), f"Category1 detail must cite baseline, got {sec_detail}"
+            if expected_secure == "pass":
+                assert "baseline evidence" in sec_detail.lower(), f"Category1 detail must cite baseline, got {sec_detail}"
         for vcode in CATEGORY_2:
             assert vcode in sec_map, f"{vcode} missing in secure findings"
             assert vcode in ins_map, f"{vcode} missing in insecure findings"

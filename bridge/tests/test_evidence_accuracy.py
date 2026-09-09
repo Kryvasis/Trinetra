@@ -38,8 +38,9 @@ def test_runtime_rules_do_not_pass_from_config(evidence_client):
     state = json.loads(state_path.read_text())
     verdicts = {row['test_id']: row['normalized_result'] for row in state['normalized_results']}
     assert {code for code, verdict in verdicts.items() if verdict == 'fail'} == {
-        'V-003', 'V-006', 'V-013', 'V-057', 'V-058', 'V-071', 'V-107',
+        'V-003', 'V-006', 'V-013', 'V-057', 'V-071', 'V-107',
     }
+    assert verdicts['V-058'] == 'manual_review', "missing logging syntax is insufficient evidence"
     review = score['configuration_reviews'][0]
     assert len([row for row in review['observations'] if row['status'] == 'observed_risk']) == 5
     assert 'SENSITIVE-DEMO' not in json.dumps(score)
@@ -60,13 +61,15 @@ def test_negation_comments_banners_and_absence_are_not_passes(evidence_client):
     assert all(row['status'] == 'not_observed' for row in score['configuration_reviews'][0]['observations'])
     # Secure directives now produce PASS via baseline (semantic wiring); banner/comment content must not leak
     assert any(fw['tests_passed'] > 0 for fw in score['frameworks'].values())
-    # V-058 will be FAIL due to no logging host, but banner insecure must not add extra fails (V-003/V-071 should be PASS not FAIL)
+    # Missing logging evidence remains unresolved; banner content must not add
+    # false failures (V-003/V-071 should be PASS, not FAIL).
     state_path = Path(bridge.TRINETRA_ROOT) / 'sessions' / name / f'brain_state_{name}.json'
     state = json.loads(state_path.read_text())
     verdicts = {row['test_id']: row['normalized_result'] for row in state['normalized_results']}
     assert verdicts['V-003'] == 'pass', "no ip http server + no telnet outside banner should be PASS"
     assert verdicts['V-006'] == 'pass', "ip ssh version 2 should be PASS"
     assert verdicts['V-071'] == 'pass', "transport input ssh + no http should be PASS"
+    assert verdicts['V-058'] == 'manual_review'
 
 
 def test_unsupported_vendor_and_removed_device(evidence_client):
