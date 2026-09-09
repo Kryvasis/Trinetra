@@ -502,8 +502,11 @@ public class TrinetraSession {
             record.put("ingestion_method", ingestionMethod);
         }
         // Optional structured provenance is included in the hashed payload.
-        // Old records and their hashes are never rewritten.
-        for (String key : List.of("assessment_kind", "verdict_detail", "configuration_review")) {
+        // Old records and their hashes are never rewritten. finding_class and
+        // evidence_lines are part of the hashed record so classification and
+        // source-line traceability are tamper-evident alongside the verdict.
+        for (String key : List.of("assessment_kind", "verdict_detail", "configuration_review",
+                                  "finding_class", "evidence_lines")) {
             if (entry.containsKey(key)) record.put(key, entry.get(key));
         }
 
@@ -830,6 +833,7 @@ public class TrinetraSession {
     public static final String DEVICE_INGESTION_FIELD = "device_ingestion";
     public static final String DEVICE_DETAILS_FIELD = "device_details";
     public static final String UNRECOGNIZED_LINES_FIELD = "unrecognized_config_lines";
+    public static final String DEVICE_BASELINES_FIELD = "device_baselines";
 
     public static boolean setDeviceIngestion(String sessionName, String deviceId, String method, String filename) {
         if (sessionName == null || deviceId == null || method == null) return false;
@@ -1016,6 +1020,61 @@ public class TrinetraSession {
                     List<String> list = new ArrayList<>();
                     for (Object o : (List<?>) e.getValue()) list.add(String.valueOf(o));
                     out.put(String.valueOf(e.getKey()), list);
+                }
+            }
+        }
+        return out;
+    }
+
+    // ── Device baselines (vendor-neutral semantic model) ──
+    public static boolean setDeviceBaseline(String sessionName, String deviceId, SecurityBaseline baseline) {
+        if (sessionName == null || deviceId == null || baseline == null) return false;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        String dev = deviceId.trim();
+        if (dev.isEmpty()) return false;
+        Boolean ok = withSessionStateLock(sanitized, () -> {
+            Path jsonPath = TrinetraCommon.sessionJson(sanitized);
+            Map<String, Object> session = TrinetraCommon.readJsonFile(jsonPath);
+            if (session.isEmpty()) return false;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> map = session.get(DEVICE_BASELINES_FIELD) instanceof Map
+                ? (Map<String, Object>) session.get(DEVICE_BASELINES_FIELD)
+                : new LinkedHashMap<>();
+            map.put(dev, baseline.toMap());
+            session.put(DEVICE_BASELINES_FIELD, map);
+            session.put("updated_at", TrinetraCommon.nowIso());
+            TrinetraCommon.writeJsonFile(jsonPath, session);
+            return true;
+        });
+        return Boolean.TRUE.equals(ok);
+    }
+
+    @SuppressWarnings("unchecked")
+    public static SecurityBaseline getDeviceBaseline(String sessionName, String deviceId) {
+        if (sessionName == null || deviceId == null) return null;
+        String sanitized = TrinetraCommon.sanitizeName(sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_BASELINES_FIELD);
+        if (dv instanceof Map) {
+            Object entry = ((Map<String, Object>) dv).get(deviceId);
+            if (entry instanceof Map) return SecurityBaseline.fromMap((Map<String, Object>) entry);
+            // trimmed fallback
+            entry = ((Map<String, Object>) dv).get(deviceId.trim());
+            if (entry instanceof Map) return SecurityBaseline.fromMap((Map<String, Object>) entry);
+        }
+        return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    public static Map<String, SecurityBaseline> getAllDeviceBaselines(String sessionName) {
+        String sanitized = TrinetraCommon.sanitizeName(sessionName == null ? "" : sessionName);
+        Map<String, Object> session = TrinetraCommon.readJsonFile(TrinetraCommon.sessionJson(sanitized));
+        Object dv = session.get(DEVICE_BASELINES_FIELD);
+        Map<String, SecurityBaseline> out = new LinkedHashMap<>();
+        if (dv instanceof Map) {
+            for (Map.Entry<?, ?> e : ((Map<?, ?>) dv).entrySet()) {
+                if (e.getValue() instanceof Map) {
+                    out.put(String.valueOf(e.getKey()), SecurityBaseline.fromMap((Map<String, Object>) e.getValue()));
                 }
             }
         }

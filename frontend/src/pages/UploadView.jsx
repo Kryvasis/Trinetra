@@ -6,7 +6,7 @@ import WebsiteView from './WebsiteView'
 import { rememberSession } from '../utils/activeSession'
 import { announceActivity, createOperationId } from '../utils/activityStream'
 
-const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'Generic']
+const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'FortiOS', 'PAN-OS', 'SONiC', 'AWS', 'Generic']
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/
 const DEVICE_RE = /^[A-Za-z0-9._-]{1,128}$/
 const MAX_FILE_SIZE = 1024 * 1024 // 1MB — matches bridge limit

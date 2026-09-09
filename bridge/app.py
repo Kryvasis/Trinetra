@@ -1165,6 +1165,99 @@ def device_scope(name, device_id):
         return error_response("Device not found" if rc == 2 else "Could not update device scope", 404 if rc == 2 else 500)
     return jsonify({"session": name, "device_id": device_id, "removed": request.method == "DELETE", "evidence_retained": True})
 
+
+# ── GET /api/session/<name>/compare — assessment comparison (review item 2) ──
+# Compares the two most recent assessments per V-code for one device, using only
+# the existing hash-chained normalized_results history — no new storage.
+# Scope note: the data model has no explicit assessment IDs (append-only per-test
+# history), so latest-two-per-V-code is the only honest comparison available.
+_COMPARE_CAT1 = {"V-003", "V-006", "V-013", "V-057", "V-058", "V-071", "V-107"}
+_COMPARE_CAT2 = {"V-005", "V-007", "V-008", "V-070", "V-087", "V-105", "V-106", "V-144"}
+
+def _compare_class(test_id, verdict, assessment_kind=""):
+    tid = (test_id or "").strip().upper()
+    v = (verdict or "").strip().lower()
+    kind = (assessment_kind or "").strip().lower()
+    if tid == "UNRECOGNIZED":
+        return "unsupported check"
+    if v in ("error", "not_tested"):
+        return "unsupported check"
+    is_live = kind in ("live_probe", "stat_script")
+    if tid in _COMPARE_CAT2 and not is_live:
+        return "unsupported check"
+    if v == "fail":
+        return "confirmed risk"
+    if v in ("pass", "success"):
+        return "verified pass"
+    return "insufficient evidence"
+
+
+def _compare_transition(before_cls, after_cls):
+    if before_cls == "confirmed risk" and after_cls == "verified pass":
+        return "resolved"
+    if before_cls == "verified pass" and after_cls == "confirmed risk":
+        return "newly failing"
+    if before_cls in ("insufficient evidence", "unsupported check") and after_cls in ("insufficient evidence", "unsupported check"):
+        return "still unresolved"
+    if before_cls == after_cls:
+        return "unchanged"
+    return "unchanged"
+
+
+@app.route("/api/session/<name>/compare", methods=["GET"])
+def compare_assessments(name):
+    if not validate_session(name):
+        return error_response(f"invalid session name: {name!r}", 400)
+    device_id = request.args.get("device_id") or request.args.get("deviceId")
+    if not device_id or not validate_device(device_id):
+        return error_response("device_id query parameter is required", 400)
+    brain_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"brain_state_{name}.json")
+    if not os.path.exists(brain_path):
+        return error_response(f"session not found: {name}", 404)
+    try:
+        with open(brain_path, "r") as f:
+            brain_data = json.load(f)
+    except (OSError, ValueError):
+        return error_response("Assessment evidence could not be read. Restore a valid backup before trusting results.", 500)
+    entries = [e for e in (brain_data.get("normalized_results") or [])
+               if isinstance(e, dict) and e.get("device_id") == device_id]
+    if not entries:
+        return error_response(f"no assessments recorded for device {device_id!r}", 404)
+    by_test = {}
+    for e in entries:
+        tid = e.get("test_id") or "?"
+        by_test.setdefault(tid, []).append(e)
+    comparisons = []
+    for tid in sorted(by_test):
+        ordered = sorted(by_test[tid], key=lambda x: str(x.get("timestamp") or ""))
+        after = ordered[-1]
+        before = ordered[-2] if len(ordered) >= 2 else ordered[-1]
+        after_v = (after.get("normalized_result") or "").lower()
+        before_v = (before.get("normalized_result") or "").lower()
+        after_cls = after.get("finding_class") or _compare_class(tid, after_v, after.get("assessment_kind") or "")
+        before_cls = before.get("finding_class") or _compare_class(tid, before_v, before.get("assessment_kind") or "")
+        comparisons.append({
+            "test_id": tid,
+            "before": {"verdict": before_v, "finding_class": before_cls,
+                       "timestamp": before.get("timestamp")},
+            "after": {"verdict": after_v, "finding_class": after_cls,
+                      "timestamp": after.get("timestamp")},
+            "transition": _compare_transition(before_cls, after_cls),
+            "assessments_compared": len(ordered),
+        })
+    summary = {"resolved": 0, "newly failing": 0, "unchanged": 0, "still unresolved": 0}
+    for c in comparisons:
+        summary[c["transition"]] = summary.get(c["transition"], 0) + 1
+    return jsonify({
+        "session": name,
+        "device_id": device_id,
+        "basis": ("Latest-two assessments per V-code from the hash-chained normalized_results history; "
+                  "no new storage. Explicit assessment-ID selection is not supported by the current "
+                  "append-only per-test data model, so this scope was chosen."),
+        "comparisons": comparisons,
+        "summary": summary,
+    }), 200
+
 # ── POST /api/session/<name>/train — add training entry (no code change) ──
 @app.route("/api/session/<name>/train", methods=["POST"])
 def train_vendor(name):
@@ -1249,9 +1342,223 @@ def train_vendor(name):
                     except OSError:
                         pass
         # Invalidate Java cache by touching file (VendorTrainingMap.load checks mtime)
+        # Retrain lightweight ML (TF-IDF + KNN) in parallel — never fails the training request
+        try:
+            import ml_knn
+            ml_knn.train()
+        except ImportError:
+            try:
+                from bridge.ml_knn import train as _ml_train
+                _ml_train()
+            except Exception:
+                pass
+        except Exception:
+            pass
         return jsonify({"message": "training entry added", "entry": new_entry, "total_entries": len(data_json["entries"])}), 201
     except Exception as e:
         return error_response(f"failed to add training entry: {e}", 500)
+
+# ── Lightweight ML advisory endpoints (KNN TF-IDF, parallel to regex) ──
+@app.route("/api/ml/suggest", methods=["POST"])
+def ml_suggest():
+    data = request.get_json(silent=True) or {}
+    line = data.get("line") or data.get("text") or ""
+    if not isinstance(line, str) or not line.strip():
+        return error_response("line is required", 400)
+    # vendor hint optional — currently unused but kept for future per-vendor models
+    vendor = data.get("vendor") or data.get("vendor_hint") or ""
+    try:
+        try:
+            from bridge.ml_knn import predict
+        except ImportError:
+            from ml_knn import predict
+        pred = predict(line, vendor if isinstance(vendor, str) else None)
+        return jsonify({"line": line.strip(), "ml": pred, "model": "tfidf_char3-5_knn_k3_cosine", "deterministic_fallback": "regex DecisionEngine remains authoritative"}), 200
+    except Exception as e:
+        return jsonify({"line": line.strip(), "ml": None, "error": str(e)[:200]}), 200
+
+@app.route("/api/ml/train", methods=["POST"])
+def ml_train():
+    try:
+        try:
+            from bridge.ml_knn import train
+        except ImportError:
+            from ml_knn import train
+        ok = train(force=True)
+        # report corpus size
+        from pathlib import Path as _P2
+        import json as _j2
+        corp = _P2(TRINETRA_ROOT) / "config" / "ml_corpus.json"
+        n = len(_j2.loads(corp.read_text())) if corp.exists() else 0
+        return jsonify({"retrained": bool(ok), "corpus_size": n, "model": "tfidf_char3-5_knn_k3_cosine"}), 200
+    except Exception as e:
+        return error_response(f"ml train failed: {e}", 500)
+
+@app.route("/api/ml/status", methods=["GET"])
+def ml_status():
+    try:
+        from pathlib import Path as _P3
+        import json as _j3
+        has_sklearn = True
+        try:
+            import sklearn
+        except ImportError:
+            has_sklearn = False
+        corp = _P3(TRINETRA_ROOT) / "config" / "ml_corpus.json"
+        model = _P3(TRINETRA_ROOT) / "config" / "ml_model.pkl"
+        vec = _P3(TRINETRA_ROOT) / "config" / "ml_vectorizer.pkl"
+        n = len(_j3.loads(corp.read_text())) if corp.exists() else 0
+        return jsonify({
+            "has_sklearn": has_sklearn,
+            "corpus_size": n,
+            "model_exists": model.exists(),
+            "vectorizer_exists": vec.exists(),
+            "model_path": str(model),
+            "threshold": 0.55,
+            "k": 3,
+            "analyzer": "char_wb 3-5 cosine",
+            "fallback": "regex DecisionEngine authoritative, ML advisory only"
+        }), 200
+    except Exception as e:
+        return error_response(f"ml status failed: {e}", 500)
+
+# ── NLP Pattern Recognition (Gemini) — true semantic interpretation ──
+@app.route("/api/nlp/suggest", methods=["POST"])
+def nlp_suggest():
+    data = request.get_json(silent=True) or {}
+    line = data.get("line") or data.get("text") or ""
+    if not isinstance(line, str) or not line.strip():
+        return error_response("line is required", 400)
+    vendor = data.get("vendor") or data.get("vendor_hint") or ""
+    if len(line) > 500:
+        return error_response("line too long (max 500)", 400)
+    if any(c in line for c in [';', '&', '|', '`', '\n', '\r']):
+        return error_response("injection characters detected", 400)
+    try:
+        rc, out, err = run_java_helper("TrinetraBridgeHelper", ["nlp-suggest", line.strip(), vendor if isinstance(vendor, str) else ""], timeout=30)
+        if rc != 0 and "LLM unavailable" not in (out + err):
+            # Try to parse even if non-zero, fallback to empty
+            try:
+                data = json.loads(out.strip())
+                return jsonify(data), 200
+            except:
+                pass
+            return jsonify({"line": line.strip(), "nlp": None, "note": "NLP unavailable"}), 200
+        try:
+            data = json.loads(out.strip().split("\n")[-1] if "\n" in out else out.strip())
+            # Find JSON part
+            j_start = out.find("{")
+            j_end = out.rfind("}")
+            if j_start >= 0 and j_end >= 0:
+                data = json.loads(out[j_start:j_end+1])
+            return jsonify(data), 200
+        except Exception as je:
+            return jsonify({"line": line.strip(), "nlp": None, "error": f"parse failed: {je}", "raw": out[:500]}), 200
+    except Exception as e:
+        return jsonify({"line": line.strip(), "nlp": None, "error": str(e)[:200]}), 200
+
+# ── Vendor Auto-Discovery (Iskabon + Trinetra) — zero-code new vendor learning ──
+@app.route("/api/vendor/discovery", methods=["GET"])
+def vendor_discovery():
+    try:
+        p = Path(TRINETRA_ROOT) / "config" / "vendor_discovery_map.json"
+        if not p.exists():
+            return jsonify({"oids": {}, "os_families": {}, "pending_oids": {}, "banner_learned": {}}), 200
+        data = json.loads(p.read_text(encoding="utf-8"))
+        return jsonify(data), 200
+    except Exception as e:
+        return error_response(f"discovery map read failed: {e}", 500)
+
+@app.route("/api/vendor/discovery/report", methods=["POST"])
+def vendor_discovery_report():
+    """Report an unknown vendor/OID/banner — auto-promotes after 3 sightings (clustering)."""
+    data = request.get_json(silent=True) or {}
+    oid = (data.get("oid") or data.get("sysObjectID") or "").strip()
+    banner = (data.get("banner") or data.get("raw_banner") or "").strip()
+    vendor_guess = (data.get("vendor_guess") or data.get("vendor") or "").strip()
+    if not oid and not banner and not vendor_guess:
+        return error_response("oid or banner or vendor_guess required", 400)
+    if oid and not re.match(r"^1\.3\.6\.1\.4\.1\.\d+(\.\d+)*$", oid):
+        return error_response("invalid OID format", 400)
+    if vendor_guess and (len(vendor_guess) > 32 or contains_injection(vendor_guess)):
+        return error_response("invalid vendor_guess", 400)
+    try:
+        p = Path(TRINETRA_ROOT) / "config" / "vendor_discovery_map.json"
+        raw = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"oids": {}, "os_families": {}, "pending_oids": {}, "banner_learned": {}}
+        # Banner learning: if banner contains SSH vendor, auto-extract
+        if banner and not vendor_guess:
+            m = re.search(r"SSH-\d+\.\d+-([A-Za-z0-9-]+)[_\- ]", banner)
+            if m:
+                vendor_guess = m.group(1).strip()
+        if oid and vendor_guess:
+            # Direct promotion if vendor_guess provided
+            enterprise = ".".join(oid.split(".")[:7])  # 1.3.6.1.4.1.<num>
+            if enterprise not in raw.get("oids", {}):
+                raw.setdefault("oids", {})[enterprise] = vendor_guess
+                # Also ensure OS family table has it
+                raw.setdefault("os_families", {})[vendor_guess.lower()] = vendor_guess
+                p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+                return jsonify({"learned": True, "enterprise": enterprise, "vendor": vendor_guess, "method": "direct"}), 200
+        if oid:
+            enterprise = ".".join(oid.split(".")[:7])
+            pending = raw.setdefault("pending_oids", {})
+            entry = pending.get(enterprise, {"count": 0, "raw_oids": [], "banner_samples": []})
+            entry["count"] = int(entry.get("count", 0)) + 1
+            if oid not in entry.get("raw_oids", []):
+                entry.setdefault("raw_oids", []).append(oid)
+            if banner and banner not in entry.get("banner_samples", []):
+                entry.setdefault("banner_samples", []).append(banner[:200])
+            if vendor_guess and "vendor_guess" not in entry:
+                entry["vendor_guess"] = vendor_guess
+            pending[enterprise] = entry
+            # Auto-promote after 3 sightings with consistent banner vendor
+            if entry["count"] >= 3 and entry.get("vendor_guess"):
+                raw.setdefault("oids", {})[enterprise] = entry["vendor_guess"]
+                raw.setdefault("os_families", {})[entry["vendor_guess"].lower()] = entry["vendor_guess"]
+                # Move to learned
+                raw.setdefault("banner_learned", {})[entry["vendor_guess"]] = f"auto-learned from {enterprise} after 3 sightings"
+                del pending[enterprise]
+                p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+                return jsonify({"learned": True, "enterprise": enterprise, "vendor": entry["vendor_guess"], "method": "auto-promote-3x"}), 200
+            p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+            return jsonify({"learned": False, "pending": entry, "need": 3 - entry["count"]}), 200
+        if vendor_guess and banner:
+            raw.setdefault("banner_learned", {})[vendor_guess] = banner[:200]
+            raw.setdefault("os_families", {})[vendor_guess.lower()] = vendor_guess
+            p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+            return jsonify({"learned": True, "vendor": vendor_guess, "method": "banner"}), 200
+        return jsonify({"learned": False}), 200
+    except Exception as e:
+        return error_response(f"discovery report failed: {e}", 500)
+
+@app.route("/api/vendor/discovery/learn", methods=["POST"])
+def vendor_discovery_learn():
+    """Manual teaching: directly add OID or vendor mapping (low-code, no redeploy)."""
+    data = request.get_json(silent=True) or {}
+    oid = (data.get("oid") or "").strip()
+    vendor = (data.get("vendor") or "").strip()
+    os_family = (data.get("os_family") or "").strip()
+    if not vendor or not validate_vendor(vendor):
+        return error_response("valid vendor required", 400)
+    if oid and not re.match(r"^1\.3\.6\.1\.4\.1\.\d+(\.\d+)*$", oid):
+        return error_response("invalid OID", 400)
+    if os_family and (len(os_family) > 32 or contains_injection(os_family)):
+        return error_response("invalid os_family", 400)
+    try:
+        p = Path(TRINETRA_ROOT) / "config" / "vendor_discovery_map.json"
+        raw = json.loads(p.read_text(encoding="utf-8")) if p.exists() else {"oids": {}, "os_families": {}, "pending_oids": {}, "banner_learned": {}}
+        if oid:
+            enterprise = ".".join(oid.split(".")[:7])
+            raw.setdefault("oids", {})[enterprise] = vendor
+        if os_family:
+            raw.setdefault("os_families", {})[os_family.lower()] = vendor
+        else:
+            raw.setdefault("os_families", {})[vendor.lower()] = vendor
+        raw.setdefault("banner_learned", {})[vendor] = f"manual learn {oid or vendor}"
+        p.write_text(json.dumps(raw, indent=2), encoding="utf-8")
+        return jsonify({"learned": True, "vendor": vendor, "oid": oid, "os_family": os_family or vendor.lower()}), 200
+    except Exception as e:
+        return error_response(f"learn failed: {e}", 500)
 
 # ── GET /api/session/<name>/audit-report/pdf — PDF export ──
 @app.route("/api/session/<name>/audit-report/pdf", methods=["GET"])
@@ -1485,15 +1792,44 @@ def audit_report_pdf(name):
             story.append(Spacer(1, 12))
 
         # Advice must not invent platform-specific commands or claim AI provenance.
-        failed_rows = [r for r in evidence_rows if col_index.get("verdict", -1) >= 0
-                       and len(r) > col_index["verdict"] and r[col_index["verdict"]].lower() == "fail"]
+        # Finding classes use the same four terms as UI + markdown: confirmed risk /
+        # verified pass / insufficient evidence / unsupported check.
+        fc_idx = col_index.get("finding class", -1)
+        v_idx = col_index.get("verdict", -1)
+        def _row_class(r):
+            if 0 <= fc_idx < len(r) and r[fc_idx].strip().lower() in (
+                    "confirmed risk", "verified pass", "insufficient evidence", "unsupported check"):
+                return r[fc_idx].strip().lower()
+            if 0 <= v_idx < len(r):
+                vv = r[v_idx].strip().lower()
+                if vv == "fail":
+                    return "confirmed risk"
+                if vv == "pass":
+                    return "verified pass"
+                if vv == "manual_review":
+                    return "insufficient evidence"
+            return "unsupported check"
+        failed_rows = [r for r in evidence_rows if _row_class(r) == "confirmed risk"]
         if failed_rows:
-            story.append(Paragraph("Review plan for failed checks", heading_style))
-            story.append(Paragraph("Validate the original evidence and affected service first. Confirm the exact vendor, OS version and business requirements. Use the applicable vendor guide to prepare a reviewed change with backup, rollback and post-change verification. Cortex does not validate or execute remediation commands.", normal_style))
+            story.append(Paragraph("Review plan for confirmed risks", heading_style))
+            story.append(Paragraph("Each item below cites its triggering source lines from the session evidence bundle. Curated Cisco IOS steps are shown only here (Documented — review before use; backup, confirm OS version, rollback plan, post-change verify). All other finding classes use generic guidance. Cortex does not validate or execute remediation commands.", normal_style))
             for row in failed_rows[:60]:
-                tid = row[col_index.get("test id", 2)]
-                device = row[col_index.get("device", 0)]
-                story.append(Paragraph(xml_escape(f"{tid} on {device}: operator review required."), normal_style))
+                tid = row[col_index.get("test id", 2)] if col_index.get("test id", 2) < len(row) else "?"
+                device = row[col_index.get("device", 0)] if col_index.get("device", 0) < len(row) else "?"
+                story.append(Paragraph(xml_escape(f"{tid} on {device}: confirmed risk — operator review required."), normal_style))
+        # Traceable remediation lines from the markdown (curated steps for confirmed risks only).
+        remediation_lines = [line for line in md_content.splitlines()
+                             if line.startswith("Remediation:")]
+        if remediation_lines:
+            story.append(Paragraph("Traceable remediation (confirmed risks only)", heading_style))
+            for line in remediation_lines[:60]:
+                story.append(Paragraph(xml_escape(line), normal_style))
+            story.append(Spacer(1, 6))
+            curated = [line for line in md_content.splitlines()
+                       if line.startswith("Curated Cisco IOS steps")]
+            for line in curated[:60]:
+                story.append(Paragraph(xml_escape(line), small_style))
+            story.append(Spacer(1, 12))
 
         config_lines = [line for line in md_content.splitlines()
                         if line.startswith(("Config review:", "Config observation:", "Config limitation:"))]
@@ -1501,6 +1837,25 @@ def audit_report_pdf(name):
             story.append(Paragraph("Configuration observations — separate from benchmark scores", heading_style))
             for line in config_lines:
                 story.append(Paragraph(xml_escape(line), normal_style))
+            story.append(Spacer(1, 12))
+
+        # Script-output evidence bundle (per-session JSON + MD, cited by the report)
+        script_lines = [line for line in md_content.splitlines()
+                        if line.startswith("Script evidence:")]
+        evidence_count = status_data.get("evidence_count", 0)
+        if script_lines or evidence_count:
+            story.append(Paragraph("Script output evidence", heading_style))
+            story.append(Paragraph(xml_escape(
+                f"{evidence_count or len(script_lines)} script execution(s) recorded in "
+                f"evidence_{name}.json / evidence_{name}.md (sessions/{name}/). "
+                "Each verdict in this PDF traces to one raw stdout/stderr entry in that bundle."
+            ), normal_style))
+            for line in script_lines[:60]:
+                story.append(Paragraph(xml_escape(line), normal_style))
+            if len(script_lines) > 60:
+                story.append(Paragraph(xml_escape(
+                    f"Showing 60 of {len(script_lines)} script-evidence lines. See evidence_{name}.json for the full bundle."
+                ), normal_style))
             story.append(Spacer(1, 12))
 
         # Unrecognized lines section if any
@@ -1537,6 +1892,125 @@ def audit_report_pdf(name):
     except Exception as e:
         import traceback
         return error_response(f"PDF generation failed: {e}", 500, {"trace": traceback.format_exc()})
+
+# ── GET /api/session/<name>/devices/<device_id>/pdf — Per-device PDF (PS single PDF per device) ──
+@app.route("/api/session/<name>/devices/<device_id>/pdf", methods=["GET"])
+@app.route("/api/session/<name>/devices/<device_id>/audit-report/pdf", methods=["GET"])
+@app.route("/api/session/<name>/audit-report/device/<device_id>/pdf", methods=["GET"])
+def device_audit_pdf(name, device_id):
+    if not validate_session(name) or not validate_device(device_id):
+        return error_response("invalid session or device identifier", 400)
+    fw_filter = get_framework_filter()
+    fw_arg = ",".join(fw_filter) if fw_filter else "_"
+    rc, out, err = run_java_helper("TrinetraBridgeHelper", ["device-audit-report", name, device_id, fw_arg], timeout=120)
+    if rc != 0:
+        msg = (err.strip() or out.strip()) or "device report failed"
+        if "not found" in msg.lower():
+            return error_response(msg, 404, {"stdout": out, "stderr": err})
+        return error_response(msg, 500, {"stdout": out, "stderr": err})
+    try:
+        data = json.loads(out.strip())
+        device_path = data.get("device_path") or data.get("combined_path")
+        if not device_path or not os.path.exists(device_path):
+            return error_response("device report not found after generation", 500, {"stdout": out, "stderr": err})
+        with open(device_path, "r") as f:
+            md_content = f.read()
+        rc2, out2, _ = run_java_helper("TrinetraBridgeHelper", ["status", name])
+        status_data = {}
+        if rc2 == 0:
+            try: status_data = json.loads(out2.strip())
+            except: pass
+        # Reuse PDF logic but title is device-specific
+        from reportlab.lib.pagesizes import letter, landscape
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from xml.sax.saxutils import escape as xml_escape
+        import io
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=landscape(letter), rightMargin=24, leftMargin=24, topMargin=24, bottomMargin=16)
+        styles = getSampleStyleSheet()
+        title_style = styles["Heading1"]; heading_style = styles["Heading2"]; normal_style = styles["Normal"]
+        small_style = ParagraphStyle('small', parent=normal_style, fontSize=7, leading=9)
+        header_cell_style = ParagraphStyle('headerCell', parent=normal_style, fontSize=6, leading=7, textColor=colors.whitesmoke, alignment=1)
+        story = []
+        det = status_data.get("device_details", {}).get(device_id, {}) if isinstance(status_data.get("device_details"), dict) else {}
+        vendor = status_data.get("device_vendors", {}).get(device_id, det.get("vendor", "unknown")) if isinstance(status_data.get("device_vendors"), dict) else det.get("vendor", "unknown")
+        story.append(Paragraph(f"Device Audit Report — {xml_escape(device_id)} ({xml_escape(str(vendor))})", title_style))
+        story.append(Paragraph(f"Session {xml_escape(name)} — single device report. Configuration evidence assessment, not a compliance certification.", normal_style))
+        story.append(Spacer(1, 12))
+        meta = [
+            ["Session", name],
+            ["Device ID", device_id],
+            ["Vendor", str(vendor)],
+            ["Serial", str(det.get("serial_number", ""))],
+            ["Hardware", str(det.get("hardware_model", ""))],
+            ["OS Version", str(det.get("os_version", ""))],
+            ["Generated", __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00","Z")],
+            ["Chain", (status_data.get("chain", {}).get("detail", "unknown") if isinstance(status_data.get("chain"), dict) else "unknown")],
+        ]
+        t = Table(meta, colWidths=[2*__import__("reportlab.lib.units").lib.units.inch, 8*__import__("reportlab.lib.units").lib.units.inch])
+        t.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.grey),('FONTSIZE',(0,0),(-1,-1),8),('VALIGN',(0,0),(-1,-1),'MIDDLE')]))
+        story.append(t); story.append(Spacer(1,12))
+        # Evidence table from device markdown
+        import re as _re
+        header_row = None; evidence_rows = []; col_index = {}; in_evidence=False; seen=set()
+        for line in md_content.splitlines():
+            if "| Test ID" in line or ("| Device" in line and "Vendor" in line):
+                header_row = markdown_cells(line); col_index={c.lower():i for i,c in enumerate(header_row)}; in_evidence=True; continue
+            if in_evidence and line.strip().startswith("|"):
+                if set(line.strip().replace("|","").replace("-","").replace(":","").strip())==set() or line.strip().startswith("|---") or line.strip().startswith("|--------"):
+                    continue
+                parts = markdown_cells(line)
+                if parts and parts[0].lower()=="device" and "vendor" in " ".join(parts).lower():
+                    continue
+                if len(parts)>=2 and tuple(parts) not in seen:
+                    evidence_rows.append(parts); seen.add(tuple(parts))
+            elif in_evidence and not line.strip().startswith("|"):
+                in_evidence=False
+        if evidence_rows and header_row:
+            story.append(Paragraph("Evidence — This Device Only", heading_style))
+            pdf_header=[Paragraph(f"<b>{xml_escape(h)}</b>", header_cell_style) for h in header_row[:10]]
+            table_data=[pdf_header]
+            for row in evidence_rows[:80]:
+                while len(row)<len(header_row): row.append("")
+                pdf_row=[Paragraph(xml_escape(p), small_style) for p in row[:len(header_row)]]
+                table_data.append(pdf_row)
+            ncols=len(header_row); width_map={"device":1.0,"vendor":0.9,"serial":0.9,"hardware":1.0,"os version":1.0,"test id":0.8,"verdict":0.9,"finding class":1.1,"severity":0.8,"controls":1.4}
+            col_widths=[width_map.get(h.lower(),0.9)*__import__("reportlab.lib.units").lib.units.inch for h in header_row]
+            total_w=sum(col_widths)
+            if total_w>10.5*__import__("reportlab.lib.units").lib.units.inch:
+                scale=(10.5*__import__("reportlab.lib.units").lib.units.inch)/total_w
+                col_widths=[w*scale for w in col_widths]
+            et=Table(table_data, repeatRows=1, colWidths=col_widths)
+            et.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.HexColor("#4472C4")),('TEXTCOLOR',(0,0),(-1,0),colors.whitesmoke),('ALIGN',(0,0),(-1,-1),'CENTER'),('FONTSIZE',(0,0),(-1,-1),6),('GRID',(0,0),(-1,-1),0.5,colors.grey),('ROWBACKGROUNDS',(0,1),(-1,-1),[colors.white, colors.HexColor("#F2F2F2")])]))
+            story.append(et); story.append(Spacer(1,12))
+        # Remediation
+        rem_lines=[l for l in md_content.splitlines() if l.startswith("Remediation:") or l.startswith("Curated Cisco")]
+        if rem_lines:
+            story.append(Paragraph("Traceable remediation (confirmed risks only)", heading_style))
+            for l in rem_lines[:60]:
+                story.append(Paragraph(xml_escape(l), small_style))
+        # Baseline section
+        if "## Baseline" in md_content:
+            story.append(Spacer(1,12)); story.append(Paragraph("Baseline (vendor-neutral)", heading_style))
+            in_baseline=False; baseline_text=[]
+            for l in md_content.splitlines():
+                if l.startswith("## Baseline"): in_baseline=True; continue
+                if in_baseline:
+                    if l.startswith("```"): continue
+                    if l.startswith("#"): break
+                    if l.strip(): baseline_text.append(l)
+                    if len(baseline_text)>40: break
+            for l in baseline_text[:40]:
+                story.append(Paragraph(xml_escape(l[:200]), small_style))
+        doc.build(story)
+        pdf_bytes=buffer.getvalue(); buffer.close()
+        from flask import Response
+        return Response(pdf_bytes, mimetype="application/pdf", headers={"Content-Disposition": f"attachment; filename=audit_report_{device_id}_{name}.pdf", "Content-Length": str(len(pdf_bytes))})
+    except Exception as e:
+        import traceback
+        return error_response(f"Device PDF generation failed: {e}", 500, {"trace": traceback.format_exc()})
 
 # ── Minimal upload GUI (plain HTML/JS via Flask) ──
 @app.route("/", methods=["GET"])

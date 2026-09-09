@@ -41,6 +41,12 @@ public class TrinetraBridgeHelper {
                 case "get-unrecognized":
                     handleGetUnrecognized(args);
                     break;
+                case "device-audit-report":
+                    handleDeviceAuditReport(args);
+                    break;
+                case "nlp-suggest":
+                    handleNlpSuggest(args);
+                    break;
                 default:
                     System.err.println("Unknown command: " + cmd);
                     System.exit(1);
@@ -106,7 +112,14 @@ public class TrinetraBridgeHelper {
         out.put("device_vendors", deviceVendors);
         out.put("device_ingestion", TrinetraSession.getAllDeviceIngestion(sanitized));
         out.put("device_details", TrinetraSession.getAllDeviceDetails(sanitized));
+        Map<String, SecurityBaseline> baselines = TrinetraSession.getAllDeviceBaselines(sanitized);
+        Map<String, Object> baselineMaps = new LinkedHashMap<>();
+        for (Map.Entry<String, SecurityBaseline> e : baselines.entrySet()) baselineMaps.put(e.getKey(), e.getValue().toMap());
+        out.put("device_baselines", baselineMaps);
         out.put("unrecognized_by_device", TrinetraSession.getAllUnrecognizedLines(sanitized));
+        out.put("evidence_count", TrinetraEvidence.count(sanitized));
+        out.put("evidence_json", "evidence_" + sanitized + ".json");
+        out.put("evidence_md", "evidence_" + sanitized + ".md");
         out.put("brain_state_exists", !brainState.isEmpty());
         if (!brainState.isEmpty()) {
             out.put("brain_state_last_updated", TrinetraCommon.getString(brainState, "last_updated", ""));
@@ -234,6 +247,56 @@ public class TrinetraBridgeHelper {
         System.out.println(TrinetraJson.prettyJson(out));
     }
 
+    private static void handleDeviceAuditReport(String[] args) {
+        if (args.length < 3) {
+            System.err.println("Usage: TrinetraBridgeHelper device-audit-report <session> <device_id> [frameworks_csv]");
+            System.exit(1);
+        }
+        String session = args[1];
+        String deviceId = args[2];
+        Set<String> filter = null;
+        if (args.length >= 4 && args[3] != null && !args[3].isBlank() && !"_".equals(args[3])) {
+            filter = new LinkedHashSet<>();
+            for (String s : args[3].split(",")) {
+                String t = s.trim();
+                if (!t.isEmpty()) filter.add(t);
+            }
+        }
+        Map<String, Object> res = TrinetraAuditReportBuilder.buildDeviceReport(session, deviceId, filter);
+        if (res == null) {
+            System.err.println("Device or session not found: " + session + "/" + deviceId);
+            System.exit(2);
+        }
+        System.out.println(TrinetraJson.prettyJson(res));
+    }
+
+    private static void handleNlpSuggest(String[] args) {
+        if (args.length < 2) {
+            System.err.println("Usage: TrinetraBridgeHelper nlp-suggest <config_line> [vendor]");
+            System.exit(1);
+        }
+        String line = args[1];
+        String vendor = args.length >= 3 ? args[2] : "";
+        NlpBridge.NlpPrediction p = NlpBridge.suggest(line, vendor);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("line", line);
+        out.put("vendor_hint", vendor);
+        if (p != null) {
+            out.put("nlp", Map.of(
+                "category", p.category,
+                "control", p.control,
+                "remediation", p.remediation,
+                "confidence", p.confidence,
+                "reasoning", p.reasoning,
+                "source", "gemini_nlp"
+            ));
+        } else {
+            out.put("nlp", null);
+            out.put("note", "LLM unavailable or low confidence — use KNN advisory or manual mapping");
+        }
+        System.out.println(TrinetraJson.prettyJson(out));
+    }
+
     // ── Content sanity (mirrors bridge/config_validation.py) ──
     private static boolean looksLikeHtml(String content) {
         if (content == null || content.isBlank()) return false;
@@ -253,6 +316,11 @@ public class TrinetraBridgeHelper {
         if (content == null || content.isBlank()) return false;
         if (content.contains("\u0000")) return false;
         if (looksLikeHtml(content)) return false;
+        String trimmed = content.trim();
+        // Allow JSON for cloud/SONiC (AWS Security Groups, SONiC config_db.json)
+        if (trimmed.startsWith("{") && (trimmed.contains("\"SecurityGroups\"") || trimmed.contains("\"DEVICE_METADATA\"") || trimmed.contains("\"ACL_TABLE\"") || trimmed.contains("\"NetworkAcls\"") || trimmed.contains("\"GroupId\""))) {
+            return true;
+        }
         String lowerHead = content.length() > 4096 ? content.substring(0, 4096).toLowerCase() : content.toLowerCase();
         if ((lowerHead.contains("404 not found") || lowerHead.contains("500 internal server error") || lowerHead.contains("error_204")) && configLikenessRatio(content) < 0.30) {
             return false;

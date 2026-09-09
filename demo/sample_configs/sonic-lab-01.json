@@ -1,0 +1,24 @@
+{
+  "DEVICE_METADATA": {
+    "localhost": {
+      "hostname": "sonic-lab-01",
+      "hwsku": "DellEMC-Z9100",
+      "platform": "x86_64-dell_z9100_c2538-r0",
+      "mac": "00:11:22:33:44:55",
+      "type": "LeafRouter"
+    }
+  },
+  "ACL_TABLE": {
+    "DATAACL": {
+      "policy_desc": "Data ACL",
+      "ports": ["Ethernet0", "Ethernet4"],
+      "stage": "ingress",
+      "type": "L3"
+    }
+  },
+  "FEATURE": {
+    "ssh": { "state": "enabled" },
+    "telnet": { "state": "disabled" },
+    "snmp": { "community": "public" }
+  }
+}

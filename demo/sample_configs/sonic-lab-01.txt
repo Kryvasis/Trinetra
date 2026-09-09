@@ -1,0 +1,37 @@
+! SONiC White Box 2023.11 — Trinetra Compliance Scanner Demo
+! Device: sonic-lab-01
+! Vendor: SONiC (Dell White Box)
+! OS: SONiC 202311.0
+hostname sonic-lab-01
+!
+! --- Management ---
+ip ssh version 2
+username admin secret $1$xyz$abc123
+service password-encryption
+aaa new-model
+!
+! --- Interfaces (FRR) ---
+interface Ethernet0
+ ip address 10.10.5.1/24
+ no shutdown
+!
+interface Ethernet4
+ ip address 192.168.5.1/24
+ no shutdown
+!
+! --- ACL (SONiC iptables) ---
+iptables -A INPUT -p tcp --dport 23 -j DROP
+iptables -A INPUT -p tcp --dport 80 -j DROP
+access-list 10 permit 10.0.0.0 0.255.255.255
+!
+! --- SNMP (weak) ---
+snmp-server community public RO
+!
+! --- Logging ---
+logging host 10.10.1.100
+logging trap informational
+!
+! --- UNRECOGNIZED LINE (for training demo) ---
+sonic-custom-feature enable zone-trust
+!
+end

@@ -45,6 +45,44 @@ public class TrinetraConfigIngestor {
         juniper.put("(?i)set\\s+system\\s+login\\s+idle-timeout", "V-071");
         KNOWN_PATTERNS.put("Juniper", juniper);
 
+        Map<String, String> fortios = new LinkedHashMap<>();
+        fortios.put("(?i)set\\s+allowaccess.*telnet", "V-071");
+        fortios.put("(?i)set\\s+allowaccess.*http\\b", "V-003");
+        fortios.put("(?i)set\\s+allowaccess.*ssh", "V-006");
+        fortios.put("(?i)config\\s+system\\s+snmp\\s+community", "V-057");
+        fortios.put("(?i)set\\s+admintimeout", "V-071");
+        fortios.put("(?i)config\\s+system\\s+admin", "V-013");
+        fortios.put("(?i)config\\s+log\\s+syslogd", "V-058");
+        KNOWN_PATTERNS.put("FortiOS", fortios);
+
+        Map<String, String> panos = new LinkedHashMap<>();
+        panos.put("(?i)disable-telnet\\s+no", "V-071");
+        panos.put("(?i)disable-http\\s+no", "V-003");
+        panos.put("(?i)set\\s+mgt-config\\s+users", "V-013");
+        panos.put("(?i)idle-timeout\\s+0", "V-071");
+        panos.put("(?i)snmp.*community", "V-057");
+        panos.put("(?i)syslog", "V-058");
+        KNOWN_PATTERNS.put("PAN-OS", panos);
+
+        Map<String, String> sonic = new LinkedHashMap<>();
+        sonic.put("(?i)sonic|config_db|DEVICE_METADATA", "V-003");
+        sonic.put("(?i)ssh.*version\\s+1", "V-006");
+        sonic.put("(?i)telnet", "V-071");
+        sonic.put("(?i)access-list|iptables|acl", "V-003");
+        sonic.put("(?i)snmp.*public", "V-057");
+        sonic.put("(?i)syslog|logging", "V-058");
+        KNOWN_PATTERNS.put("SONiC", sonic);
+
+        Map<String, String> aws = new LinkedHashMap<>();
+        aws.put("(?i)SecurityGroups|GroupId|0\\.0\\.0\\.0/0", "V-003");
+        aws.put("(?i)FromPort.*23|telnet.*0\\.0\\.0\\.0/0", "V-071");
+        aws.put("(?i)FromPort.*80|http.*0\\.0\\.0\\.0/0", "V-003");
+        aws.put("(?i)password|secret", "V-013");
+        aws.put("(?i)snmp.*public", "V-057");
+        aws.put("(?i)flow.*log|cloudtrail", "V-058");
+        aws.put("(?i)tls1\\.0|tls1\\.1|3des|rc4", "V-006");
+        KNOWN_PATTERNS.put("AWS", aws);
+
         Map<String, String> generic = new LinkedHashMap<>();
         generic.put("(?i)password", "V-013");
         generic.put("(?i)telnet", "V-071");
@@ -81,8 +119,65 @@ public class TrinetraConfigIngestor {
      */
     public static String autoDetectVendor(String configContent) {
         if (configContent == null || configContent.isBlank()) return "Generic";
+        // Auto-discover new vendor via banner first — highest priority for zero-code discovery
+        java.util.regex.Matcher mBanner = java.util.regex.Pattern.compile("SSH-\\d+\\.\\d+-([A-Za-z0-9-]+)[_\\- ]").matcher(configContent);
+        if (mBanner.find()) {
+            String guessed = mBanner.group(1).trim();
+            if (guessed.length() >= 3 && guessed.length() <= 32) {
+                String lowerGuessed = guessed.toLowerCase();
+                // Don't re-learn known vendors
+                if (!java.util.Set.of("cisco","juniper","fortios","fortigate","fortinet","pan-os","panos","paloalto","sonic","aws","generic").contains(lowerGuessed)) {
+                    VendorConnectorRegistry.register(guessed, () -> new GenericSSHConnector() {
+                        @Override public String getVendorName() { return guessed; }
+                    });
+                    // Record banner learned for persistence
+                    try {
+                        java.nio.file.Path p = java.nio.file.Path.of(TrinetraCommon.PROJECT_ROOT, "config", "vendor_discovery_map.json");
+                        if (java.nio.file.Files.exists(p)) {
+                            String raw = java.nio.file.Files.readString(p);
+                            Object parsed = TrinetraJson.parse(raw);
+                            if (parsed instanceof Map) {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> map = (Map<String, Object>) parsed;
+                                Object bannerObj = map.get("banner_learned");
+                                Map<String, Object> bannerMap = bannerObj instanceof Map ? (Map<String, Object>) bannerObj : new java.util.LinkedHashMap<>();
+                                if (!bannerMap.containsKey(guessed)) {
+                                    bannerMap.put(guessed, "SSH banner " + guessed + " auto-discovered");
+                                    map.put("banner_learned", bannerMap);
+                                    java.nio.file.Files.writeString(p, TrinetraJson.prettyJson(map));
+                                }
+                            }
+                        }
+                    } catch (Exception ignored) {}
+                    return guessed;
+                } else {
+                    // Known vendor via banner — return canonical
+                    if (lowerGuessed.equals("cisco") || lowerGuessed.equals("juniper") || lowerGuessed.contains("forti") || lowerGuessed.contains("pan") || lowerGuessed.contains("sonic") || lowerGuessed.equals("aws")) {
+                        // Let specific checks below handle
+                    } else {
+                        return guessed;
+                    }
+                }
+            }
+        }
         String lower = configContent.toLowerCase();
-        // Juniper: "set system" is distinctive
+        // AWS Cloud-native — Security Groups / NACL JSON
+        if (lower.contains("\"securitygroups\"") || lower.contains("\"networkacls\"") || lower.contains("\"groupid\": \"sg-") || lower.contains("0.0.0.0/0") && lower.contains("fromport")) {
+            return "AWS";
+        }
+        // SONiC — White Box (DEVICE_METADATA / config_db.json / sonic-cfggen)
+        if (lower.contains("sonic") || lower.contains("device_metadata") || lower.contains("config_db") || lower.contains("\"sonic\"")) {
+            return "SONiC";
+        }
+        // FortiOS — distinctive "config system" + fortigate/fortios
+        if (lower.contains("fortigate") || lower.contains("fortios") || (lower.contains("config system") && lower.contains("allowaccess"))) {
+            return "FortiOS";
+        }
+        // PAN-OS — distinctive "set deviceconfig" / "panos" / paloalto
+        if (lower.contains("set deviceconfig") || lower.contains("panos") || lower.contains("pan-os") || lower.contains("paloalto")) {
+            return "PAN-OS";
+        }
+        // Juniper: "set system" is distinctive (must check after FortiOS/PAN-OS)
         if (lower.contains("set system") || lower.contains("junos") || lower.contains("juniper")) {
             return "Juniper";
         }
@@ -90,6 +185,35 @@ public class TrinetraConfigIngestor {
         if (lower.contains("hostname") || lower.contains("interface ") || lower.contains("cisco") || lower.contains("enable secret") || lower.contains("line vty") || lower.contains("ip ssh")) {
             return "Cisco";
         }
+        // Check for explicit vendor hint in first 2k chars: "Vendor: XYZ" or "hostname xyz-vendor-"
+        String head = configContent.length() > 2000 ? configContent.substring(0, 2000) : configContent;
+        java.util.regex.Matcher m2 = java.util.regex.Pattern.compile("(?i)vendor\\s*[:=]\\s*([A-Za-z0-9_-]{3,32})").matcher(head);
+        if (m2.find()) {
+            String guessed = m2.group(1).trim();
+            VendorConnectorRegistry.register(guessed, () -> new GenericSSHConnector() {
+                @Override public String getVendorName() { return guessed; }
+            });
+            return guessed;
+        }
+        // Fallback: check discovery map for previously learned banner vendors
+        try {
+            java.nio.file.Path p = java.nio.file.Path.of(TrinetraCommon.PROJECT_ROOT, "config", "vendor_discovery_map.json");
+            if (java.nio.file.Files.exists(p)) {
+                String raw = java.nio.file.Files.readString(p);
+                Object parsed = TrinetraJson.parse(raw);
+                if (parsed instanceof Map) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> map = (Map<String, Object>) parsed;
+                    Object bannerObj = map.get("banner_learned");
+                    if (bannerObj instanceof Map) {
+                        for (Object k : ((Map<?,?>) bannerObj).keySet()) {
+                            String vendor = String.valueOf(k).trim();
+                            if (lower.contains(vendor.toLowerCase(Locale.ROOT))) return vendor;
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
         return "Generic";
     }
 
@@ -131,13 +255,21 @@ public class TrinetraConfigIngestor {
         // ── OS-version lightweight detection (item 8) — header scan only, no parsing branch ──
         String detectedOs = detectOsVersion(configContent, vendor);
         String effectiveOs = (osVersion != null && !osVersion.isBlank()) ? osVersion.trim() : detectedOs;
-        // Normalize vendor via registry (ensures Cisco/Juniper canonical)
+        // Normalize vendor via registry (ensures Cisco/Juniper/FortiOS/PAN-OS canonical)
         VendorConnector connector = VendorConnectorRegistry.resolve(vendor);
         String canonicalVendor = connector.getVendorName();
         // Store device vendor, ingestion method, and distinct metadata
         TrinetraSession.setDeviceVendor(sanitized, deviceId, canonicalVendor);
         TrinetraSession.setDeviceIngestion(sanitized, deviceId, methodTag, filename);
         TrinetraSession.setDeviceDetails(sanitized, deviceId, serialNumber, hardwareModel, effectiveOs);
+
+        // ── Build vendor-neutral baseline (PS 1: normalization) ──
+        SecurityBaseline baseline = buildBaseline(canonicalVendor, configContent, vendor);
+        try {
+            TrinetraSession.setDeviceBaseline(sanitized, deviceId, baseline);
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Failed to persist baseline for " + deviceId + ": " + e.getMessage());
+        }
 
         // Save config file to artifacts
         try {
@@ -218,7 +350,34 @@ public class TrinetraConfigIngestor {
             }
         }
 
-        // Store unrecognized lines per device
+        // ── Lightweight ML parallel path (KNN TF-IDF char 3-5 cosine) — advisory, never overwrites regex ──
+        // Runs alongside regex DecisionEngine; predictions with confidence>=THRESH are surfaced as ml-advisory
+        // findings and as UI suggestions in Training view. No removal, no authority change.
+        Map<String, MlBridge.MlPrediction> mlAdvisory = new LinkedHashMap<>();
+        Map<String, String> mlLineToVcode = new LinkedHashMap<>();
+        try {
+            if (!unrecognized.isEmpty()) {
+                Map<String, MlBridge.MlPrediction> preds = MlBridge.predictBatch(unrecognized);
+                for (Map.Entry<String, MlBridge.MlPrediction> e : preds.entrySet()) {
+                    String line = e.getKey();
+                    MlBridge.MlPrediction p = e.getValue();
+                    if (p != null && p.confidence >= 0.55) {
+                        mlAdvisory.put(line, p);
+                        String lbl = p.label != null ? p.label.trim() : "";
+                        String vc = null;
+                        if (lbl.matches("(?i)V-\\d+.*")) {
+                            // ML already predicted a V-code (e.g. V-006) — use it directly
+                            vc = lbl.replaceAll("(?i).*?(V-\\d+).*", "$1").toUpperCase();
+                        } else {
+                            vc = mapCategoryToVcode(lbl, List.of(lbl));
+                        }
+                        if (vc != null) mlLineToVcode.put(line, vc);
+                    }
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // Store unrecognized lines per device (regex truth — ML advisory is separate)
         TrinetraSession.setUnrecognizedLines(sanitized, deviceId, unrecognized);
 
         // Run compliance checks against the config content as a whole
@@ -248,17 +407,39 @@ public class TrinetraConfigIngestor {
         String rawForCheck = configContent != null ? configContent : "";
         Map<String, Object> configurationReview =
             TrinetraConfigObservations.review(canonicalVendor, rawForCheck);
+        // Prepare vendor-neutral semantic results as supplemental baseline evidence.
+        // They may enrich an observed risk, but never manufacture a PASS.
+        Map<String, SemanticControlEvaluator.Result> semanticCache = new LinkedHashMap<>();
+        for (String vc : vcodesToCheck) {
+            if (isConfigCategory1(vc)) semanticCache.put(vc, SemanticControlEvaluator.evaluate(vc, baseline, rawForCheck));
+        }
+
         for (String vcode : vcodesToCheck) {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
-            // Static configuration evidence may prove a bounded unsafe directive is
-            // present, but absence can never establish that the effective device state
-            // is compliant. Promote only high-confidence observations to FAIL; retain
-            // every other config-derived check as MANUAL_REVIEW. This preserves the
-            // no-false-pass boundary while making explicit risks count in scoring.
+            // Explicit, bounded unsafe directives can establish FAIL. Their absence
+            // cannot establish PASS, so all other static results require review.
             TrinetraStat.Verdict verdict = hasObservedRiskForVcode(vcode, configurationReview)
                 ? TrinetraStat.Verdict.FAIL
                 : TrinetraStat.Verdict.MANUAL_REVIEW;
+            String detail = verdict == TrinetraStat.Verdict.FAIL
+                ? "Explicit insecure directive observed in the supplied configuration. Verify effective context and vendor/version guidance before remediation."
+                : "No supported explicit insecure directive was observed. Static configuration evidence cannot establish a pass; verify effective state with an approved runtime check.";
+            List<String> triggerLines = new ArrayList<>();
+            // Attach semantic evidence as supplemental, not as an independent verdict.
+            SemanticControlEvaluator.Result sr = semanticCache.get(vcode);
+            if (sr != null && !sr.evidence.isEmpty()) {
+                triggerLines = SecurityBaseline.sanitizeEvidenceList(sr.evidence);
+                detail += " Baseline suggests: " + sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
+            } else if (isConfigCategory1(vcode)) {
+                // Fallback to legacy trigger lines for traceability even though verdict stays manual_review
+                List<String> legacy = findTriggerLines(vcode, rawForCheck);
+                if (!legacy.isEmpty()) triggerLines = new ArrayList<>(legacy);
+            }
+            if (isConfigCategory2(vcode)) {
+                detail = "Static configuration evidence cannot establish a pass for this runtime-only control; live verification is required (Category 2, unsupported check).";
+                triggerLines = new ArrayList<>();
+            }
 
             // Build finding similar to TrinetraStat.statRun but with ingestion_method
             Map<String, Object> finding = TrinetraCommon.newMap();
@@ -276,9 +457,9 @@ public class TrinetraConfigIngestor {
             finding.put("ended_at", TrinetraCommon.nowIso());
             finding.put("exit_code", 0);
             finding.put("verdict", verdict.name().toLowerCase());
-            finding.put("verdict_detail", verdict == TrinetraStat.Verdict.FAIL
-                ? "Explicit insecure directive observed in the supplied configuration. Verify effective context and vendor/version guidance before remediation."
-                : "No supported explicit insecure directive was observed. Static configuration evidence cannot establish a pass; verify effective state with an approved runtime check.");
+            finding.put("verdict_detail", detail);
+            finding.put("finding_class", TrinetraFindingClassification.classify(vcode, verdict.name().toLowerCase(), "configuration_only"));
+            finding.put("evidence_lines", new ArrayList<>(triggerLines));
             finding.put("eval_method", def.decisionRule.evalMethod);
             finding.put("pass_criteria", def.decisionRule.passCriteria);
             finding.put("fail_criteria", def.decisionRule.failCriteria);
@@ -307,6 +488,8 @@ public class TrinetraConfigIngestor {
             norm.put("ingestion_method", methodTag);
             norm.put("assessment_kind", "configuration_only");
             norm.put("verdict_detail", finding.get("verdict_detail"));
+            norm.put("finding_class", TrinetraFindingClassification.classify(vcode, verdict.name().toLowerCase(), "configuration_only"));
+            norm.put("evidence_lines", new ArrayList<>(triggerLines));
             if (!reviewRecorded) {
                 norm.put("configuration_review", configurationReview);
                 reviewRecorded = true;
@@ -314,6 +497,11 @@ public class TrinetraConfigIngestor {
             TrinetraSession.appendNormalizedResult(sanitized, norm);
 
             findings.add(finding);
+            try {
+                TrinetraEvidence.recordConfigEvidence(sanitized, finding);
+            } catch (Exception ex) {
+                TrinetraCommon.logWarn("Evidence bundle write failed for " + vcode + ": " + ex.getMessage());
+            }
             if (success) passed++; else if (verdict == TrinetraStat.Verdict.FAIL) failed++;
         }
 
@@ -339,7 +527,66 @@ public class TrinetraConfigIngestor {
             uncFinding.put("unrecognized_lines", new ArrayList<>(unrecognized));
             uncFinding.put("status", "manual_review");
             uncFinding.put("success", false);
+            // Attach ML advisory (if any) for Training UI without changing verdict
+            if (!mlAdvisory.isEmpty()) {
+                List<Map<String, Object>> mlList = new ArrayList<>();
+                for (Map.Entry<String, MlBridge.MlPrediction> me : mlAdvisory.entrySet()) {
+                    Map<String, Object> mi = TrinetraCommon.newMap();
+                    mi.put("line", me.getKey());
+                    mi.put("ml_label", me.getValue().label);
+                    mi.put("ml_confidence", me.getValue().confidence);
+                    mi.put("ml_source", me.getValue().source);
+                    mi.put("ml_suggested_vcode", mlLineToVcode.get(me.getKey()));
+                    mlList.add(mi);
+                }
+                uncFinding.put("ml_advisory", mlList);
+            }
             TrinetraSession.appendFinding(sanitized, uncFinding);
+            try {
+                TrinetraEvidence.recordConfigEvidence(sanitized, uncFinding);
+            } catch (Exception ex) {
+                TrinetraCommon.logWarn("Evidence bundle write failed for UNRECOGNIZED: " + ex.getMessage());
+            }
+        }
+
+        // Persist ML advisory as separate advisory findings (parallel, never authoritative)
+        // Each ML-predicted line becomes a manual_review advisory with ml_suggested_vcode — training can approve
+        if (!mlAdvisory.isEmpty()) {
+            for (Map.Entry<String, MlBridge.MlPrediction> me : mlAdvisory.entrySet()) {
+                String line = me.getKey();
+                MlBridge.MlPrediction pred = me.getValue();
+                String suggestedVcode = mlLineToVcode.get(line);
+                if (suggestedVcode == null) continue;
+                TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(suggestedVcode);
+                if (def == null) continue;
+                Map<String, Object> mlFinding = TrinetraCommon.newMap();
+                mlFinding.put("finding_id", UUID.randomUUID().toString());
+                mlFinding.put("v_code", suggestedVcode + "_ML");
+                mlFinding.put("test_code", suggestedVcode + "_ML");
+                mlFinding.put("v_name", def.name + " (ML-suggested)");
+                mlFinding.put("target", deviceId);
+                mlFinding.put("device_id", deviceId);
+                mlFinding.put("vendor", canonicalVendor);
+                mlFinding.put("ingestion_method", methodTag);
+                mlFinding.put("tool", "ml_knn");
+                mlFinding.put("script", "ml_knn:advisory");
+                mlFinding.put("started_at", TrinetraCommon.nowIso());
+                mlFinding.put("ended_at", TrinetraCommon.nowIso());
+                mlFinding.put("exit_code", 0);
+                mlFinding.put("verdict", "manual_review");
+                mlFinding.put("verdict_detail", "ML advisory (TF-IDF char 3-5 + KNN cosine): line \"" + line.substring(0, Math.min(80, line.length())) + "\" → " + pred.label + " (" + String.format("%.2f", pred.confidence) + ") → " + suggestedVcode + " — human approval required via Training; not counted in compliance %");
+                mlFinding.put("ml_source_line", line);
+                mlFinding.put("ml_label", pred.label);
+                mlFinding.put("ml_confidence", pred.confidence);
+                mlFinding.put("ml_source", pred.source);
+                mlFinding.put("ml_suggested_vcode", suggestedVcode);
+                mlFinding.put("status", "manual_review");
+                mlFinding.put("success", false);
+                mlFinding.put("raw_output", line);
+                mlFinding.put("finding_class", "unsupported check");
+                // Not appended to normalized_results — advisory only, keeps scorer deterministic
+                TrinetraSession.appendFinding(sanitized, mlFinding);
+            }
         }
 
         // A successful explicit re-upload returns the device to active scope.
@@ -435,17 +682,29 @@ public class TrinetraConfigIngestor {
         String joinedLower = lower; // for substring checks
         switch (vcode.toUpperCase()) {
             case "V-013": {
-                // Insecure: enable password (plaintext) or username ... password (not secret)
-                boolean insecure = Pattern.compile("(?i)^\\s*enable\\s+password\\b", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)username\\s+\\S+\\s+password\\s", Pattern.MULTILINE).matcher(cfg).find();
+                // Insecure: enable password (plaintext) or username ... password (not secret).
+                // Secure: enable secret / username ... secret / service password-encryption / aaa new-model.
+                // Lines list already excludes blank/comment (!/#) lines; skip "no ..." remediation lines
+                // so "no enable secret" is neither insecure nor secure evidence.
+                boolean insecure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches("\\s*enable\\s+password\\b.*")) insecure = true;
+                    if (ll.matches(".*username\\s+\\S+\\s+password\\s.*")) insecure = true;
+                    if (ll.contains("plain-text-password")) insecure = true;
+                }
                 if (insecure) return TrinetraStat.Verdict.FAIL;
-                boolean secure = Pattern.compile("(?i)enable\\s+secret", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)username\\s+\\S+\\s+secret\\b", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)service\\s+password-encryption", Pattern.MULTILINE).matcher(cfg).find()
-                    || Pattern.compile("(?i)aaa\\s+new-model", Pattern.MULTILINE).matcher(cfg).find();
-                // Juniper: encrypted-password is secure, plain-text-password is insecure
-                if (lower.contains("plain-text-password")) return TrinetraStat.Verdict.FAIL;
-                if (lower.contains("encrypted-password")) secure = true;
+                boolean secure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches(".*enable\\s+secret\\b.*")) secure = true;
+                    if (ll.matches(".*username\\s+\\S+\\s+secret\\b.*")) secure = true;
+                    if (ll.matches(".*service\\s+password-encryption\\b.*")) secure = true;
+                    if (ll.matches(".*aaa\\s+new-model\\b.*")) secure = true;
+                    if (ll.contains("encrypted-password")) secure = true;
+                }
                 if (secure) return TrinetraStat.Verdict.PASS;
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
@@ -463,10 +722,12 @@ public class TrinetraConfigIngestor {
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
             case "V-071": {
-                // Insecure: transport input telnet, ip http server (without no), exec-timeout 0 0
+                // Insecure: transport input telnet, bare "ip http server", exec-timeout 0 0.
+                // "no ..." lines are remediation, never violations — skip them for insecure.
                 boolean insecure = false;
                 for (String l : lines) {
                     String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
                     if (ll.matches(".*transport\\s+input\\s+.*\\btelnet\\b.*")) insecure = true;
                     if (ll.matches("^\\s*ip\\s+http\\s+server\\s*$")) insecure = true; // exactly ip http server, not "no ..."
                     if (ll.matches(".*exec-timeout\\s+0\\s+0.*")) insecure = true;
@@ -485,11 +746,19 @@ public class TrinetraConfigIngestor {
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
             case "V-006": {
-                boolean insecure = Pattern.compile("(?i)ip\\s+ssh\\s+version\\s+1\\b").matcher(cfg).find()
-                    || lower.contains("set system services ssh protocol-version v1");
+                // ip ssh version 1 (insecure) vs 2 (secure). Lines-based so
+                // "! ..." comments and "no ..." remediation never match.
+                boolean insecure = false;
+                boolean secure = false;
+                for (String l : lines) {
+                    String ll = l.toLowerCase();
+                    if (ll.startsWith("no ")) continue;
+                    if (ll.matches(".*ip\\s+ssh\\s+version\\s+1\\b.*")) insecure = true;
+                    if (ll.contains("set system services ssh protocol-version v1")) insecure = true;
+                    if (ll.matches(".*ip\\s+ssh\\s+version\\s+2\\b.*")) secure = true;
+                    if (ll.contains("protocol-version v2")) secure = true;
+                }
                 if (insecure) return TrinetraStat.Verdict.FAIL;
-                boolean secure = Pattern.compile("(?i)ip\\s+ssh\\s+version\\s+2\\b").matcher(cfg).find()
-                    || lower.contains("protocol-version v2");
                 if (secure) return TrinetraStat.Verdict.PASS;
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
@@ -515,7 +784,8 @@ public class TrinetraConfigIngestor {
                     if (ll.matches("^\\s*no\\s+service\\s+pad\\s*$")) secure = true;
                 }
                 if (secure) return TrinetraStat.Verdict.PASS;
-                if (!cfg.isBlank() && !insecure) return TrinetraStat.Verdict.PASS;
+                // No insecure directive AND no explicit hardening directive:
+                // absence proves nothing — insufficient evidence, not a pass.
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
             }
             case "V-058": {
@@ -569,6 +839,85 @@ public class TrinetraConfigIngestor {
             default:
                 return TrinetraStat.Verdict.MANUAL_REVIEW;
         }
+    }
+
+    /**
+     * Source lines backing a Category 1 verdict (review item 1c traceability).
+     * Returns 1-based "L&lt;n&gt;: &lt;text&gt;" entries for the insecure directives
+     * when the verdict is FAIL, else the secure directives when PASS, else empty.
+     * Secrets are NOT redacted here (the operator's own config) — the PDF export
+     * omits raw unrecognized lines but finding evidence intentionally cites the
+     * exact triggering directive so remediation is traceable. Capped at 10 lines.
+     */
+    static List<String> findTriggerLines(String vcode, String configContent) {
+        List<String> out = new ArrayList<>();
+        if (vcode == null || configContent == null) return out;
+        String[] raw = configContent.split("\\r?\\n", -1);
+        List<String> lines = new ArrayList<>();
+        List<Integer> numbers = new ArrayList<>();
+        for (int i = 0; i < raw.length; i++) {
+            String t = raw[i].trim();
+            if (t.isEmpty() || t.startsWith("!") || t.startsWith("#")) continue;
+            lines.add(t);
+            numbers.add(i + 1);
+        }
+        java.util.function.BiPredicate<String, String> insecureMatch = (vc, ll) -> {
+            if (ll.startsWith("no ")) return false;
+            return switch (vc.toUpperCase()) {
+                case "V-003" -> ll.matches("^\\s*ip\\s+http\\s+server\\s*$")
+                    || ll.matches(".*snmp-server\\s+community\\s+(public|private).*")
+                    || ll.matches(".*transport\\s+input\\s+.*telnet.*")
+                    || ll.matches("^\\s*ip\\s+source-route\\s*$")
+                    || ll.matches("^\\s*service\\s+pad\\s*$");
+                case "V-006" -> ll.matches(".*ip\\s+ssh\\s+version\\s+1\\b.*");
+                case "V-013" -> ll.matches("\\s*enable\\s+password\\b.*")
+                    || ll.matches(".*username\\s+\\S+\\s+password\\s.*")
+                    || ll.contains("plain-text-password");
+                case "V-057" -> ll.matches(".*snmp-server\\s+community\\s+(public|private)\\b.*");
+                case "V-058" -> false; // V-058 FAIL is absence-based; no single trigger line
+                case "V-071" -> ll.matches(".*transport\\s+input\\s+.*\\btelnet\\b.*")
+                    || ll.matches("^\\s*ip\\s+http\\s+server\\s*$")
+                    || ll.matches(".*exec-timeout\\s+0\\s+0.*");
+                case "V-107" -> ll.matches(".*username\\s+\\S+\\s+password\\s.*");
+                default -> false;
+            };
+        };
+        java.util.function.BiPredicate<String, String> secureMatch = (vc, ll) -> {
+            if (ll.startsWith("no ") && !vc.equalsIgnoreCase("V-003")) {
+                // "no ..." remediation lines are secure evidence only for V-003's
+                // explicit "no ip http server" form handled below; otherwise skip.
+                if (!(vc.equalsIgnoreCase("V-071") && ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$"))) return false;
+            }
+            return switch (vc.toUpperCase()) {
+                case "V-003" -> ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$")
+                    || ll.matches("^\\s*no\\s+ip\\s+source-route\\s*$")
+                    || ll.matches("^\\s*no\\s+service\\s+pad\\s*$");
+                case "V-006" -> ll.matches(".*ip\\s+ssh\\s+version\\s+2\\b.*");
+                case "V-013" -> ll.matches(".*enable\\s+secret\\b.*")
+                    || ll.matches(".*username\\s+\\S+\\s+secret\\b.*")
+                    || ll.matches(".*service\\s+password-encryption\\b.*")
+                    || ll.matches(".*aaa\\s+new-model\\b.*")
+                    || ll.contains("encrypted-password");
+                case "V-057" -> false; // V-057 PASS is absence-based
+                case "V-058" -> ll.matches(".*logging\\s+host\\b.*") || ll.matches(".*logging\\s+trap\\b.*");
+                case "V-071" -> (ll.contains("transport input ssh") && !ll.contains("telnet"))
+                    || ll.matches("^\\s*no\\s+ip\\s+http\\s+server\\s*$")
+                    || ll.matches(".*exec-timeout\\s+[1-9].*");
+                case "V-107" -> ll.matches(".*username\\s+\\S+\\s+secret\\b.*");
+                default -> false;
+            };
+        };
+        String vc = vcode.toUpperCase();
+        for (int i = 0; i < lines.size() && out.size() < 10; i++) {
+            if (insecureMatch.test(vc, lines.get(i).toLowerCase()))
+                out.add("L" + numbers.get(i) + ": " + lines.get(i));
+        }
+        if (!out.isEmpty()) return out;
+        for (int i = 0; i < lines.size() && out.size() < 10; i++) {
+            if (secureMatch.test(vc, lines.get(i).toLowerCase()))
+                out.add("L" + numbers.get(i) + ": " + lines.get(i));
+        }
+        return out;
     }
 
     /**
@@ -634,5 +983,43 @@ public class TrinetraConfigIngestor {
             if (first.contains("1.5")) return "V-058";
         }
         return "V-003"; // default
+    }
+
+    private static SecurityBaseline buildBaseline(String canonicalVendor, String configContent, String rawVendor) {
+        try {
+            return switch (canonicalVendor) {
+                case "Cisco" -> CiscoBaselineAdapter.parse(configContent, rawVendor);
+                case "Juniper" -> JuniperBaselineAdapter.parse(configContent, rawVendor);
+                case "FortiOS" -> FortiGateBaselineAdapter.parse(configContent, rawVendor);
+                case "PAN-OS" -> PaloAltoBaselineAdapter.parse(configContent, rawVendor);
+                case "SONiC" -> SonicBaselineAdapter.parse(configContent, rawVendor);
+                case "AWS" -> AwsBaselineAdapter.parse(configContent, rawVendor);
+                default -> {
+                    // Generic baseline: preserve discovered vendor name (e.g., Arista) but use Generic heuristics
+                    SecurityBaseline g = new SecurityBaseline();
+                    // Preserve auto-discovered vendor name instead of overwriting to "Generic"
+                    g.vendor = canonicalVendor != null && !canonicalVendor.isBlank() ? canonicalVendor : "Generic";
+                    g.rawVendor = rawVendor != null ? rawVendor : canonicalVendor;
+                    // Lightweight heuristic: scan for generic keywords
+                    String lower = configContent != null ? configContent.toLowerCase() : "";
+                    if (lower.contains("telnet")) {
+                        g.managementPlane.telnetEnabled = true;
+                        g.managementPlane.telnetEvidence.add("heuristic: telnet keyword");
+                    }
+                    if (lower.contains("snmp") && lower.contains("public")) {
+                        SecurityBaseline.Snmp.Community c = new SecurityBaseline.Snmp.Community();
+                        c.name = "public"; c.classification = "default-public"; c.evidence.add("heuristic: snmp public");
+                        g.snmp.communities.add(c);
+                    }
+                    yield g;
+                }
+            };
+        } catch (Exception e) {
+            TrinetraCommon.logWarn("Baseline build failed for " + canonicalVendor + ": " + e.getMessage());
+            SecurityBaseline fallback = new SecurityBaseline();
+            fallback.vendor = canonicalVendor;
+            fallback.rawVendor = rawVendor;
+            return fallback;
+        }
     }
 }

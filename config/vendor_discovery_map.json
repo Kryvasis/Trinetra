@@ -1,0 +1,30 @@
+{
+  "_note": "Dynamic vendor discovery map \u2014 hot-reloaded by Iskabon + Trinetra without recompile. Add new vendors here, not in code.",
+  "oids": {
+    "1.3.6.1.4.1.9": "Cisco",
+    "1.3.6.1.4.1.2636": "Juniper",
+    "1.3.6.1.4.1.12356": "Fortinet",
+    "1.3.6.1.4.1.3375": "F5",
+    "1.3.6.1.4.1.11": "HP",
+    "1.3.6.1.4.1.99999": "Ruijie"
+  },
+  "os_families": {
+    "ios": "Cisco",
+    "ios-xe": "Cisco",
+    "ios-xr": "Cisco",
+    "nx-os": "Cisco",
+    "junos": "Juniper",
+    "fortios": "Fortinet",
+    "tmos": "F5",
+    "procurve": "HP",
+    "sonic": "SONiC",
+    "cumulus": "Cumulus",
+    "eos": "Arista",
+    "ruijie": "Ruijie"
+  },
+  "pending_oids": {},
+  "banner_learned": {
+    "Arista": "SSH banner Arista auto-discovered",
+    "Ruijie": "SSH banner Ruijie auto-discovered"
+  }
+}

@@ -75,6 +75,10 @@ def is_plausible_config(content: str) -> tuple[bool, str]:
         return False, "content too large"
     if "\x00" in content:
         return False, "binary content"
+    # Allow JSON for cloud/SONiC: AWS SG/NACL, SONiC config_db.json
+    stripped = content.strip()
+    if stripped.startswith("{") and any(k in stripped[:4096] for k in ('"SecurityGroups"', '"DEVICE_METADATA"', '"ACL_TABLE"', '"NetworkAcls"', '"GroupId"')):
+        return True, ""
     if looks_like_html(content):
         return False, "HTML/JavaScript detected"
     # Check for obvious error pages

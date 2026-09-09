@@ -32,6 +32,16 @@ public class TrinetraAgr {
     // ── Remediation hints per V-code — step-by-step CLI sequences (item 6) ──
     // Reformatted from single-paragraph hints into numbered device-specific steps where fix requires multiple CLI invocations.
     // All remediation content is correct per vendor documentation; only structuring changed.
+    //
+    // Traceability policy (review item 1c): these curated Cisco IOS sequences are
+    // shown ONLY for confirmed-risk findings (Category 1 FAIL with an exact
+    // triggering directive and source lines). Rationale: detection confidence is
+    // high there (anchored directive match, comments/negations excluded), so the
+    // fix is specific and safe to display WITH the mandatory review warning
+    // (backup/rollback/vendor-guide check — effective state is still unproven).
+    // Everything else (verified-pass, insufficient-evidence, unsupported-check)
+    // keeps generic cautious guidance so we never present a device-changing
+    // command without triggering evidence.
     private static final Map<String, String> REMEDIATION = new LinkedHashMap<>();
     static {
         REMEDIATION.put("V-003", "1. Enter config mode: `configure terminal`. 2. Identify service: `show running-config | include transport|http`. 3. Disable unused: `line vty 0 4` → `no transport input telnet`; `no ip http server`. 4. Restrict with ACL: `access-list 10 permit 10.0.0.0 0.255.255.255` → `line vty 0 4` → `access-class 10 in`. 5. Save: `write memory`.");
@@ -50,6 +60,64 @@ public class TrinetraAgr {
         REMEDIATION.put("V-106", "1. Identify bucket: `aws s3api get-bucket-acl --bucket <bucket>` (GCP: `gsutil iam get gs://<bucket>`; Azure: `az storage container show --name <container>`). 2. Set private: `aws s3api put-bucket-acl --bucket <bucket> --acl private` (GCP: `gsutil iam ch -d allUsers gs://<bucket>`). 3. Enable encryption: `aws s3api put-bucket-encryption --bucket <bucket> --server-side-encryption-configuration '{\"Rules\":[{\"ApplyServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]}'`. 4. Enable logging/versioning: `aws s3api put-bucket-logging --bucket <bucket> --bucket-logging-status '{\"LoggingEnabled\":{\"TargetBucket\":\"log-bucket\"}}'`. 5. Verify: `aws s3api get-bucket-acl --bucket <bucket>` shows private.");
         REMEDIATION.put("V-107", "1. Review IAM: `show running-config | include username|privilege` (Juniper: `show configuration system login`). 2. Apply least privilege: `username <user> privilege 5 secret <pwd>` (Juniper: `set system login user <user> class operator`). 3. Remove excess: `no username <user> privilege 15` (Juniper: `delete system login user <user>`). 4. Verify: `show running-config | include username` + `show aaa local user lockout`.");
         REMEDIATION.put("V-144", "1. Check params: `show version` + `sysctl -a | grep kernel.randomize` (NX-OS: `show running-config | include ip source-route`). 2. Harden: `no ip source-route` + `ip tcp synwait-time 10` (Juniper: `set system internet-options no-source-route`) + `sysctl -w kernel.randomize_va_space=2`. 3. Persist: `copy running-config startup-config` (Linux: `sysctl -p /etc/sysctl.conf`). 4. Verify: `show running-config | include source-route`.");
+    }
+
+    /**
+     * Curated remediation for one V-code, or "" when none is curated.
+     * Callers MUST gate on confirmed-risk before displaying (see policy above).
+     */
+    public static String getRemediation(String vCode) {
+        if (vCode == null) return "";
+        String r = REMEDIATION.get(vCode.trim().toUpperCase(Locale.ROOT));
+        return r != null ? r : "";
+    }
+
+    /**
+     * Version/model-aware remediation — customizes steps per vendor + OS version.
+     * Falls back to generic curated remediation when no specific template exists.
+     * This satisfies PS "Reporting customized based on device's specific model and software version."
+     */
+    public static String getRemediation(String vCode, String vendor, String osVersion) {
+        if (vCode == null) return "";
+        String key = vCode.trim().toUpperCase(Locale.ROOT);
+        String base = REMEDIATION.get(key);
+        if (base == null) return "";
+        if (vendor == null) vendor = "";
+        String v = vendor.trim().toLowerCase(Locale.ROOT);
+        String osv = osVersion != null ? osVersion.trim() : "";
+        String prefix = "";
+        // Vendor-specific prefix
+        if (v.contains("forti") || v.equals("fortios")) {
+            prefix = "[FortiOS " + (osv.isEmpty() ? "7.x" : osv) + "] FortiGate: ";
+            // Translate Cisco steps to FortiOS equivalents for key V-codes
+            if ("V-071".equals(key)) return prefix + "1. `config system interface` → `edit port1` → `set allowaccess ping https ssh` (remove `telnet`/`http`). 2. `config system global` → `set admintimeout 5`. 3. Verify: `show system interface` / `get system status`. 4. Save: `execute backup config`";
+            if ("V-057".equals(key)) return prefix + "1. `config system snmp community` → `delete 1` (remove public). 2. `config system snmp sysinfo` → `set status enable` → `config system snmp user` → `set security-level auth-priv`. 3. Verify: `show system snmp community`";
+            if ("V-058".equals(key)) return prefix + "1. `config log syslogd setting` → `set status enable` → `set server " + "10.10.1.100" + "` . 2. Verify: `show log syslogd setting`";
+        } else if (v.contains("pan") || v.contains("palo")) {
+            prefix = "[PAN-OS " + (osv.isEmpty() ? "11.x" : osv) + "] Palo Alto: ";
+            if ("V-071".equals(key)) return prefix + "1. `set deviceconfig system service disable-telnet yes` → `set deviceconfig system service disable-http yes`. 2. `set mgt-config users` → enforce `phash`. 3. Verify: `show system info`";
+            if ("V-057".equals(key)) return prefix + "1. `delete deviceconfig system snmp-setting access-setting community public`. 2. `set deviceconfig system snmp-setting access-setting version v3` → `set deviceconfig system snmp-setting v3 users <user> auth`. 3. Verify: `show snmp-setting`";
+        } else if (v.contains("sonic") || v.contains("white")) {
+            prefix = "[SONiC " + (osv.isEmpty() ? "2023.11" : osv) + "] White Box: ";
+            if ("V-071".equals(key)) return prefix + "1. `sudo config aaa authentication login default local` → disable telnet: `sudo systemctl disable telnet`. 2. `sudo sonic-cfggen -a '{\"DEVICE_METADATA\":{\"localhost\":{\"hostname\":\"...\"}}}'`. 3. Verify: `show version` / `show ip interfaces`";
+            if ("V-003".equals(key)) return prefix + "1. `sudo iptables -A INPUT -p tcp --dport 23 -j DROP` (block telnet) → `sudo config save -y`. 2. Verify: `iptables -L`";
+        } else if (v.contains("aws") || v.contains("cloud") || v.contains("amazon")) {
+            prefix = "[AWS " + (osv.isEmpty() ? "SG/NACL" : osv) + "] Cloud-native: ";
+            if ("V-003".equals(key) || "V-071".equals(key)) return prefix + "1. `aws ec2 revoke-security-group-ingress --group-id sg-xxxx --protocol tcp --port 23 --cidr 0.0.0.0/0` (telnet) → `aws ec2 revoke-security-group-ingress --port 80 --cidr 0.0.0.0/0` (http). 2. Restrict to `10.0.0.0/16`. 3. Verify: `aws ec2 describe-security-groups`";
+            if ("V-057".equals(key)) return prefix + "1. `aws s3api put-bucket-acl --bucket <bucket> --acl private` (remove public). 2. `aws iam` rotate hardcoded keys.";
+        } else if (v.contains("juniper") || v.contains("junos")) {
+            prefix = "[JUNOS " + (osv.isEmpty() ? "20.4R3" : osv) + "] Juniper: ";
+            if (base.contains("Cisco IOS") || base.contains("configure terminal")) {
+                // Provide JUNOS translation inline
+                return prefix + base.replace("`configure terminal`", "`configure`").replace("`line vty 0 4`", "`set system services`") + " (JUNOS syntax shown where applicable)";
+            }
+        } else if (v.contains("cisco")) {
+            prefix = "[IOS" + (osv.contains("XE") ? " XE " : osv.contains("NX") ? " NX-OS " : " ") + (osv.isEmpty() ? "17.6.5" : osv) + "] Cisco: ";
+            return prefix + base;
+        }
+        // Generic fallback with version tag
+        if (!osv.isEmpty()) return "[" + vendor + " " + osv + "] " + base;
+        return base;
     }
 
     /**

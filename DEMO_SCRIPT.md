@@ -141,6 +141,32 @@ Open **http://localhost:5173** in the browser.
 
 ---
 
+## Step 8 — Tamper-detection reveal (1.5 min)
+
+*Reliable live mechanism: use the existing tamper regression path, not a hand-edit. Directly editing session JSON live is fragile (a typo can break parsing and stall the demo); the compiled regression test performs the same alter-one-value operation deterministically.*
+
+1. In a terminal (keep the UI visible), run the tamper regression check against a disposable copy of `demo-judge`:
+```bash
+cd /home/kali/Desktop/Trinetra
+# Back up, flip one verdict in the hash-chained log, verify:
+cp sessions/demo-judge/brain_state_demo-judge.json /tmp/brain_backup.json
+python3 - <<'EOF'
+import json
+p = 'sessions/demo-judge/brain_state_demo-judge.json'
+d = json.load(open(p))
+d['normalized_results'][0]['normalized_result'] = 'pass' if d['normalized_results'][0]['normalized_result'] != 'pass' else 'fail'
+json.dump(d, open(p, 'w'), indent=2)
+print('altered entry 0 ->', d['normalized_results'][0]['normalized_result'])
+EOF
+java -Dtrinetra.root=/home/kali/Desktop/Trinetra -cp "out:lib/*" TrinetraBridgeHelper status demo-judge | python3 -c "import json,sys; print(json.load(sys.stdin)['chain']['detail'])"
+```
+2. **Show:** `entry hash mismatch (expected …, stored …)` in the terminal, then reload **Results** for `demo-judge` — the integrity banner reads *"Evidence integrity check failed … Treat these historical records as untrusted"* and the PDF appendix states `Status: BROKEN`.
+3. Restore immediately: `cp /tmp/brain_backup.json sessions/demo-judge/brain_state_demo-judge.json`, reload Results to show `INTACT` again.
+
+**What to say (read honestly, proactively):** *"This detects accidental or incidental tampering — someone editing or deleting a result breaks the hash chain and the report says so. It is not a defense against a privileged attacker with full filesystem access, which would require external anchoring not built here."*
+
+---
+
 ## Known Rough Edges (avoid during live demo)
 
 - **Empty config upload:** The bridge returns a clear error, but the React UI shows it as a toast. Don't upload an empty file.

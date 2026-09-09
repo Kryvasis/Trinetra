@@ -18,6 +18,10 @@ export default function SessionDevicesView({ api, toast }) {
   const [removeTarget, setRemoveTarget] = useState(null)
   const [changingScope, setChangingScope] = useState(false)
   const [scopeError, setScopeError] = useState('')
+  const [compareDevice, setCompareDevice] = useState(null)
+  const [compareData, setCompareData] = useState(null)
+  const [compareLoading, setCompareLoading] = useState(false)
+  const [compareError, setCompareError] = useState('')
   const cancelRef = useRef(null)
   const scopeRequestRef = useRef(null)
   const triggerRef = useRef(null)
@@ -33,6 +37,22 @@ export default function SessionDevicesView({ api, toast }) {
   function cancelRemoval() { setRemoveTarget(null); triggerRef.current?.focus() }
   useEffect(() => () => { scopeRequestRef.current?.abort(); scopeRequestRef.current = null }, [])
   useEffect(() => { if (removeTarget) cancelRef.current?.focus() }, [removeTarget])
+
+  async function fetchComparison(deviceId) {
+    if (!session || compareLoading) return
+    setCompareDevice(deviceId); setCompareData(null); setCompareError('')
+    setCompareLoading(true)
+    try {
+      const res = await fetch(`${api}/session/${encodeURIComponent(session)}/compare?device_id=${encodeURIComponent(deviceId)}`)
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`)
+      setCompareData(data)
+    } catch (err) {
+      setCompareError(err.message)
+    } finally {
+      setCompareLoading(false)
+    }
+  }
 
   async function changeScope(deviceId, restore = false) {
     if (changingScope) return
@@ -274,6 +294,7 @@ export default function SessionDevicesView({ api, toast }) {
                         <td>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                             <button type="button" className="btn-secondary" disabled={changingScope || loading} aria-label={`Remove ${d.device_id}`} onClick={event => { triggerRef.current = event.currentTarget; setScopeError(''); setRemoveTarget(d.device_id) }}>Remove</button>
+                            <button type="button" className="btn-secondary" disabled={compareLoading || loading} aria-label={`Compare assessments for ${d.device_id}`} onClick={() => fetchComparison(d.device_id)} style={{ fontSize: 12, padding: '4px 10px' }}>Compare</button>
                             <Link
                               to={`/results?session=${encodeURIComponent(session)}`}
                               className="btn-secondary"
@@ -288,6 +309,15 @@ export default function SessionDevicesView({ api, toast }) {
                             >
                               Training
                             </Link>
+                            <a
+                              href={`${api}/session/${encodeURIComponent(session)}/devices/${encodeURIComponent(d.device_id)}/pdf`}
+                              className="btn-secondary"
+                              style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              Device PDF
+                            </a>
                           </div>
                         </td>
                       </tr>
@@ -325,6 +355,38 @@ export default function SessionDevicesView({ api, toast }) {
               })}
             </div>
           </div>
+
+          {/* Assessment comparison — latest-two per V-code from hash-chained history, no new storage */}
+          {(compareLoading || compareError || compareData) && (
+            <div className="card" style={{ marginTop: 24 }} aria-live="polite">
+              <h2 style={{ fontSize: 16, fontWeight: 600 }}>Assessment comparison{compareDevice ? ` — ${compareDevice}` : ''}</h2>
+              {compareLoading && <p><Spinner size={14} /> Comparing latest two assessments…</p>}
+              {compareError && !compareLoading && <p role="alert">{compareError}</p>}
+              {compareData && !compareLoading && (
+                <>
+                  <p className="field-help">{compareData.basis}</p>
+                  <p style={{ fontSize: 13 }}>
+                    Resolved: {compareData.summary?.resolved ?? 0} · Newly failing: {compareData.summary?.['newly failing'] ?? 0} · Unchanged: {compareData.summary?.unchanged ?? 0} · Still unresolved: {compareData.summary?.['still unresolved'] ?? 0}
+                  </p>
+                  <div className="table-wrap" style={{ overflowX: 'auto' }}>
+                    <table>
+                      <thead><tr><th>Check</th><th>Before</th><th>After</th><th>Change</th></tr></thead>
+                      <tbody>
+                        {(compareData.comparisons || []).map(c => (
+                          <tr key={c.test_id}>
+                            <td style={{ fontFamily: 'var(--mono)' }}>{c.test_id}<br /><small title="assessments compared">{c.assessments_compared}x assessed</small></td>
+                            <td><span className="badge badge-review">{c.before.finding_class}</span><br /><small>{c.before.verdict}</small></td>
+                            <td><span className="badge badge-review">{c.after.finding_class}</span><br /><small>{c.after.verdict}</small></td>
+                            <td><span className={`badge ${c.transition === 'resolved' ? 'badge-pass' : c.transition === 'newly failing' ? 'badge-fail' : 'badge-review'}`}>{c.transition}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>

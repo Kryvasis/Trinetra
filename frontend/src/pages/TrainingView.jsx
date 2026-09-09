@@ -32,6 +32,9 @@ export default function TrainingView({ api, toast }) {
   const [osVersionTrain, setOsVersionTrain] = useState('')
   const [training, setTraining] = useState(false)
   const [trainErrors, setTrainErrors] = useState({})
+  const [mlSuggestions, setMlSuggestions] = useState({}) // line -> {label, confidence, source}
+  const [nlpSuggestions, setNlpSuggestions] = useState({}) // line -> {category, control, remediation, confidence, reasoning}
+  const [mlStatus, setMlStatus] = useState(null)
   const abortRef = useRef(null)
   useEffect(() => () => { abortRef.current?.abort(); abortRef.current = null }, [])
 
@@ -41,6 +44,43 @@ export default function TrainingView({ api, toast }) {
       setInputSession(sessionParam)
     }
   }, [sessionParam, session])
+
+  const fetchMlSuggestions = async (lines) => {
+    if (!lines || lines.length === 0) { setMlSuggestions({}); setNlpSuggestions({}); return }
+    // batch up to 20 lines for quick UI
+    const slice = lines.slice(0, 20)
+    try {
+      const results = await Promise.all(slice.map(async item => {
+        try {
+          const r = await fetch(`${api}/ml/suggest`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ line: item.line, vendor }) })
+          const j = await r.json()
+          return [item.line, j.ml || null]
+        } catch { return [item.line, null] }
+      }))
+      const map = {}
+      for (const [k,v] of results) if (v) map[k]=v
+      setMlSuggestions(map)
+    } catch { setMlSuggestions({}) }
+    // also fetch model status for footer
+    try {
+      const r = await fetch(`${api}/ml/status`)
+      const j = await r.json()
+      setMlStatus(j)
+    } catch { setMlStatus(null) }
+    // NLP Pattern Recognition + semantic interpretation (Gemini) — parallel, never overwrites KNN
+    try {
+      const nlpResults = await Promise.all(slice.slice(0,5).map(async item => {
+        try {
+          const r = await fetch(`${api}/nlp/suggest`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ line: item.line, vendor }) })
+          const j = await r.json()
+          return [item.line, j.nlp || null]
+        } catch { return [item.line, null] }
+      }))
+      const nmap = {}
+      for (const [k,v] of nlpResults) if (v) nmap[k]=v
+      setNlpSuggestions(nmap)
+    } catch { setNlpSuggestions({}) }
+  }
 
   const fetchUnrecognized = async (sessName) => {
     if (training) return
@@ -76,6 +116,8 @@ export default function TrainingView({ api, toast }) {
         toast('No unrecognized lines in this session', 'info')
       } else {
         toast(`Found ${lines.length} unrecognized line(s)`, 'info')
+        // parallel ML advisory (TF-IDF + KNN) — never blocks, fills suggestion badges
+        fetchMlSuggestions(lines)
       }
     } catch (err) {
       if (abortRef.current !== controller) return
@@ -179,9 +221,25 @@ export default function TrainingView({ api, toast }) {
   const selectLine = (line) => {
     setSelectedLine(line)
     setPattern(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\.\*/g, '.*'))
-    setCategory('')
-    setControlMapping('')
-    setRemediation('')
+    const nlp = nlpSuggestions[line]
+    const ml = mlSuggestions[line]
+    if (nlp && nlp.category) {
+      setCategory(nlp.category)
+      setControlMapping(nlp.control || '')
+      setRemediation(nlp.remediation || '')
+      toast(`NLP suggests: ${nlp.category} → ${nlp.control} (${Math.round(nlp.confidence*100)}% Gemini: ${nlp.reasoning?.slice(0,60)}…) — verify before adding`, 'info')
+    } else if (ml && ml.label) {
+      setCategory(ml.label)
+      if (/^V-\d+/.test(ml.label)) {
+        setControlMapping(ml.label)
+        setCategory('ML-suggested: ' + ml.label)
+      }
+      toast(`AI suggests: ${ml.label} (${Math.round(ml.confidence*100)}% via ${ml.source}) — verify before adding`, 'info')
+    } else {
+      setCategory('')
+      setControlMapping('')
+    }
+    if (!nlp) setRemediation('')
     setOsVersionTrain('')
     setTrainErrors({})
   }
@@ -246,7 +304,10 @@ export default function TrainingView({ api, toast }) {
               <h2 style={{ fontSize: 16, fontWeight: 600 }}>Unrecognized Lines</h2>
               <span className="badge badge-review">{unrecognized.length}</span>
             </div>
-            {unrecognized.map((u, i) => (
+            {unrecognized.map((u, i) => {
+              const ml = mlSuggestions[u.line]
+              const nlp = nlpSuggestions[u.line]
+              return (
               <button
                 type="button"
                 disabled={training}
@@ -262,8 +323,11 @@ export default function TrainingView({ api, toast }) {
               >
                 <span style={{ fontSize: 11, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{u.device}</span>
                 <span className="line-text">{u.line}</span>
+                {ml && <span className="badge" style={{ marginLeft:8, background:'var(--surface3)', fontSize:10 }} title={`ML: ${ml.source} conf ${ml.confidence}`}>AI: {ml.label} {Math.round(ml.confidence*100)}%</span>}
+                {nlp && <span className="badge" style={{ marginLeft:8, background:'var(--accent)', color:'#fff', fontSize:10 }} title={`NLP: ${nlp.reasoning}`}>NLP: {nlp.category} {Math.round(nlp.confidence*100)}%</span>}
               </button>
-            ))}
+              )
+            })}
           </div>
 
           {/* Right: training form */}
@@ -282,6 +346,10 @@ export default function TrainingView({ api, toast }) {
                   <select id="training-vendor" disabled={training} value={vendor} onChange={e => setVendor(e.target.value)}>
                     <option value="Cisco">Cisco</option>
                     <option value="Juniper">Juniper</option>
+                    <option value="FortiOS">FortiOS</option>
+                    <option value="PAN-OS">PAN-OS</option>
+                    <option value="SONiC">SONiC</option>
+                    <option value="AWS">AWS</option>
                     <option value="Generic">Generic</option>
                   </select>
                 </div>
@@ -379,6 +447,9 @@ export default function TrainingView({ api, toast }) {
           <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12 }}>
             Saved patterns take effect on the next configuration upload. These counts track this review only; re-upload the configuration to verify recognition. A saved label is not proof of security compliance.
           </p>
+          {mlStatus && <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>
+            ML: {mlStatus.has_sklearn ? `TF-IDF char 3-5 + KNN(k=${mlStatus.k}, cosine) — corpus ${mlStatus.corpus_size}, model ${mlStatus.model_exists ? 'ready' : 'training'}` : 'sklearn not installed — regex only fallback'} · Threshold 0.55 · Deterministic scorer remains authoritative, ML is advisory
+          </p>}
         </div>
       )}
     </div>
