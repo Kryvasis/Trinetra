@@ -7,7 +7,14 @@
 - User activation opens a right-side non-modal drawer. The workspace remains operable, so the drawer does not trap focus or claim modal semantics. Close and Escape dismiss it and restore focus to the launcher. Pause affects only display refresh; it never pauses, cancels or changes an assessment. Copy exports the sanitized displayed trace and reports clipboard failure through the shared toast owner.
 - Backend activity files contain a bounded latest-operation trace. They record allowlisted stages, timestamps, sanitized command forms and summary counts. They never contain raw configuration lines, credential values, tokens, temporary paths or subprocess stdout/stderr. Activity metadata is not presented as hash-chain evidence.
 - Upload, paste and authorized SSH/URL collection create one operation ID per submitted assessment. Bulk files share that ID, so sequential device ingestion remains one readable trace. The client explicitly finalizes success, partial, cancelled or error state; failure of activity recording never blocks the underlying assessment.
-- Empty, standing-by, live, paused, success, partial, cancelled, error and unavailable states have stable geometry and text labels. Newly received lines use one bounded decode reveal; reduced motion removes it. No fake commands, simulated timing or perpetual cursor animation is allowed.
+- Empty, standing-by, live, paused, success, partial, cancelled, error and unavailable states have stable geometry and text labels. Newly received lines use one bounded 160ms arrival; reduced motion removes it. The terminal shows only timestamped prompt, command and output entries—no duplicate metadata chrome, fake commands, simulated timing or perpetual cursor animation.
+
+## Production interface pass — 2026-09-09
+
+- Results presents framework totals as a stable semantic summary and keeps the paginated evidence table keyboard-scrollable with explicit captions, column scopes, recorded-control fallbacks and a clearer device/check hierarchy.
+- Training uses one bounded review queue with a persistent instructional empty state in the editor. Selection is communicated through pressed state, contrast and a structural inset—not independent card borders. Saved labels remain advisory until the configuration is re-uploaded.
+- Devices and System share canonical section headings, status panels, inline confirmations, compact action groups and retained-item lists. Remove actions use the danger intent and remain recoverable. Raw diagnostic statuses are translated into operator-facing health language while exact validation issues remain visible.
+- Fixed Runtime controls never cover final-page content; the workspace reserves a bottom safe area on every route. Tables retain their own horizontal scrolling and accessible region labels.
 
 Implementation owners: `frontend/src/components/ActivityConsole.jsx`, `frontend/src/utils/activityStream.js`, `frontend/src/App.jsx`, `frontend/src/pages/UploadView.jsx`, `bridge/app.py`, `frontend/src/workspace.css`.
 
