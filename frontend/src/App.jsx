@@ -22,7 +22,7 @@ const NAV_ITEMS = [
   { to: '/results', label: 'Results' },
   { to: '/training', label: 'Training' },
   { to: '/devices', label: 'Devices' },
-  { to: '/assurance', label: 'Assurance' },
+  //{ to: '/assurance', label: 'Assurance' },
   { to: '/system', label: 'System' },
 ]
 
