@@ -145,10 +145,7 @@ export default function ActivityConsole({ api, session, toast }) {
   const running = trace.status === 'running'
   const stateLabel = error ? 'Unavailable' : paused ? 'Paused' : running ? 'Live' : trace.status === 'idle' ? 'Standing by' : trace.status
   const stateClass = error ? 'unavailable' : trace.status
-  const activityPath = watchedSession ? `/api/session/${encodeURIComponent(watchedSession)}/activity` : '/api/session/[not-selected]/activity'
-  const stages = [...new Set(events.map(event => event.stage).filter(Boolean))]
-  const refreshMode = paused ? 'manual' : running ? '700ms follow' : '2.4s snapshot'
-  const lastUpdated = trace.updated_at ? timestamp(trace.updated_at) : '--:--:--'
+  const terminalPath = watchedSession ? `~/sessions/${watchedSession}` : '~/assessment'
 
   return <>
     <button
@@ -168,13 +165,7 @@ export default function ActivityConsole({ api, session, toast }) {
 
     {open && <aside className="runtime-console" id="runtime-console-drawer" aria-labelledby="runtime-console-title">
       <header className="runtime-console-header">
-        <div className="runtime-console-identity">
-          <span className="runtime-console-mark" aria-hidden="true"><i /><i /></span>
-          <div>
-            <div className="runtime-console-title"><h2 id="runtime-console-title">Cortex runtime</h2><span>evidence shell</span></div>
-            <p>{watchedSession ? `localhost / sessions / ${watchedSession}` : 'localhost / no session selected'}</p>
-          </div>
-        </div>
+        <h2 id="runtime-console-title">cortex@bridge: {terminalPath}</h2>
         <div className="runtime-console-actions">
           <span className={`runtime-console-state state-${stateClass}`} role="status">{stateLabel}</span>
           <button type="button" onClick={() => setPaused(value => !value)} aria-pressed={paused} disabled={!watchedSession}>{paused ? 'Resume' : 'Pause'}</button>
@@ -183,44 +174,23 @@ export default function ActivityConsole({ api, session, toast }) {
         </div>
       </header>
 
-        <div className="runtime-commandbar" aria-label="Live trace request">
-          <div className="runtime-commandbar-prompt">
-            <span className="runtime-user">cortex@bridge</span><span className="runtime-path">:~/assessment</span><span aria-hidden="true">$</span>
-            <code>fetch GET {activityPath} --cache no-store</code>
-          </div>
-          <div className="runtime-operation"><span>operation</span><code>{trace.operation_id || 'awaiting-request'}</code></div>
-        </div>
-        <div className="runtime-tracebar" aria-label="Trace metadata">
-          <span><b>transport</b> local HTTP</span>
-          <span><b>mode</b> {refreshMode}</span>
-          <span><b>updated</b> {lastUpdated}</span>
-          <span className="runtime-stage-path"><b>path</b> {stages.length ? stages.join(' / ') : 'waiting for intake'}</span>
-        </div>
-        <div ref={bodyRef} className="runtime-console-body" id="runtime-console-body" role="log" aria-live="polite" aria-relevant="additions text">
-          {events.length ? events.map((event, index) => <article className={`runtime-line level-${event.level}`} key={`${trace.operation_id}-${event.id}`}>
-            <div className="runtime-line-meta">
-              <span className="runtime-sequence">job.{String(event.id).padStart(3, '0')}</span>
-              <time dateTime={event.timestamp}>{timestamp(event.timestamp)}</time>
-              <strong>{event.stage}</strong>
-              <span className="runtime-branch" aria-hidden="true">{index === events.length - 1 ? '└─' : '├─'}</span>
+      <div ref={bodyRef} className="runtime-console-body" id="runtime-console-body" role="log" aria-live="polite" aria-relevant="additions text">
+          {events.length ? events.map(event => <article className={`runtime-line level-${event.level}`} key={`${trace.operation_id}-${event.id}`}>
+            <div className="runtime-line-command">
+              <time dateTime={event.timestamp}>[{timestamp(event.timestamp)}]</time>
+              <span className="runtime-user" aria-hidden="true">cortex@bridge</span><span className="runtime-path" aria-hidden="true">:{terminalPath}$</span>
+              <code>{event.command}</code>
             </div>
-            <div className="runtime-line-payload">
-              <div className="runtime-line-command"><span className="runtime-host" aria-hidden="true">cortex@bridge</span><span aria-hidden="true">$</span><code>{event.command}</code></div>
-              <p><span aria-hidden="true">stdout ›</span>{event.message}</p>
-            </div>
+            <p>{event.message}</p>
           </article>) : <div className="runtime-console-empty">
-            <div className="runtime-empty-banner" aria-hidden="true"><b>CORTEX RUNTIME TRACE</b><span>sanitized operational channel</span></div>
-            <code><span className="runtime-user">cortex@bridge</span><span aria-hidden="true">:~/assessment$</span> fetch GET {activityPath} --cache no-store</code>
-            <p>{watchedSession ? 'No backend-confirmed activity is recorded. Start an upload, paste, or authorized network collection.' : 'Select or create a session. The shell renders only confirmed backend stages and sanitized command forms.'}</p>
+            <div className="runtime-line-command">
+              <span className="runtime-user" aria-hidden="true">cortex@bridge</span><span className="runtime-path" aria-hidden="true">:{terminalPath}$</span>
+              <code>await activity</code>
+            </div>
+            <p>{watchedSession ? 'Waiting for assessment activity.' : 'Select or create a session to begin.'}</p>
           </div>}
           {error && <p className="runtime-console-error" role="alert">{error}</p>}
-        </div>
-        <footer className="runtime-console-footer">
-          <span><b>buffer</b> {String(events.length).padStart(3, '0')} / 120</span>
-          <span><b>channel</b> {paused ? 'held' : 'open'}</span>
-          <span><b>redaction</b> enforced</span>
-          <span className="runtime-footer-note">Raw configurations, credentials and temporary paths excluded</span>
-        </footer>
+      </div>
     </aside>}
   </>
 }
