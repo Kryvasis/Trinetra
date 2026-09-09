@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import UploadView from './pages/UploadView'
 import ResultsView from './pages/ResultsView'
@@ -9,6 +9,8 @@ import Toast from './components/Toast'
 import ThreatField from './components/ThreatField'
 import OverviewView from './pages/OverviewView'
 import ActiveSession from './components/ActiveSession'
+import WorkspaceErrorBoundary from './components/WorkspaceErrorBoundary'
+import ActivityConsole from './components/ActivityConsole'
 import { sessionSearch } from './utils/activeSession'
 
 const API = '/api'
@@ -71,10 +73,11 @@ function IntroExperience({ entering, onOpen }) {
 
 function WorkspaceShell({ addToast, sessionBanner }) {
   const location = useLocation()
-  const sessionQuery = sessionSearch('', new URLSearchParams(location.search).get('session'))
+  const selectedSession = new URLSearchParams(location.search).get('session') || ''
+  const sessionQuery = sessionSearch('', selectedSession)
 
   useEffect(() => {
-    document.title = `${TITLES[location.pathname] || 'Compliance Scanner'} — Cortex`
+    document.title = `${TITLES[location.pathname] || 'Page not found'} — Cortex`
     window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
     document.getElementById('main-content')?.focus({ preventScroll: true })
   }, [location.pathname])
@@ -98,9 +101,10 @@ function WorkspaceShell({ addToast, sessionBanner }) {
         </div>
       </nav>
       {sessionBanner}
+      <ActivityConsole api={API} session={selectedSession} toast={addToast} />
       <main className="container app-main" id="main-content" tabIndex={-1}>
         <div key={location.pathname} className="route-stage">
-          <Routes>
+          <WorkspaceErrorBoundary><Routes>
             <Route path="/" element={<Navigate to={location.search ? `/upload${location.search}` : '/dashboard'} replace />} />
             <Route path="/upload" element={<UploadView api={API} toast={addToast} />} />
             <Route path="/website" element={<Navigate to="/upload?source=website" replace />} />
@@ -110,7 +114,7 @@ function WorkspaceShell({ addToast, sessionBanner }) {
             <Route path="/dashboard" element={<OverviewView api={API} />} />
             <Route path="/system" element={<DashboardView api={API} toast={addToast} />} />
             <Route path="*" element={<div className="empty-state card"><h1>Page not found</h1><p>Choose a workspace page from the navigation.</p><NavLink to="/dashboard">Return to overview</NavLink></div>} />
-          </Routes>
+          </Routes></WorkspaceErrorBoundary>
         </div>
       </main>
     </div>
@@ -154,11 +158,21 @@ function Experience({ addToast }) {
 
 export default function App() {
   const [toasts, setToasts] = useState([])
+  const toastId = useRef(0)
+  const timers = useRef(new Set())
+  useEffect(() => {
+    const pending = timers.current
+    return () => { pending.forEach(clearTimeout); pending.clear() }
+  }, [])
 
   const addToast = useCallback((msg, type = 'info') => {
-    const id = Date.now()
-    setToasts(prev => [...prev, { id, msg, type }])
-    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 4000)
+    const id = ++toastId.current
+    setToasts(prev => [...prev.filter(t => t.msg !== msg || t.type !== type), { id, msg, type }].slice(-3))
+    const timer = setTimeout(() => {
+      timers.current.delete(timer)
+      setToasts(prev => prev.filter(t => t.id !== id))
+    }, 4000)
+    timers.current.add(timer)
   }, [])
 
   return (

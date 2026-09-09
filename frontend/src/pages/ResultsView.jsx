@@ -32,12 +32,14 @@ export default function ResultsView({ api, toast }) {
 
   async function load(event, name = input.trim()) {
     event?.preventDefault()
+    if (exportRef.current) return
     if (!validSession(name)) { setError('Use 1–64 letters, numbers, hyphens or underscores.'); sessionRef.current?.focus(); return }
     requestRef.current?.abort()
     const controller = new AbortController()
     requestRef.current = controller
     const scope = [...selected]
-    setLoading(true); setError(''); setScore(null); setExportError('')
+    setLoading(true); setError(''); setExportError('')
+    if (name !== loadedRef.current) setScore(null)
     const timeout = setTimeout(() => controller.abort(), 60000)
     try {
       const response = await fetch(`${api}/session/${encodeURIComponent(name)}/score?frameworks=${encodeURIComponent(scope.join(','))}`, {signal: controller.signal})
@@ -45,6 +47,7 @@ export default function ResultsView({ api, toast }) {
       if (!response.ok) throw new Error(data.error || `Results unavailable (${response.status})`)
       if (requestRef.current !== controller) return
       const next = data.score || data
+      if (!next.frameworks || typeof next.frameworks !== 'object' || Array.isArray(next.frameworks)) throw new Error('The results response is incomplete. Retry or check System diagnostics.')
       setScore(next); setApplied(scope); setActive(Object.keys(next.frameworks || {})[0] || ''); setPage(0)
       loadedRef.current = name; setInput(name); rememberSession(name)
       toast('Results loaded', 'success')
@@ -57,21 +60,23 @@ export default function ResultsView({ api, toast }) {
   }
   useEffect(() => { loadRef.current = load })
   useEffect(() => {
+    exportRef.current?.abort(); exportRef.current = null; setExporting(false)
     if (requested && requested !== loadedRef.current) { setInput(requested); loadRef.current(null, requested) }
   }, [requested])
 
   async function download() {
-    if (exportRef.current || !score) return
+    if (exportRef.current || requestRef.current || !score) return
+    const exportSession = loadedRef.current
     const controller = new AbortController()
     exportRef.current = controller; setExporting(true); setExportError('')
     const timeout = setTimeout(() => controller.abort(), 130000)
     try {
-      const response = await fetch(`${api}/session/${encodeURIComponent(loadedRef.current)}/audit-report/pdf?frameworks=${encodeURIComponent(applied.join(','))}`, {signal: controller.signal})
+      const response = await fetch(`${api}/session/${encodeURIComponent(exportSession)}/audit-report/pdf?frameworks=${encodeURIComponent(applied.join(','))}`, {signal: controller.signal})
       if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || `Export failed (${response.status})`) }
       const blob = await response.blob()
       if (exportRef.current !== controller) return
       const url = URL.createObjectURL(blob)
-      const link = document.createElement('a'); link.href = url; link.download = `audit_report_${loadedRef.current}.pdf`; link.click()
+      const link = document.createElement('a'); link.href = url; link.download = `audit_report_${exportSession}.pdf`; link.click()
       setTimeout(() => URL.revokeObjectURL(url), 1000)
       toast('Report downloaded', 'success')
     } catch (err) {
@@ -96,10 +101,11 @@ export default function ResultsView({ api, toast }) {
       <p className="benchmark-help">Keep at least one selected. Load results to apply changes. PDF exports use the displayed scope.</p>
     </section>
     <form onSubmit={load} noValidate className="assessment-toolbar">
-      <label htmlFor="results-session">Saved session</label><input ref={sessionRef} id="results-session" value={input} maxLength={64} onChange={event => setInput(event.target.value)} disabled={loading || exporting} aria-describedby={error ? 'results-error' : undefined} />
+      <label htmlFor="results-session">Saved session</label><input ref={sessionRef} id="results-session" value={input} maxLength={64} onChange={event => setInput(event.target.value)} disabled={loading || exporting} aria-invalid={!!error && !validSession(input.trim())} aria-describedby={error ? 'results-error' : undefined} />
       <button className="btn-primary" disabled={loading || exporting || !input.trim()}>{loading ? <><Spinner size={14} /> Loading results…</> : 'Load results'}</button>
     </form>
-    {error && <div className="card" role="alert" id="results-error"><h2>Results unavailable</h2><p>{error}</p><button className="btn-secondary" onClick={load} disabled={loading}>Retry</button></div>}
+    {loading && <p role="status" className="field-help">{score ? 'Refreshing assessment. The previous results remain visible until the request completes.' : 'Loading assessment evidence…'}</p>}
+    {error && <div className="card" role="alert" id="results-error"><h2>{score ? 'Could not refresh results' : 'Results unavailable'}</h2><p>{error}</p>{score && <p>The previously loaded assessment remains below.</p>}<button className="btn-secondary" onClick={load} disabled={loading || exporting}>Retry</button></div>}
     {!score && !loading && !error && <div className="empty-state card"><h2>No assessment selected</h2><p>Upload a configuration or open a saved session to review its evidence.</p><Link className="btn-secondary" to="/upload">Upload & collect</Link></div>}
     {score && <>
       <div className="assessment-summary"><h2>{loadedRef.current}</h2><span>{score.total_tests_executed ?? 0} recorded checks</span><span>{score.generated_at ? new Date(score.generated_at).toLocaleString() : ''}</span></div>

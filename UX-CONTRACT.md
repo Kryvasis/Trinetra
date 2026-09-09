@@ -1,5 +1,26 @@
 # Cortex workflow contract
 
+## Runtime activity console — 2026-09-09
+
+- `ActivityConsole.jsx` is the canonical shared owner for visible collection and ingestion activity. Its fixed Runtime launcher remains outside route content, defaults closed on every workspace route, reports the current textual state and confirmed event count, and follows the selected session across route changes. Starting an assessment updates the launcher but never forces the drawer open.
+- The console polls the local bridge only while a session is selected and the live view is not paused. Requests are abortable, stale work is discarded on session change, hidden tabs do not poll, and completed traces refresh less frequently than running traces.
+- User activation opens a right-side non-modal drawer. The workspace remains operable, so the drawer does not trap focus or claim modal semantics. Close and Escape dismiss it and restore focus to the launcher. Pause affects only display refresh; it never pauses, cancels or changes an assessment. Copy exports the sanitized displayed trace and reports clipboard failure through the shared toast owner.
+- Backend activity files contain a bounded latest-operation trace. They record allowlisted stages, timestamps, sanitized command forms and summary counts. They never contain raw configuration lines, credential values, tokens, temporary paths or subprocess stdout/stderr. Activity metadata is not presented as hash-chain evidence.
+- Upload, paste and authorized SSH/URL collection create one operation ID per submitted assessment. Bulk files share that ID, so sequential device ingestion remains one readable trace. The client explicitly finalizes success, partial, cancelled or error state; failure of activity recording never blocks the underlying assessment.
+- Empty, standing-by, live, paused, success, partial, cancelled, error and unavailable states have stable geometry and text labels. Newly received lines use one bounded decode reveal; reduced motion removes it. No fake commands, simulated timing or perpetual cursor animation is allowed.
+
+Implementation owners: `frontend/src/components/ActivityConsole.jsx`, `frontend/src/utils/activityStream.js`, `frontend/src/App.jsx`, `frontend/src/pages/UploadView.jsx`, `bridge/app.py`, `frontend/src/workspace.css`.
+
+## Workspace resilience review — 2026-09-05
+
+- Results keeps the last successful assessment visible while refreshing the same session; failures label it as previously loaded. Switching sessions clears the old result. PDF work captures the displayed session name and is canceled when the selected session changes.
+- Overview, Results, Devices and Training validate session names using the shared identifier contract, associate errors with inputs and focus invalid fields.
+- Devices adds local search and ten-row pagination. Search resets paging; shortened datasets clamp it. Search and paging are deliberately transient within this local inventory, matching System. The existing semantic table retains horizontal scrolling with a keyboard-focusable region and a visible cue.
+- Device cancellation and Escape restore trigger focus. Successful removal/restoration focuses a surviving content target. Missing OS metadata reads Not recorded, and recorded-check pass rates do not imply certification.
+- Training fields have explicit label associations and invalid-state descriptions. The summary starts with equal loaded/remaining counts, preserves zero, and describes local review progress. Reupload remains necessary to verify recognition; labeling alone does not establish security compliance. Its select remains native/platform-owned.
+- App.jsx owns bounded, deduplicated notifications with unique IDs and timer cleanup. WorkspaceErrorBoundary.jsx keeps navigation usable after a route render failure and provides an explicit retry. Unknown routes use a Page not found title.
+- Existing graphite tokens, natural page scrolling and reduced-motion rules remain canonical. No backend, retention or authorization policy changes are introduced by this review.
+
 ## Evidence and workflow hardening — 2026-09-04
 
 - Results reads scores only on load. Report generation is an explicit PDF action; it may invoke configured narrative services. Merely opening Results must not generate a report or contact an LLM.
@@ -29,6 +50,7 @@ website/device separation (2026-09-04). Security and score semantics: [SECURITY-
 | Overview | `OverviewView.jsx`, `assessmentSummary.js` | Read-only named-session device fetch; 30s timeout, stale-response protection, retry, empty/loading/loaded/error states; first-five device preview |
 | Website response state | `WebsiteView.jsx` | Idle, pending, success, error, PDF pending; abort on unmount, block duplicates, explicit retry |
 | Active assessment selection | `ActiveSession.jsx`, `activeSession.js` | Per-tab sessionStorage, validated session name and last-activity timestamp only; query links override the current selection; 30-minute inactivity expiry; refresh/navigation restore; New assessment clears selection without deleting data |
+| Runtime activity | `ActivityConsole.jsx`, `activityStream.js`, `bridge/app.py` | Closed-by-default fixed launcher with textual state/count; user-opened right-side non-modal drawer; abortable polling; explicit pause/copy/Close and Escape with launcher focus restoration; no focus trap, secrets or raw evidence; activity failure does not block assessment |
 
 No new select, date picker, modal or table selection contract is introduced.
 Existing Training select remains platform-owned; unchanged legacy forms are not

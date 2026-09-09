@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
-import { rememberSession } from '../utils/activeSession'
+import { rememberSession, validSession } from '../utils/activeSession'
+import { count, summarizeDevices } from '../utils/assessmentSummary'
 
 export default function SessionDevicesView({ api, toast }) {
   const [searchParams] = useSearchParams()
@@ -19,6 +20,17 @@ export default function SessionDevicesView({ api, toast }) {
   const [scopeError, setScopeError] = useState('')
   const cancelRef = useRef(null)
   const scopeRequestRef = useRef(null)
+  const triggerRef = useRef(null)
+  const headingRef = useRef(null)
+  const inputRef = useRef(null)
+  const searchRef = useRef(null)
+  const [query, setQuery] = useState('')
+  const [page, setPage] = useState(0)
+  const filtered = devices.filter(device => [device.device_id, device.vendor, device.hardware_model, device.os_version].some(value => String(value || '').toLowerCase().includes(query.trim().toLowerCase())))
+  const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / 10) - 1))
+  const visible = filtered.slice(currentPage * 10, (currentPage + 1) * 10)
+  const totals = summarizeDevices(devices)
+  function cancelRemoval() { setRemoveTarget(null); triggerRef.current?.focus() }
   useEffect(() => () => { scopeRequestRef.current?.abort(); scopeRequestRef.current = null }, [])
   useEffect(() => { if (removeTarget) cancelRef.current?.focus() }, [removeTarget])
 
@@ -38,6 +50,7 @@ export default function SessionDevicesView({ api, toast }) {
       setRemoveTarget(null)
       toast(restore ? 'Device restored to assessment' : 'Device removed; historical evidence retained', 'success')
       await fetchDevices(session)
+      ;(headingRef.current || document.getElementById('main-content'))?.focus()
     } catch (err) {
       if (scopeRequestRef.current !== controller) return
       setScopeError(err.name === 'AbortError' ? 'Request timed out. Reload Devices to check whether the change completed before retrying.' : err.message)
@@ -50,7 +63,7 @@ export default function SessionDevicesView({ api, toast }) {
   useEffect(() => () => { requestRef.current?.abort(); requestRef.current = null }, [])
 
   const fetchDevices = useCallback(async (sessName) => {
-    if (!sessName) return
+    if (!validSession(sessName)) { setError('Use 1–64 letters, numbers, hyphens or underscores.'); inputRef.current?.focus(); return }
     setRemoveTarget(null)
     requestRef.current?.abort()
     const controller = new AbortController()
@@ -68,7 +81,8 @@ export default function SessionDevicesView({ api, toast }) {
       }
       const data = await res.json()
       if (requestRef.current !== controller) return
-      setDevices(data.devices || [])
+      if (!Array.isArray(data.devices)) throw new Error('The device response is incomplete. Retry or check System diagnostics.')
+      setDevices(data.devices)
       setSessionMeta(data)
       setSession(sessName)
       rememberSession(sessName)
@@ -89,6 +103,8 @@ export default function SessionDevicesView({ api, toast }) {
   }, [api, toast])
 
   useEffect(() => {
+    scopeRequestRef.current?.abort(); scopeRequestRef.current = null
+    setChangingScope(false); setScopeError(''); setQuery(''); setPage(0)
     if (sessionParam) {
       setInputSession(sessionParam)
       fetchDevices(sessionParam)
@@ -111,25 +127,27 @@ export default function SessionDevicesView({ api, toast }) {
         description="View all devices within a session, their ingestion method, and per-device compliance results."
       />
 
-      <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', gap: 8, marginBottom: 24 }}>
+      <form onSubmit={handleSubmit} noValidate className="assessment-toolbar" aria-busy={loading}>
+        <label htmlFor="devices-session">Saved session</label>
         <input
+          ref={inputRef} id="devices-session" maxLength={64} disabled={loading || changingScope}
           type="text"
           value={inputSession}
           onChange={e => setInputSession(e.target.value)}
           placeholder="Session name (e.g. multi_vendor_e2e)"
-          aria-label="Session name"
-          style={{ flex: 1, maxWidth: 400 }}
+          aria-invalid={!!error && !validSession(inputSession.trim())}
+          aria-describedby={error ? 'devices-error' : undefined}
         />
         <button type="submit" className="btn-primary" disabled={loading || changingScope || !inputSession.trim()}>
           {loading ? <><Spinner size={14} /> Loading...</> : 'Load Devices'}
         </button>
       </form>
 
-      {removeTarget && <section className="card" aria-labelledby="remove-device-title" style={{ marginBottom: 24 }}>
+      {removeTarget && <section className="card" aria-labelledby="remove-device-title" style={{ marginBottom: 24 }} onKeyDown={event => { if (event.key === 'Escape' && !changingScope) cancelRemoval() }}>
         <h2 id="remove-device-title">Remove {removeTarget}?</h2>
         <p>This removes the device from session {session}, active counts, and newly generated reports. Historical evidence and earlier exports are retained. You can restore it below.</p>
-        <div style={{ display: 'flex', gap: 12, marginTop: 16 }}>
-          <button ref={cancelRef} className="btn-secondary" type="button" disabled={changingScope} onClick={() => setRemoveTarget(null)}>Cancel</button>
+        <div className="assessment-toolbar">
+          <button ref={cancelRef} className="btn-secondary" type="button" disabled={changingScope} onClick={cancelRemoval}>Cancel</button>
           <button className="btn-primary" type="button" disabled={changingScope} onClick={() => changeScope(removeTarget)}>{changingScope ? 'Removing…' : 'Remove from assessment'}</button>
         </div>
       </section>}
@@ -150,7 +168,7 @@ export default function SessionDevicesView({ api, toast }) {
       )}
 
       {error && !loading && (
-        <div className="card">
+        <div className="card" role="alert" id="devices-error">
           <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load devices</h3>
           <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
           <button className="btn-secondary" onClick={() => fetchDevices(inputSession.trim())} style={{ marginTop: 8 }}>
@@ -184,19 +202,19 @@ export default function SessionDevicesView({ api, toast }) {
               </div>
               <div className="stat-card">
                 <div className="stat-value">
-                  {devices.reduce((s, d) => s + d.pass_count, 0)}
+                  {totals.passed}
                 </div>
                 <div className="stat-label">Total Pass</div>
               </div>
               <div className="stat-card">
                 <div className="stat-value" style={{ color: 'var(--red)' }}>
-                  {devices.reduce((s, d) => s + d.fail_count, 0)}
+                  {totals.failed}
                 </div>
                 <div className="stat-label">Total Fail</div>
               </div>
               <div className="stat-card">
                 <div className="stat-value">
-                  {devices.reduce((s, d) => s + d.total_checks, 0)}
+                  {totals.total}
                 </div>
                 <div className="stat-label">Total Checks</div>
               </div>
@@ -205,9 +223,16 @@ export default function SessionDevicesView({ api, toast }) {
 
           {/* Device table — now with distinct PS-required Serial/Hardware/OS columns */}
           <div className="card">
-            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Devices in Session "{session}"</h2>
-            <div className="table-wrap" style={{ overflowX: 'auto' }}>
+            <h2 ref={headingRef} tabIndex={-1} style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Devices in session "{session}"</h2>
+            <div className="assessment-toolbar">
+              <label htmlFor="device-search">Find device</label>
+              <input ref={searchRef} id="device-search" type="search" value={query} onChange={event => { setQuery(event.target.value); setPage(0) }} placeholder="Device, vendor, hardware or OS" />
+              {query && <button type="button" className="btn-secondary" onClick={() => { setQuery(''); setPage(0); searchRef.current?.focus() }}>Clear search</button>}
+            </div>
+            <p className="field-help" id="device-table-help">Scroll the table horizontally to see hardware details and device actions. Counts include retained check history.</p>
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Session devices" aria-describedby="device-table-help" style={{ overflowX: 'auto' }}>
               <table>
+                <caption className="sr-only">Devices in the selected assessment</caption>
                 <thead>
                   <tr>
                     <th>Device ID</th>
@@ -223,7 +248,7 @@ export default function SessionDevicesView({ api, toast }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {devices.map(d => {
+                  {visible.map(d => {
                     return (
                       <tr key={d.device_id}>
                         <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{d.device_id}</td>
@@ -232,7 +257,7 @@ export default function SessionDevicesView({ api, toast }) {
                         </td>
                         <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.serial_number || <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
                         <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.hardware_model || <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.os_version || <span style={{ color: 'var(--text-dim)' }}>{d.vendor === 'Cisco' ? 'auto: IOS' : d.vendor === 'Juniper' ? 'auto: JUNOS' : '—'}</span>}</td>
+                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.os_version || 'Not recorded'}</td>
                         <td>
                           <span className={`badge ${d.ingestion_method === 'config_upload' ? 'badge-pass' : d.ingestion_method === 'live_target' ? 'badge-review' : ''}`}>
                             {d.ingestion_method === 'config_upload' ? 'Config Upload' :
@@ -248,7 +273,7 @@ export default function SessionDevicesView({ api, toast }) {
                         <td style={{ fontFamily: 'var(--mono)' }}>{d.total_checks}</td>
                         <td>
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            <button type="button" className="btn-secondary" disabled={changingScope || loading} aria-label={`Remove ${d.device_id}`} onClick={() => { setScopeError(''); setRemoveTarget(d.device_id) }}>Remove</button>
+                            <button type="button" className="btn-secondary" disabled={changingScope || loading} aria-label={`Remove ${d.device_id}`} onClick={event => { triggerRef.current = event.currentTarget; setScopeError(''); setRemoveTarget(d.device_id) }}>Remove</button>
                             <Link
                               to={`/results?session=${encodeURIComponent(session)}`}
                               className="btn-secondary"
@@ -271,24 +296,27 @@ export default function SessionDevicesView({ api, toast }) {
                 </tbody>
               </table>
             </div>
+            {!filtered.length && <p role="status">No devices match “{query}”. Clear the search to see all devices.</p>}
+            <div className="assessment-pagination" aria-label="Device pages"><span role="status">{filtered.length ? currentPage * 10 + 1 : 0}–{Math.min((currentPage + 1) * 10, filtered.length)} of {filtered.length} devices</span><button type="button" className="btn-secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><button type="button" className="btn-secondary" disabled={(currentPage + 1) * 10 >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next</button></div>
 
             {/* Compliance progress per device */}
             <div style={{ marginTop: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Per-Device Compliance</h3>
-              {devices.map(d => {
-                const pct = d.total_checks > 0 ? Math.round((d.pass_count / d.total_checks) * 100) : 0
+              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Recorded-check pass rate · displayed devices</h3>
+              <p className="field-help">Unresolved checks need review. These rates do not establish compliance.</p>
+              {visible.map(d => {
+                const pct = count(d.total_checks) > 0 ? Math.min(100, Math.round((count(d.pass_count) / count(d.total_checks)) * 100)) : 0
                 return (
                   <div key={d.device_id} style={{ marginBottom: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
                       <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>{d.device_id}</span>
-                      <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>{pct}% ({d.pass_count}/{d.total_checks})</span>
+                      <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>{count(d.total_checks) ? `${pct}%` : '—'} ({count(d.pass_count)}/{count(d.total_checks)})</span>
                     </div>
                     <div className="progress">
                       <div
                         className="progress-bar"
                         style={{
                           width: `${pct}%`,
-                          background: pct >= 80 ? 'var(--green)' : pct >= 50 ? 'var(--yellow)' : 'var(--red)',
+                          background: 'var(--text)',
                         }}
                       />
                     </div>

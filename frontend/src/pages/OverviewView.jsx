@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { rememberSession } from '../utils/activeSession'
+import { rememberSession, validSession } from '../utils/activeSession'
 import SceneHeader from '../components/SceneHeader'
 import WorkspaceIcon from '../components/WorkspaceIcon'
 import Spinner from '../components/Spinner'
@@ -54,7 +54,7 @@ export default function OverviewView({ api }) {
     event.preventDefault()
     if (loading) return
     const name = input.trim()
-    if (!name) { inputRef.current?.focus(); return }
+    if (!validSession(name)) { setError('Use 1–64 letters, numbers, hyphens or underscores.'); inputRef.current?.focus(); return }
     rememberSession(name)
     if (name === requestedSession) setRevision(value => value + 1)
     else setParams({ session: name })
@@ -68,11 +68,11 @@ export default function OverviewView({ api }) {
 
     <form className="session-toolbar" onSubmit={openSession} noValidate aria-busy={loading}>
       <label htmlFor="overview-session">Session</label>
-      <input ref={inputRef} id="overview-session" value={input} onChange={event => setInput(event.target.value)} placeholder="Enter an existing session name" autoComplete="off" spellCheck="false" />
+      <input ref={inputRef} id="overview-session" value={input} maxLength={64} onChange={event => setInput(event.target.value)} placeholder="Enter an existing session name" autoComplete="off" spellCheck="false" disabled={loading} aria-invalid={!!error && !validSession(input.trim())} aria-describedby={error ? 'overview-error' : undefined} />
       <button className="btn-secondary" disabled={loading || !input.trim()}>{loading ? <Spinner size={16} /> : <WorkspaceIcon name="refresh" />} {loading ? 'Loading session' : 'Open session'}</button>
       <span className="session-context" role="status">{data ? `${data.devices.length} ${data.devices.length === 1 ? 'device' : 'devices'} loaded` : 'Configuration assessments'}</span>
     </form>
-    {error && <div className="overview-error" role="alert"><p>{error}</p><button className="btn-secondary" onClick={() => setRevision(value => value + 1)} disabled={loading}>Retry</button></div>}
+    {error && <div className="overview-error" role="alert" id="overview-error"><p>{error}</p>{validSession(requestedSession) && <button className="btn-secondary" onClick={() => setRevision(value => value + 1)} disabled={loading}>Retry</button>}</div>}
 
     <div className="overview-metrics" aria-busy={loading}>
       <div className="metric-stack">

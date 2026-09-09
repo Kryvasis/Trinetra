@@ -233,6 +233,10 @@
 /* Evidence workflows retain the graphite tokens and natural document flow. */
 .assessment-toolbar, .assessment-summary, .assessment-pagination { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
 .assessment-toolbar input { flex: 1 1 180px; min-width: 0; max-width: 360px; }
+.workspace-shell .assessment-toolbar button { min-width: 132px; }
+.workspace-shell .table-wrap:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.workspace-shell .assessment-summary > *, .workspace-shell .assessment-pagination > * { min-width: 0; overflow-wrap: anywhere; }
+.workspace-shell .stat-value { font-variant-numeric: tabular-nums; }
 .assessment-summary h2, .assessment-summary h3 { margin-right: auto; overflow-wrap: anywhere; }
 .assessment-summary span { color: var(--text-dim); font-size: 13px; }
 .assessment-notice { padding: 16px; margin-bottom: 20px; border: 1px solid var(--border-strong); border-radius: 12px; }
@@ -256,4 +260,272 @@
   .workspace-shell .assessment-toolbar { padding: 0; }
   .assessment-toolbar label { flex-basis: 100%; }
   .assessment-toolbar input { max-width: none; }
+}
+
+/* Optional, persisted operational trace for collection and ingestion. */
+.runtime-console-launcher {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 45;
+  min-width: 164px;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 8px 14px 8px 11px;
+  color: var(--accent-ink);
+  background: var(--text);
+  border: 0;
+  border-radius: 12px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, .32);
+  cursor: pointer;
+}
+.runtime-console-launcher:hover { color: #090a0a; background: #fff; }
+.runtime-console-launcher:active { transform: translateY(1px); }
+.runtime-console-launcher svg {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 30px;
+  padding: 6px;
+  color: currentColor;
+  background: rgba(9, 10, 10, .08);
+  border-radius: 8px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.runtime-launcher-copy { min-width: 0; display: grid; gap: 2px; text-align: left; }
+.runtime-launcher-copy strong { font: 650 12px/1.3 var(--font); }
+.runtime-launcher-copy small { color: #49504c; font: 500 10px/1.3 var(--font); white-space: nowrap; }
+.runtime-console {
+  position: fixed;
+  inset: 20px 20px 20px auto;
+  z-index: 50;
+  width: min(760px, calc(100vw - 40px));
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text);
+  background: #080a09;
+  border: 1px solid var(--border-strong);
+  border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .46);
+  animation: runtime-drawer-in 240ms cubic-bezier(.16, 1, .3, 1) both;
+}
+.runtime-console-header {
+  min-height: 64px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 12px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.runtime-console-identity { min-width: 0; display: flex; align-items: center; gap: 12px; }
+.runtime-console-mark {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 8px;
+  background: var(--field);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+}
+.runtime-console-mark i { display: block; height: 1px; background: var(--text); }
+.runtime-console-mark i:first-child { width: 10px; }
+.runtime-console-mark i:last-child { width: 17px; }
+.runtime-console-title { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; }
+.runtime-console h2 { margin: 0; font: 600 14px/1.35 var(--font); letter-spacing: -.01em; }
+.runtime-console-title span { color: var(--text-faint); font: 500 9px/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.runtime-console-identity p { margin: 3px 0 0; color: var(--text-faint); font: 400 11px/1.4 var(--mono); overflow-wrap: anywhere; }
+.runtime-console-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.workspace-shell .runtime-console-actions button {
+  min-height: 38px;
+  padding: 8px 11px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.workspace-shell .runtime-console-actions button:hover { color: var(--text); background: var(--surface3); border-color: var(--border-strong); }
+.workspace-shell .runtime-console-actions button:disabled { cursor: not-allowed; }
+.runtime-console-state {
+  min-width: 82px;
+  padding: 6px 9px;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font: 600 10px/1.2 var(--mono);
+  letter-spacing: .08em;
+  text-align: center;
+  text-transform: uppercase;
+}
+.runtime-console-state.state-running { color: var(--green); border-color: color-mix(in srgb, var(--green) 46%, var(--border)); }
+.runtime-console-state.state-success { color: var(--green); }
+.runtime-console-state.state-partial,
+.runtime-console-state.state-cancelled { color: var(--yellow); }
+.runtime-console-state.state-error,
+.runtime-console-state.state-unavailable { color: var(--red); }
+.runtime-commandbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, auto);
+  align-items: stretch;
+  background: #080a09;
+  border-bottom: 1px solid var(--border);
+  font: 500 11px/1.5 var(--mono);
+}
+.runtime-commandbar-prompt {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 13px 16px;
+}
+.runtime-commandbar-prompt code { min-width: 0; color: var(--text); overflow-wrap: anywhere; white-space: pre-wrap; }
+.runtime-user,
+.runtime-host { color: var(--green); font-weight: 600; }
+.runtime-path { color: var(--text-dim); }
+.runtime-operation {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 9px 16px;
+  border-left: 1px solid var(--border);
+}
+.runtime-operation span { color: var(--text-faint); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; }
+.runtime-operation code { color: var(--text-dim); font-size: 10px; overflow-wrap: anywhere; }
+.runtime-tracebar {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding: 7px 16px;
+  color: var(--text-faint);
+  background: var(--field);
+  border-bottom: 1px solid var(--border);
+  font: 500 9px/1.4 var(--mono);
+  letter-spacing: .02em;
+}
+.runtime-tracebar b,
+.runtime-console-footer b { margin-right: 5px; color: var(--text-faint); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.runtime-stage-path { min-width: 0; margin-left: auto; overflow-wrap: anywhere; }
+.runtime-console-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  background: #080a09;
+}
+.runtime-line {
+  display: grid;
+  grid-template-columns: 128px minmax(0, 1fr);
+  column-gap: 20px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #202321;
+  animation: runtime-decode 240ms cubic-bezier(.16, 1, .3, 1) both;
+}
+.runtime-line:last-child { border-bottom: 0; }
+.runtime-line-meta {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: center;
+  gap: 4px 8px;
+  padding-right: 12px;
+  border-right: 1px solid var(--border);
+  color: var(--text-faint);
+  font: 500 10px/1.35 var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.runtime-sequence { color: var(--text-faint); }
+.runtime-line-meta time { text-align: right; }
+.runtime-line-meta strong { grid-column: 1 / -1; color: var(--text-dim); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
+.runtime-branch { position: absolute; right: -17px; top: 50%; color: var(--border-strong); transform: translateY(-50%); }
+.runtime-line-payload { min-width: 0; display: grid; align-content: center; gap: 5px; }
+.runtime-line-command { min-width: 0; display: flex; align-items: baseline; flex-wrap: wrap; gap: 7px; }
+.runtime-line-command > span:nth-child(2) { color: var(--text-faint); }
+.runtime-line code,
+.runtime-console-empty code {
+  min-width: 0;
+  color: var(--text);
+  font: 550 12px/1.6 var(--mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.runtime-line.level-error .runtime-host { color: var(--red); }
+.runtime-line.level-warning .runtime-host { color: var(--yellow); }
+.runtime-line p {
+  margin: 0;
+  color: var(--text-faint);
+  font: 400 11px/1.55 var(--mono);
+}
+.runtime-line p span { margin-right: 8px; color: var(--text-faint); font-size: 9px; letter-spacing: .05em; text-transform: uppercase; }
+.runtime-console-empty { min-height: 100%; display: grid; align-content: center; gap: 10px; padding: 32px; }
+.runtime-empty-banner { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; color: var(--text-dim); font: 500 10px/1.5 var(--mono); letter-spacing: .08em; }
+.runtime-empty-banner b { color: var(--text); font-size: 12px; }
+.runtime-empty-banner span { color: var(--text-faint); text-transform: uppercase; }
+.runtime-console-empty code { display: flex; flex-wrap: wrap; gap: 5px; }
+.runtime-console-empty p { max-width: 72ch; margin: 0; color: var(--text-faint); font: 400 11px/1.65 var(--mono); }
+.runtime-console-error { margin: 0; padding: 13px 18px; color: var(--red); border-top: 1px solid var(--border); font-size: 12px; }
+.runtime-console-footer {
+  min-height: 38px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  padding: 9px 16px;
+  color: var(--text-faint);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font: 400 10px/1.4 var(--mono);
+}
+.runtime-footer-note { margin-left: auto; }
+@keyframes runtime-drawer-in {
+  from { opacity: .78; transform: translateX(24px); clip-path: inset(0 0 0 8% round 16px); }
+  to { opacity: 1; transform: translateX(0); clip-path: inset(0 round 16px); }
+}
+@keyframes runtime-decode {
+  from { opacity: .35; clip-path: inset(0 100% 0 0); }
+  to { opacity: 1; clip-path: inset(0); }
+}
+@media (max-width: 760px) {
+  .runtime-console-launcher { right: 16px; bottom: 16px; min-width: 154px; min-height: 50px; }
+  .runtime-console { inset: 8px; width: auto; border-radius: 14px; }
+  .runtime-console-header { align-items: flex-start; flex-direction: column; }
+  .runtime-console-actions { width: 100%; justify-content: flex-start; }
+  .workspace-shell .runtime-console-actions button { min-height: 42px; }
+  .runtime-console-state { margin-right: auto; align-self: center; }
+  .runtime-commandbar { grid-template-columns: 1fr; }
+  .runtime-operation { border-top: 1px solid var(--border); border-left: 0; }
+  .runtime-tracebar { align-items: flex-start; flex-direction: column; }
+  .runtime-stage-path { margin-left: 0; }
+  .runtime-line { grid-template-columns: 1fr; gap: 9px; padding: 14px; }
+  .runtime-line-meta { display: flex; align-items: center; gap: 10px; padding: 0 0 8px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .runtime-line-meta strong { margin-left: auto; }
+  .runtime-branch { display: none; }
+  .runtime-console-footer { align-items: flex-start; flex-direction: column; }
+  .runtime-footer-note { margin-left: 0; }
+}
+@media (forced-colors: active) {
+  .runtime-console-launcher { color: ButtonText; background: ButtonFace; border: 1px solid ButtonText; }
+  .runtime-console { border-color: CanvasText; }
+  .runtime-console-mark { border-color: CanvasText; }
+  .runtime-console-mark i { background: CanvasText; }
+  .runtime-console-state { border-color: CanvasText; }
 }

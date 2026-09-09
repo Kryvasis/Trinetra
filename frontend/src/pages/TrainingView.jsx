@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
-import { rememberSession } from '../utils/activeSession'
+import { rememberSession, validSession } from '../utils/activeSession'
 
 export default function TrainingView({ api, toast }) {
   const [params] = useSearchParams()
@@ -16,6 +16,11 @@ export default function TrainingView({ api, toast }) {
   const [error, setError] = useState(null)
   const [hasLoaded, setHasLoaded] = useState(false)
   const fetchRef = useRef(null)
+  const sessionInputRef = useRef(null)
+  const patternRef = useRef(null)
+  const categoryRef = useRef(null)
+  const summaryRef = useRef(null)
+  useEffect(() => { if (hasLoaded && totalAfter < totalBefore) summaryRef.current?.focus() }, [hasLoaded, totalAfter, totalBefore])
 
   // Training form state
   const [selectedLine, setSelectedLine] = useState(null)
@@ -39,6 +44,7 @@ export default function TrainingView({ api, toast }) {
 
   const fetchUnrecognized = async (sessName) => {
     if (training) return
+    if (!validSession(sessName)) { setError('Use 1–64 letters, numbers, hyphens or underscores.'); sessionInputRef.current?.focus(); return }
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -46,6 +52,7 @@ export default function TrainingView({ api, toast }) {
     setLoading(true)
     setError(null)
     setSelectedLine(null)
+    setHasLoaded(false); setUnrecognized([]); setTotalBefore(0); setTotalAfter(0)
     try {
 
       const res = await fetch(`${api}/session/${encodeURIComponent(sessName)}/unrecognized`, { signal: controller.signal })
@@ -64,6 +71,7 @@ export default function TrainingView({ api, toast }) {
       })
       setUnrecognized(lines)
       setTotalBefore(lines.length)
+      setTotalAfter(lines.length)
       if (lines.length === 0) {
         toast('No unrecognized lines in this session', 'info')
       } else {
@@ -104,6 +112,8 @@ export default function TrainingView({ api, toast }) {
     if (!category.trim()) e.category = 'Security category is required'
     else if (category.trim().length < 2) e.category = 'Category must be at least 2 characters'
     setTrainErrors(e)
+    if (e.pattern) patternRef.current?.focus()
+    else if (e.category) categoryRef.current?.focus()
     return Object.keys(e).length === 0
   }
 
@@ -113,6 +123,7 @@ export default function TrainingView({ api, toast }) {
     if (!validateTraining()) return
 
     setTraining(true)
+    setError(null)
     const controller = new AbortController()
     abortRef.current = controller
     const timeoutId = setTimeout(() => controller.abort(), 30000)
@@ -188,6 +199,7 @@ export default function TrainingView({ api, toast }) {
         <label htmlFor="training-session">Saved session</label>
         <input
           id="training-session"
+          ref={sessionInputRef} maxLength={64} aria-invalid={!!error && !validSession(inputSession.trim())} aria-describedby={error ? 'training-error' : undefined}
           disabled={loading || training}
           type="text"
           value={inputSession}
@@ -210,8 +222,8 @@ export default function TrainingView({ api, toast }) {
       )}
 
       {error && !loading && (
-        <div className="card">
-          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load</h3>
+        <div className="card" role="alert" id="training-error">
+          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Training request unavailable</h3>
           <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
           <button className="btn-secondary" onClick={() => fetchUnrecognized(inputSession.trim())} style={{ marginTop: 8 }}>
             Retry
@@ -221,8 +233,8 @@ export default function TrainingView({ api, toast }) {
 
       {!loading && hasLoaded && unrecognized.length === 0 && !error && (
         <div className="empty-state card">
-          <h3>No unrecognized lines</h3>
-          <p>No unrecognized lines were returned. Pattern recognition is not proof that this configuration is secure.</p>
+          <h3>{totalBefore > 0 ? 'Review complete' : 'No unrecognized lines'}</h3>
+          <p>{totalBefore > 0 ? 'Every line in this review has a saved label. Re-upload the configuration to verify recognition.' : 'No unrecognized lines were returned. Pattern recognition is not proof that this configuration is secure.'}</p>
         </div>
       )}
 
@@ -266,8 +278,8 @@ export default function TrainingView({ api, toast }) {
                 </div>
 
                 <div className="form-group">
-                  <label>Vendor</label>
-                  <select value={vendor} onChange={e => setVendor(e.target.value)}>
+                  <label htmlFor="training-vendor">Vendor</label>
+                  <select id="training-vendor" disabled={training} value={vendor} onChange={e => setVendor(e.target.value)}>
                     <option value="Cisco">Cisco</option>
                     <option value="Juniper">Juniper</option>
                     <option value="Generic">Generic</option>
@@ -275,30 +287,33 @@ export default function TrainingView({ api, toast }) {
                 </div>
 
                 <div className="form-group">
-                  <label>Regex Pattern (auto-generated, editable)</label>
+                  <label htmlFor="training-pattern">Regex Pattern (auto-generated, editable)</label>
                   <input
+                    id="training-pattern" ref={patternRef} disabled={training} aria-invalid={!!trainErrors.pattern} aria-describedby={trainErrors.pattern ? 'training-pattern-error' : undefined}
                     type="text"
                     value={pattern}
                     onChange={e => { setPattern(e.target.value); setTrainErrors(prev => ({ ...prev, pattern: null })) }}
-                    style={{ fontFamily: 'var(--mono)', fontSize: 12 }}
+                    style={{ fontFamily: 'var(--mono)' }}
                   />
-                  {trainErrors.pattern && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.pattern}</div>}
+                  {trainErrors.pattern && <div id="training-pattern-error" style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.pattern}</div>}
                 </div>
 
                 <div className="form-group">
-                  <label>Security Category</label>
+                  <label htmlFor="training-category">Security Category</label>
                   <input
+                    id="training-category" ref={categoryRef} disabled={training} aria-invalid={!!trainErrors.category} aria-describedby={trainErrors.category ? 'training-category-error' : undefined}
                     type="text"
                     value={category}
                     onChange={e => { setCategory(e.target.value); setTrainErrors(prev => ({ ...prev, category: null })) }}
                     placeholder="e.g. Access Control, Logging, Encryption"
                   />
-                  {trainErrors.category && <div style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.category}</div>}
+                  {trainErrors.category && <div id="training-category-error" style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.category}</div>}
                 </div>
 
                 <div className="form-group">
-                  <label>Control Mapping (comma-separated)</label>
+                  <label htmlFor="training-controls">Control Mapping (comma-separated)</label>
                   <input
+                    id="training-controls" disabled={training}
                     type="text"
                     value={controlMapping}
                     onChange={e => setControlMapping(e.target.value)}
@@ -307,8 +322,9 @@ export default function TrainingView({ api, toast }) {
                 </div>
 
                 <div className="form-group">
-                  <label>Remediation (optional)</label>
+                  <label htmlFor="training-remediation">Remediation (optional)</label>
                   <textarea
+                    id="training-remediation" disabled={training}
                     className="resize-none"
                     value={remediation}
                     onChange={e => setRemediation(e.target.value)}
@@ -318,8 +334,9 @@ export default function TrainingView({ api, toast }) {
                 </div>
 
                 <div className="form-group">
-                  <label>OS Version (optional — metadata only, not parsing branch)</label>
+                  <label htmlFor="training-os">OS Version (optional)</label>
                   <input
+                    id="training-os" disabled={training}
                     type="text"
                     value={osVersionTrain}
                     onChange={e => setOsVersionTrain(e.target.value)}
@@ -337,31 +354,30 @@ export default function TrainingView({ api, toast }) {
       )}
 
       {/* Before/after summary */}
-      {totalBefore > 0 && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <div style={{ display: 'flex', gap: 32, alignItems: 'center' }}>
+      {hasLoaded && totalBefore > 0 && (
+        <div ref={summaryRef} tabIndex={-1} className="card" role="region" aria-label="Training review progress" style={{ marginTop: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center' }}>
             <div>
               <div style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Before Training
+                Loaded for review
               </div>
               <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>{totalBefore}</div>
             </div>
             <div style={{ fontSize: 24, color: 'var(--text-dim)' }}>→</div>
             <div>
               <div style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                After Training
+                Remaining in this review
               </div>
               <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)', color: totalAfter < totalBefore ? 'var(--green)' : 'inherit' }}>
-                {totalAfter || totalBefore}
+                {totalAfter}
               </div>
             </div>
             {totalAfter < totalBefore && (
-              <span className="badge badge-pass">{totalBefore - totalAfter} line(s) trained</span>
+              <span className="badge badge-pass">{totalBefore - totalAfter} line(s) labeled in this review</span>
             )}
           </div>
           <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12 }}>
-            Training entries are stored in <code>config/vendor_training_map.json</code> and take effect on the next config upload.
-            Re-upload the same config to see the corrected unrecognized count.
+            Saved patterns take effect on the next configuration upload. These counts track this review only; re-upload the configuration to verify recognition. A saved label is not proof of security compliance.
           </p>
         </div>
       )}

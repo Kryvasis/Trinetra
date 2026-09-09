@@ -5,6 +5,7 @@ import os
 import shlex
 import threading
 import ipaddress
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 from flask import Flask, request, jsonify
@@ -50,6 +51,7 @@ install_request_boundary(app)
 # Atomic replace protects readers from partial JSON, while this lock also
 # prevents concurrent requests in one bridge process from losing an entry.
 TRAINING_MAP_LOCK = threading.Lock()
+ACTIVITY_LOCK = threading.Lock()
 
 # ── Validation regexes (reject before subprocess) ──
 SESSION_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
@@ -59,6 +61,86 @@ DEVICE_RE = re.compile(r"^[A-Za-z0-9._\-]{1,128}$")
 VENDOR_RE = re.compile(r"^[A-Za-z0-9_\-]{1,32}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._\-]{0,254}[A-Za-z0-9])?$")
 HEADER_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9-]{0,127}$")
+ACTIVITY_OPERATION_RE = re.compile(r"^[A-Za-z0-9_-]{8,80}$")
+
+ACTIVITY_STAGES = {
+    "intake", "validate", "collect", "fingerprint", "stage", "evaluate",
+    "persist", "complete", "error",
+}
+
+
+def activity_operation():
+    operation_id = (request.headers.get("X-Cortex-Operation") or "").strip()
+    return operation_id if ACTIVITY_OPERATION_RE.fullmatch(operation_id) else None
+
+
+def activity_path(name):
+    return Path(TRINETRA_ROOT) / "sessions" / name / f"activity_{name}.json"
+
+
+def read_activity(name):
+    path = activity_path(name)
+    if not path.is_file() or path.is_symlink():
+        return {"session": name, "operation_id": None, "status": "idle", "events": []}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or not isinstance(data.get("events"), list):
+            raise ValueError("invalid activity trace")
+        return data
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {"session": name, "operation_id": None, "status": "unavailable", "events": []}
+
+
+def record_activity(name, operation_id, stage, command, message, *, level="info", status="running", reset=False, summary=None):
+    """Persist a bounded, sanitized operational trace. Callers supply only allowlisted metadata."""
+    if not validate_session(name) or not ACTIVITY_OPERATION_RE.fullmatch(operation_id or ""):
+        return
+    if stage not in ACTIVITY_STAGES or level not in ("info", "success", "warning", "error"):
+        return
+    path = activity_path(name)
+    if not path.parent.is_dir() or path.parent.is_symlink():
+        return
+    with ACTIVITY_LOCK:
+        data = read_activity(name)
+        if reset or data.get("operation_id") != operation_id:
+            data = {
+                "session": name,
+                "operation_id": operation_id,
+                "status": "running",
+                "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                "events": [],
+                "next_event_id": 1,
+            }
+        events = data["events"]
+        event_id = max(int(data.get("next_event_id", 1)), 1)
+        events.append({
+            "id": event_id,
+            "timestamp": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "stage": stage,
+            "level": level,
+            "command": str(command)[:240],
+            "message": str(message)[:320],
+        })
+        data["events"] = events[-120:]
+        data["next_event_id"] = event_id + 1
+        data["status"] = status
+        if summary is not None:
+            data["summary"] = summary
+        data["updated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        import tempfile
+        temp_name = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", delete=False, dir=path.parent, encoding="utf-8") as temp_file:
+                json.dump(data, temp_file, indent=2)
+                temp_name = temp_file.name
+            os.replace(temp_name, path)
+            temp_name = None
+        finally:
+            if temp_name:
+                try:
+                    os.unlink(temp_name)
+                except OSError:
+                    pass
 
 # Strict hostname validation per RFC 1123 — used for fetch targets (ip/hostname and URL host)
 # Hostname must be 3-253 chars, labels 1-63, alphanum/hyphen, not start/end hyphen.
@@ -218,6 +300,75 @@ def markdown_cells(line):
 @app.route("/api/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "trinetra_bin": TRINETRA_BIN, "trinetra_root": TRINETRA_ROOT})
+
+
+# ── Sanitized runtime activity trace ──
+@app.route("/api/session/<name>/activity", methods=["GET"])
+def get_activity(name):
+    if not validate_session(name):
+        return error_response("invalid session name", 400)
+    session_path = Path(TRINETRA_ROOT) / "sessions" / name / f"{name}.json"
+    if not session_path.is_file():
+        return error_response(f"session not found: {name}", 404)
+    response = jsonify(read_activity(name))
+    response.headers["Cache-Control"] = "no-store"
+    return response, 200
+
+
+@app.route("/api/session/<name>/activity/start", methods=["POST"])
+def start_activity(name):
+    if not validate_session(name):
+        return error_response("invalid session name", 400)
+    session_path = Path(TRINETRA_ROOT) / "sessions" / name / f"{name}.json"
+    if not session_path.is_file():
+        return error_response(f"session not found: {name}", 404)
+    data = request.get_json(silent=True) or {}
+    operation_id = str(data.get("operation_id") or "").strip()
+    mode = str(data.get("mode") or "file").strip().lower()
+    if not ACTIVITY_OPERATION_RE.fullmatch(operation_id):
+        return error_response("invalid operation_id", 400)
+    if mode not in ("file", "paste", "ssh", "url"):
+        return error_response("invalid activity mode", 400)
+    try:
+        item_count = int(data.get("item_count", 1))
+    except (TypeError, ValueError):
+        return error_response("item_count must be an integer", 400)
+    if not 1 <= item_count <= 50:
+        return error_response("item_count must be between 1 and 50", 400)
+    record_activity(
+        name, operation_id, "intake",
+        f"POST /api/session/{name}/activity/start",
+        f"Accepted {mode} assessment request for {item_count} item{'s' if item_count != 1 else ''}.",
+        reset=True,
+    )
+    return jsonify({"session": name, "operation_id": operation_id, "status": "running"}), 202
+
+
+@app.route("/api/session/<name>/activity/<operation_id>/complete", methods=["POST"])
+def complete_activity(name, operation_id):
+    if not validate_session(name) or not ACTIVITY_OPERATION_RE.fullmatch(operation_id):
+        return error_response("invalid session or operation identifier", 400)
+    current = read_activity(name)
+    if current.get("operation_id") != operation_id:
+        return error_response("activity operation not found", 404)
+    data = request.get_json(silent=True) or {}
+    status = str(data.get("status") or "success").strip().lower()
+    if status not in ("success", "partial", "error", "cancelled"):
+        return error_response("invalid completion status", 400)
+    try:
+        succeeded = max(0, min(50, int(data.get("succeeded", 0))))
+        failed = max(0, min(50, int(data.get("failed", 0))))
+    except (TypeError, ValueError):
+        return error_response("completion counts must be integers", 400)
+    level = "success" if status == "success" else "warning" if status in ("partial", "cancelled") else "error"
+    record_activity(
+        name, operation_id, "complete",
+        f"cortex assessment finalize --status {status}",
+        f"Assessment finished: {succeeded} succeeded, {failed} failed.",
+        level=level, status=status,
+        summary={"succeeded": succeeded, "failed": failed},
+    )
+    return jsonify({"session": name, "operation_id": operation_id, "status": status}), 200
 
 # ── POST /api/session — create new session ──
 @app.route("/api/session", methods=["POST"])
@@ -530,6 +681,7 @@ def audit_report(name):
 def upload_config(name):
     if not validate_session(name):
         return error_response(f"invalid session name: {name!r}", 400)
+    operation_id = activity_operation()
 
     # Accept either multipart file upload or JSON with config_content
     device_id = None
@@ -591,9 +743,22 @@ def upload_config(name):
     if contains_injection(device_id) or (vendor and contains_injection(vendor)):
         return error_response("injection characters detected", 400)
 
+    if operation_id:
+        record_activity(
+            name, operation_id, "validate",
+            f"bridge validate-config --device {device_id}",
+            f"Validated a {len(config_content.encode('utf-8'))}-byte configuration payload; content remains outside the activity trace.",
+        )
+
     # Auto-detect vendor if not provided or "auto"
     if not vendor or vendor.lower() == "auto":
         vendor = None  # let Java auto-detect
+    if operation_id:
+        record_activity(
+            name, operation_id, "fingerprint",
+            f"cortex vendor resolve --hint {vendor or 'auto'}",
+            "Prepared vendor resolution and normalized metadata for ingestion.",
+        )
 
     # Save config to temp file and call Java helper
     import tempfile
@@ -603,15 +768,34 @@ def upload_config(name):
         with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False, encoding="utf-8") as tf:
             tf.write(config_content)
             tmp_path = tf.name
+        if operation_id:
+            record_activity(
+                name, operation_id, "stage",
+                "bridge stage-evidence --source [request] --destination [temporary]",
+                "Created an isolated working copy for the Java assessment engine.",
+            )
 
         # Call Java helper ingest-config — include hardware metadata (use "_" placeholder for blank to preserve positional args)
         serial_arg = serial_number.strip() if serial_number and serial_number.strip() else "_"
         hardware_arg = hardware_model.strip() if hardware_model and hardware_model.strip() else "_"
         os_arg = os_version.strip() if os_version and os_version.strip() else "_"
         args = ["ingest-config", name, device_id, vendor or "auto", tmp_path, serial_arg, hardware_arg, os_arg]
+        if operation_id:
+            record_activity(
+                name, operation_id, "evaluate",
+                f"java TrinetraBridgeHelper ingest-config {name} {device_id} {vendor or 'auto'} [staged-evidence] [metadata]",
+                "Running normalization, mapped checks, evidence classification and hash-chain persistence.",
+            )
         rc, out, err = run_java_helper("TrinetraBridgeHelper", args, timeout=120)
         if rc != 0:
             msg = (err.strip() or out.strip()) or "config ingestion failed"
+            if operation_id:
+                record_activity(
+                    name, operation_id, "error",
+                    "java TrinetraBridgeHelper ingest-config [sanitized arguments]",
+                    "The assessment engine returned an error. Inspect the visible request error for recovery guidance.",
+                    level="error", status="error",
+                )
             if "not found" in msg.lower():
                 return error_response(msg, 404, {"stdout": out, "stderr": err})
             return error_response(msg, 500, {"stdout": out, "stderr": err})
@@ -619,8 +803,22 @@ def upload_config(name):
             data = json.loads(out.strip())
             # Include raw config save path for reference
             data["config_filename"] = filename
+            if operation_id:
+                record_activity(
+                    name, operation_id, "persist",
+                    f"cortex evidence commit --session {name} --device {device_id}",
+                    f"Committed {data.get('total_checks', 0)} checks: {data.get('passed', 0)} passed, {data.get('failed', 0)} failed, {data.get('unrecognized_count', 0)} unrecognized.",
+                    level="success",
+                )
             return jsonify(data), 200
         except Exception as e:
+            if operation_id:
+                record_activity(
+                    name, operation_id, "error",
+                    "bridge decode-assessment-result",
+                    "The assessment completed but its structured response could not be decoded.",
+                    level="error", status="error",
+                )
             return error_response(f"failed to parse ingest output: {e}", 500, {"raw_stdout": out, "raw_stderr": err})
     finally:
         if tmp_path and os.path.exists(tmp_path):
@@ -634,6 +832,7 @@ def upload_config(name):
 def fetch_config(name):
     if not validate_session(name):
         return error_response("invalid session name", 400)
+    operation_id = activity_operation()
     session_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"{name}.json")
     if not os.path.exists(session_path):
         return error_response("session not found", 404)
@@ -721,11 +920,28 @@ def fetch_config(name):
             return error_response("authentication tokens require HTTPS", 400)
         fetch_args.update(auth_token=auth_token, auth_header=auth_header)
 
+    if operation_id:
+        transport = "ssh" if source_type == "ip" else "https"
+        record_activity(
+            name, operation_id, "validate",
+            f"bridge authorize-collection --transport {transport} --target [request-scoped]",
+            f"Validated {transport.upper()} collection policy and request-scoped credentials; secret values are never logged.",
+        )
+        record_activity(
+            name, operation_id, "collect",
+            f"live_fetcher.fetch_config --transport {transport} --target [redacted]",
+            f"Collecting authorized configuration evidence for device {device_id}.",
+        )
+
     try:
         config_content = live_fetcher.fetch_config(**fetch_args)
     except ValueError:
+        if operation_id:
+            record_activity(name, operation_id, "error", "live_fetcher.fetch_config [sanitized arguments]", "Collection target was rejected by the security policy.", level="error", status="error")
         return error_response("collection target rejected by security policy", 400)
     except Exception:
+        if operation_id:
+            record_activity(name, operation_id, "error", "live_fetcher.fetch_config [sanitized arguments]", "Configuration collection failed. Verify reachability, credentials and host trust.", level="error", status="error")
         return error_response(
             "Unable to collect configuration. Verify reachability, credentials, and trust settings.",
             502,
@@ -743,6 +959,12 @@ def fetch_config(name):
     plausible, reason = is_plausible_config(config_content)
     if not plausible:
         return error_response(f"{CONFIG_SANITY_ERROR} ({reason})", 422)
+    if operation_id:
+        record_activity(
+            name, operation_id, "stage",
+            "bridge validate-collected-evidence --content [redacted]",
+            f"Received and validated {len(config_content.encode('utf-8'))} bytes of plausible configuration evidence.",
+        )
 
     tmp_path = None
     try:
@@ -758,18 +980,35 @@ def fetch_config(name):
             "ingest-config", name, device_id, vendor, tmp_path,
             serial_arg, hardware_arg, os_arg, "live_fetch",
         ]
+        if operation_id:
+            record_activity(
+                name, operation_id, "evaluate",
+                f"java TrinetraBridgeHelper ingest-config {name} {device_id} {vendor} [staged-evidence] [metadata] live_fetch",
+                "Running normalization, mapped checks, evidence classification and hash-chain persistence.",
+            )
         rc, out, _ = run_java_helper("TrinetraBridgeHelper", args, timeout=120)
         if rc != 0:
+            if operation_id:
+                record_activity(name, operation_id, "error", "java TrinetraBridgeHelper ingest-config [sanitized arguments]", "Collected evidence could not be ingested by the assessment engine.", level="error", status="error")
             return error_response("collected configuration could not be ingested", 500)
         try:
             result = json.loads(out.strip())
         except (TypeError, json.JSONDecodeError):
+            if operation_id:
+                record_activity(name, operation_id, "error", "bridge decode-assessment-result", "The assessment completed but its structured response could not be decoded.", level="error", status="error")
             return error_response("configuration ingestion returned an invalid response", 500)
         result.update({
             "source_type": source_type,
             "target": target,
             "config_filename": f"{device_id}_live_fetch.txt",
         })
+        if operation_id:
+            record_activity(
+                name, operation_id, "persist",
+                f"cortex evidence commit --session {name} --device {device_id}",
+                f"Committed {result.get('total_checks', 0)} checks: {result.get('passed', 0)} passed, {result.get('failed', 0)} failed, {result.get('unrecognized_count', 0)} unrecognized.",
+                level="success",
+            )
         return jsonify(result), 200
     finally:
         if tmp_path and os.path.exists(tmp_path):

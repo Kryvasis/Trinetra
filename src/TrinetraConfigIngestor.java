@@ -245,13 +245,20 @@ public class TrinetraConfigIngestor {
         }
 
         boolean reviewRecorded = false;
+        String rawForCheck = configContent != null ? configContent : "";
+        Map<String, Object> configurationReview =
+            TrinetraConfigObservations.review(canonicalVendor, rawForCheck);
         for (String vcode : vcodesToCheck) {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
-            String rawForCheck = configContent != null ? configContent : "";
-            // These V-code rules consume runtime tool output, not router configuration.
-            // Even grep absence cannot establish a negative finding from this evidence type.
-            TrinetraStat.Verdict verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
+            // Static configuration evidence may prove a bounded unsafe directive is
+            // present, but absence can never establish that the effective device state
+            // is compliant. Promote only high-confidence observations to FAIL; retain
+            // every other config-derived check as MANUAL_REVIEW. This preserves the
+            // no-false-pass boundary while making explicit risks count in scoring.
+            TrinetraStat.Verdict verdict = hasObservedRiskForVcode(vcode, configurationReview)
+                ? TrinetraStat.Verdict.FAIL
+                : TrinetraStat.Verdict.MANUAL_REVIEW;
 
             // Build finding similar to TrinetraStat.statRun but with ingestion_method
             Map<String, Object> finding = TrinetraCommon.newMap();
@@ -269,7 +276,9 @@ public class TrinetraConfigIngestor {
             finding.put("ended_at", TrinetraCommon.nowIso());
             finding.put("exit_code", 0);
             finding.put("verdict", verdict.name().toLowerCase());
-            finding.put("verdict_detail", "Runtime evidence required. This rule expects live tool output; a supplied configuration cannot prove its pass/fail criteria.");
+            finding.put("verdict_detail", verdict == TrinetraStat.Verdict.FAIL
+                ? "Explicit insecure directive observed in the supplied configuration. Verify effective context and vendor/version guidance before remediation."
+                : "No supported explicit insecure directive was observed. Static configuration evidence cannot establish a pass; verify effective state with an approved runtime check.");
             finding.put("eval_method", def.decisionRule.evalMethod);
             finding.put("pass_criteria", def.decisionRule.passCriteria);
             finding.put("fail_criteria", def.decisionRule.failCriteria);
@@ -299,7 +308,7 @@ public class TrinetraConfigIngestor {
             norm.put("assessment_kind", "configuration_only");
             norm.put("verdict_detail", finding.get("verdict_detail"));
             if (!reviewRecorded) {
-                norm.put("configuration_review", TrinetraConfigObservations.review(canonicalVendor, rawForCheck));
+                norm.put("configuration_review", configurationReview);
                 reviewRecorded = true;
             }
             TrinetraSession.appendNormalizedResult(sanitized, norm);
@@ -370,6 +379,40 @@ public class TrinetraConfigIngestor {
     }
     static boolean isConfigCategory2(String vcode) {
         return vcode != null && CONFIG_CATEGORY_2.contains(vcode.toUpperCase());
+    }
+
+    /**
+     * Map bounded, explicit configuration observations to the existing framework-
+     * mapped V-codes. Only observed_risk rows can produce FAIL. A missing directive,
+     * unsupported parser, secure-looking directive, or incomplete context remains
+     * MANUAL_REVIEW and can never produce PASS from uploaded text alone.
+     */
+    @SuppressWarnings("unchecked")
+    static boolean hasObservedRiskForVcode(String vcode, Map<String, Object> review) {
+        if (vcode == null || review == null || !"ios-text-observations-v1".equals(review.get("parser"))) {
+            return false;
+        }
+        Set<String> relevantIds;
+        switch (vcode.toUpperCase(Locale.ROOT)) {
+            case "V-003": relevantIds = Set.of("CFG-HTTP", "CFG-TELNET", "CFG-SNMP"); break;
+            case "V-006": relevantIds = Set.of("CFG-SSH1"); break;
+            case "V-013": relevantIds = Set.of("CFG-PASSWORD"); break;
+            case "V-057": relevantIds = Set.of("CFG-SNMP"); break;
+            case "V-071": relevantIds = Set.of("CFG-HTTP", "CFG-TELNET"); break;
+            case "V-107": relevantIds = Set.of("CFG-PASSWORD"); break;
+            default: return false;
+        }
+        Object rows = review.get("observations");
+        if (!(rows instanceof List)) return false;
+        for (Object item : (List<?>) rows) {
+            if (!(item instanceof Map)) continue;
+            Map<String, Object> observation = (Map<String, Object>) item;
+            if (relevantIds.contains(String.valueOf(observation.get("id")))
+                    && "observed_risk".equals(observation.get("status"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -4,6 +4,7 @@ import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
 import WebsiteView from './WebsiteView'
 import { rememberSession } from '../utils/activeSession'
+import { announceActivity, createOperationId } from '../utils/activityStream'
 
 const VENDORS = ['Auto-detect', 'Cisco', 'Juniper', 'Generic']
 const SESSION_RE = /^[A-Za-z0-9_-]{1,64}$/
@@ -120,6 +121,41 @@ export default function UploadView({ api, toast }) {
   const abortRef = useRef(null)
   useEffect(() => () => abortRef.current?.abort(), [])
   const isWebsite = inputMode === 'fetch' && fetchSourceType === 'website'
+
+  async function beginActivity(sessionName, operationId, mode, itemCount) {
+    announceActivity({ session: sessionName, operationId, open: true })
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 2500)
+    try {
+      await fetch(`${api}/session/${encodeURIComponent(sessionName)}/activity/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operation_id: operationId, mode, item_count: itemCount }),
+        signal: controller.signal,
+      })
+    } catch { /* Activity telemetry must never block an assessment. */
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+    announceActivity({ session: sessionName, operationId, open: true })
+  }
+
+  async function finishActivity(sessionName, operationId, status, succeeded, failed) {
+    const controller = new AbortController()
+    const timeoutId = window.setTimeout(() => controller.abort(), 2500)
+    try {
+      await fetch(`${api}/session/${encodeURIComponent(sessionName)}/activity/${encodeURIComponent(operationId)}/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, succeeded, failed }),
+        signal: controller.signal,
+      })
+    } catch { /* Assessment results remain authoritative if activity finalization is unavailable. */
+    } finally {
+      window.clearTimeout(timeoutId)
+    }
+    announceActivity({ session: sessionName, operationId, open: true })
+  }
 
   function changeSource(source) {
     if (source === fetchSourceType) return
@@ -242,6 +278,7 @@ export default function UploadView({ api, toast }) {
 
     const controller = new AbortController()
     abortRef.current = controller
+    const operationId = createOperationId()
 
     const sessionName = session.trim()
     const vendorVal = vendor === 'Auto-detect' ? 'auto' : vendor
@@ -279,6 +316,9 @@ export default function UploadView({ api, toast }) {
       clearTimeout(createTimeout)
     }
 
+    const activityMode = inputMode === 'text' ? 'paste' : inputMode === 'fetch' ? (fetchSourceType === 'ip' ? 'ssh' : 'url') : 'file'
+    await beginActivity(sessionName, operationId, activityMode, inputMode === 'file' ? files.length : 1)
+
     if (inputMode === 'fetch') {
       const timeoutId = setTimeout(() => controller.abort(), 45000)
       try {
@@ -303,7 +343,7 @@ export default function UploadView({ api, toast }) {
 
         const response = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/fetch-config`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Cortex-Operation': operationId },
           body: JSON.stringify(body),
           signal: controller.signal,
         })
@@ -324,10 +364,12 @@ export default function UploadView({ api, toast }) {
         setFetchPassword('')
         setFetchSshKey('')
         setFetchAuthToken('')
+        await finishActivity(sessionName, operationId, 'success', 1, 0)
         toast('Configuration collected and scanned', 'success')
       } catch (err) {
         const message = err.name === 'AbortError' ? 'Live collection timed out. Check target reachability.' : err.message
         setBulkResults([{ fileName: 'Live collection', deviceId: deviceId.trim() || 'unknown', status: 'error', message }])
+        await finishActivity(sessionName, operationId, err.name === 'AbortError' ? 'cancelled' : 'error', 0, 1)
         toast(message, 'error')
       } finally {
         clearTimeout(timeoutId)
@@ -361,6 +403,7 @@ export default function UploadView({ api, toast }) {
           form.append('config', f)
           const uploadRes = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/upload-config`, {
             method: 'POST',
+            headers: { 'X-Cortex-Operation': operationId },
             body: form,
             signal: controller.signal,
           })
@@ -394,6 +437,13 @@ export default function UploadView({ api, toast }) {
       }
       setLoading(false)
       abortRef.current = null
+      await finishActivity(
+        sessionName,
+        operationId,
+        controller.signal.aborted ? 'cancelled' : failCount === 0 ? 'success' : successCount > 0 ? 'partial' : 'error',
+        successCount,
+        failCount,
+      )
       if (successCount > 0) {
         toast(`Bulk complete: ${successCount} succeeded, ${failCount} failed — see Session Devices`, 'info')
       }
@@ -415,13 +465,14 @@ export default function UploadView({ api, toast }) {
         form.append('config', files[0])
         uploadRes = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/upload-config`, {
           method: 'POST',
+          headers: { 'X-Cortex-Operation': operationId },
           body: form,
           signal: controller.signal,
         })
       } else {
         uploadRes = await fetch(`${api}/session/${encodeURIComponent(sessionName)}/upload-config`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-Cortex-Operation': operationId },
           body: JSON.stringify({
             device_id: devId,
             vendor: vendorVal,
@@ -444,6 +495,7 @@ export default function UploadView({ api, toast }) {
       if (controller.signal.aborted) return
       rememberSession(sessionName)
       setBulkResults([{ fileName: devId, deviceId: devId, status: 'success', message: `${data.passed} passed, ${data.failed} failed, ${data.unrecognized_count} unrecognized`, data }])
+      await finishActivity(sessionName, operationId, 'success', 1, 0)
       toast(`Config ingested: ${data.passed} passed, ${data.failed} failed, ${data.unrecognized_count} unrecognized`, 'success')
     } catch (err) {
       if (err.name === 'AbortError') {
@@ -452,6 +504,7 @@ export default function UploadView({ api, toast }) {
         toast(err.message, 'error')
       }
       setBulkResults([{ fileName: deviceId.trim() || 'config', deviceId: deviceId.trim() || 'unknown', status: 'error', message: err.message }])
+      await finishActivity(sessionName, operationId, err.name === 'AbortError' ? 'cancelled' : 'error', 0, 1)
     } finally {
       clearTimeout(timeoutId)
       abortRef.current = null

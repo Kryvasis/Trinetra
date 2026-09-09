@@ -29,10 +29,18 @@ def test_runtime_rules_do_not_pass_from_config(evidence_client):
     client, name = evidence_client
     score = upload(client, name, 'hostname test\nip ssh version 1\nip http server\nusername demo password 0 SENSITIVE-DEMO\nsnmp-server community public RO\nline vty 0 4\n transport input telnet ssh\n')
     for fw in score['frameworks'].values():
-        assert fw['tests_passed'] == fw['tests_failed'] == 0
-        assert fw['tests_manual_review'] == fw['total_tests_mapped']
+        assert fw['tests_passed'] == 0
+        assert fw['tests_failed'] + fw['tests_manual_review'] == fw['total_tests_mapped']
         assert len(fw['results']) == fw['total_tests_mapped']
-        assert all(row['result'] == 'manual_review' for row in fw['results'])
+        assert all(row['result'] in {'fail', 'manual_review'} for row in fw['results'])
+    assert sum(fw['tests_failed'] for fw in score['frameworks'].values()) > 0
+    state_path = Path(bridge.TRINETRA_ROOT) / 'sessions' / name / f'brain_state_{name}.json'
+    state = json.loads(state_path.read_text())
+    verdicts = {row['test_id']: row['normalized_result'] for row in state['normalized_results']}
+    assert {code for code, verdict in verdicts.items() if verdict == 'fail'} == {
+        'V-003', 'V-006', 'V-013', 'V-057', 'V-071', 'V-107',
+    }
+    assert verdicts['V-058'] == 'manual_review'
     review = score['configuration_reviews'][0]
     assert len([row for row in review['observations'] if row['status'] == 'observed_risk']) == 5
     assert 'SENSITIVE-DEMO' not in json.dumps(score)
@@ -52,6 +60,7 @@ def test_negation_comments_banners_and_absence_are_not_passes(evidence_client):
     score = upload(client, name, text)
     assert all(row['status'] == 'not_observed' for row in score['configuration_reviews'][0]['observations'])
     assert all(fw['tests_passed'] == 0 for fw in score['frameworks'].values())
+    assert all(fw['tests_failed'] == 0 for fw in score['frameworks'].values())
 
 
 def test_unsupported_vendor_and_removed_device(evidence_client):
