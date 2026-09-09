@@ -417,28 +417,42 @@ public class TrinetraConfigIngestor {
         for (String vcode : vcodesToCheck) {
             TrinetraStat.TestDefinition def = TrinetraStat.getTestDefinition(vcode);
             if (def == null || def.decisionRule == null) continue;
-            // Explicit, bounded unsafe directives can establish FAIL. Their absence
-            // cannot establish PASS, so all other static results require review.
-            TrinetraStat.Verdict verdict = hasObservedRiskForVcode(vcode, configurationReview)
-                ? TrinetraStat.Verdict.FAIL
-                : TrinetraStat.Verdict.MANUAL_REVIEW;
-            String detail = verdict == TrinetraStat.Verdict.FAIL
-                ? "Explicit insecure directive observed in the supplied configuration. Verify effective context and vendor/version guidance before remediation."
-                : "No supported explicit insecure directive was observed. Static configuration evidence cannot establish a pass; verify effective state with an approved runtime check.";
-            List<String> triggerLines = new ArrayList<>();
-            // Attach semantic evidence as supplemental, not as an independent verdict.
+            // Category 2 remains manual_review. Category 1: explicit risk -> FAIL, else semantic PASS/FAIL, else manual_review.
             SemanticControlEvaluator.Result sr = semanticCache.get(vcode);
-            if (sr != null && !sr.evidence.isEmpty()) {
-                triggerLines = SecurityBaseline.sanitizeEvidenceList(sr.evidence);
-                detail += " Baseline suggests: " + sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
-            } else if (isConfigCategory1(vcode)) {
-                // Fallback to legacy trigger lines for traceability even though verdict stays manual_review
-                List<String> legacy = findTriggerLines(vcode, rawForCheck);
-                if (!legacy.isEmpty()) triggerLines = new ArrayList<>(legacy);
-            }
+            TrinetraStat.Verdict verdict;
+            String detail;
+            List<String> triggerLines = new ArrayList<>();
             if (isConfigCategory2(vcode)) {
+                verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
                 detail = "Static configuration evidence cannot establish a pass for this runtime-only control; live verification is required (Category 2, unsupported check).";
-                triggerLines = new ArrayList<>();
+            } else if (hasObservedRiskForVcode(vcode, configurationReview)) {
+                verdict = TrinetraStat.Verdict.FAIL;
+                detail = "Explicit insecure directive observed in the supplied configuration. Verify effective context and vendor/version guidance before remediation.";
+                if (sr != null && !sr.evidence.isEmpty()) {
+                    triggerLines = SecurityBaseline.sanitizeEvidenceList(sr.evidence);
+                    detail += " Baseline confirms: " + sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
+                } else {
+                    List<String> legacy = findTriggerLines(vcode, rawForCheck);
+                    if (!legacy.isEmpty()) triggerLines = new ArrayList<>(legacy);
+                }
+            } else if (sr != null && sr.verdict == TrinetraStat.Verdict.PASS) {
+                verdict = TrinetraStat.Verdict.PASS;
+                triggerLines = SecurityBaseline.sanitizeEvidenceList(sr.evidence);
+                detail = sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
+            } else if (sr != null && sr.verdict == TrinetraStat.Verdict.FAIL) {
+                verdict = TrinetraStat.Verdict.FAIL;
+                triggerLines = SecurityBaseline.sanitizeEvidenceList(sr.evidence);
+                detail = sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
+            } else {
+                verdict = TrinetraStat.Verdict.MANUAL_REVIEW;
+                detail = "No supported explicit insecure directive was observed. Static configuration evidence cannot establish a pass; verify effective state with an approved runtime check.";
+                if (sr != null && !sr.evidence.isEmpty()) {
+                    triggerLines = SecurityBaseline.sanitizeEvidenceList(sr.evidence);
+                    detail += " Baseline suggests: " + sr.detail + " (baseline evidence: " + String.join(" | ", triggerLines) + ")";
+                } else if (isConfigCategory1(vcode)) {
+                    List<String> legacy = findTriggerLines(vcode, rawForCheck);
+                    if (!legacy.isEmpty()) triggerLines = new ArrayList<>(legacy);
+                }
             }
 
             // Build finding similar to TrinetraStat.statRun but with ingestion_method

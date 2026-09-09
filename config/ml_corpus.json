@@ -1,0 +1,138 @@
+[
+  {
+    "text": "enable secret 5 $1$abc",
+    "label": "V-013"
+  },
+  {
+    "text": "username admin privilege 15 secret 5 $1$xyz",
+    "label": "V-013"
+  },
+  {
+    "text": "username operator password 0 cisco123",
+    "label": "V-013"
+  },
+  {
+    "text": "aaa new-model",
+    "label": "V-013"
+  },
+  {
+    "text": "service password-encryption",
+    "label": "V-013"
+  },
+  {
+    "text": "ip ssh version 1",
+    "label": "V-006"
+  },
+  {
+    "text": "ip ssh version 2",
+    "label": "V-006"
+  },
+  {
+    "text": "set system services ssh protocol-version v1",
+    "label": "V-006"
+  },
+  {
+    "text": "set system services ssh protocol-version v2",
+    "label": "V-006"
+  },
+  {
+    "text": "ip http server",
+    "label": "V-071"
+  },
+  {
+    "text": "no ip http server",
+    "label": "V-071"
+  },
+  {
+    "text": "transport input telnet",
+    "label": "V-071"
+  },
+  {
+    "text": "transport input ssh",
+    "label": "V-071"
+  },
+  {
+    "text": "exec-timeout 0 0",
+    "label": "V-071"
+  },
+  {
+    "text": "exec-timeout 5 0",
+    "label": "V-071"
+  },
+  {
+    "text": "set system services telnet",
+    "label": "V-071"
+  },
+  {
+    "text": "snmp-server community public RO",
+    "label": "V-057"
+  },
+  {
+    "text": "snmp-server community private RW",
+    "label": "V-057"
+  },
+  {
+    "text": "set snmp community public authorization read-only",
+    "label": "V-057"
+  },
+  {
+    "text": "logging host 10.10.1.100",
+    "label": "V-058"
+  },
+  {
+    "text": "logging trap informational",
+    "label": "V-058"
+  },
+  {
+    "text": "set system syslog host 10.10.1.100",
+    "label": "V-058"
+  },
+  {
+    "text": "ip source-route",
+    "label": "V-003"
+  },
+  {
+    "text": "service pad",
+    "label": "V-003"
+  },
+  {
+    "text": "no ip source-route",
+    "label": "V-003"
+  },
+  {
+    "text": "username test privilege 15 password 0 test",
+    "label": "V-107"
+  },
+  {
+    "text": "username test privilege 5 secret 9 $9$abc",
+    "label": "V-107"
+  },
+  {
+    "text": "password 7 0822445D0A16",
+    "label": "V-013"
+  },
+  {
+    "text": "telnet 10.0.0.1",
+    "label": "V-071"
+  },
+  {
+    "text": "set system host-name juniper-lab-01",
+    "label": "V-003"
+  },
+  {
+    "text": "set system login user admin class super-user",
+    "label": "V-013"
+  },
+  {
+    "text": "set system login idle-timeout 10",
+    "label": "V-071"
+  },
+  {
+    "text": "my-unique-train-feature-2326",
+    "label": "Custom Training Test"
+  },
+  {
+    "text": "my-unique-train-feature-2326.*",
+    "label": "Custom Training Test"
+  }
+]
