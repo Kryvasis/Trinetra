@@ -14,16 +14,8 @@ public class CiscoBaselineAdapter {
         if (configContent == null || configContent.isBlank()) return b;
 
         String[] rawLines = configContent.split("\\r?\\n", -1);
-        List<String> lines = new ArrayList<>();
-        List<Integer> lineNums = new ArrayList<>();
-        for (int i = 0; i < rawLines.length; i++) {
-            String t = rawLines[i].trim();
-            if (t.isEmpty() || t.startsWith("!") || t.startsWith("#")) continue;
-            lines.add(t);
-            lineNums.add(i + 1);
-        }
 
-        // Pre-scan banner delimiters to exclude
+        // Pre-scan banner delimiters to exclude — must run before line filtering
         Set<Integer> bannerIgnored = new HashSet<>();
         String delimiter = null;
         for (int i = 0; i < rawLines.length; i++) {
@@ -39,6 +31,16 @@ public class CiscoBaselineAdapter {
                 String token = text.startsWith("^") && text.length() > 1 ? text.substring(0, 2) : text.substring(0, 1);
                 if (!text.substring(token.length()).contains(token)) delimiter = token;
             }
+        }
+
+        List<String> lines = new ArrayList<>();
+        List<Integer> lineNums = new ArrayList<>();
+        for (int i = 0; i < rawLines.length; i++) {
+            if (bannerIgnored.contains(i)) continue;
+            String t = rawLines[i].trim();
+            if (t.isEmpty() || t.startsWith("!") || t.startsWith("#")) continue;
+            lines.add(t);
+            lineNums.add(i + 1);
         }
 
         for (int idx = 0; idx < lines.size(); idx++) {

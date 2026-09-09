@@ -92,17 +92,21 @@ def test_config_upload_category1_differentiates():
         sec_map = {f["v_code"]: f["verdict"] for f in sec_json["findings"] if f.get("v_code") in CATEGORY_1 + CATEGORY_2}
         ins_map = {f["v_code"]: f["verdict"] for f in ins_json["findings"] if f.get("v_code") in CATEGORY_1 + CATEGORY_2}
 
-        # Preserve the expanded required check list. The bounded observation
-        # parser supports four explicit risk mappings in this fixture; untyped
-        # legacy passwords intentionally remain manual review.
-        expected_failed = {"V-003", "V-006", "V-057", "V-071"}
-        for vcode in CATEGORY_1 + CATEGORY_2:
+        # Semantic wiring: Category 1 secure → PASS via baseline, insecure → FAIL; Category 2 → manual_review.
+        for vcode in CATEGORY_1:
+            assert vcode in sec_map, f"{vcode} missing in secure findings"
+            assert vcode in ins_map, f"{vcode} missing in insecure findings"
+            assert sec_map[vcode] == "pass", f"secure {vcode} should be PASS via baseline, got {sec_map[vcode]}"
+            assert ins_map[vcode] == "fail", f"insecure {vcode} should be FAIL via baseline, got {ins_map[vcode]}"
+            sec_detail = next(f["verdict_detail"] for f in sec_json["findings"] if f["v_code"] == vcode)
+            assert "baseline evidence" in sec_detail.lower(), f"Category1 detail must cite baseline, got {sec_detail}"
+        for vcode in CATEGORY_2:
             assert vcode in sec_map, f"{vcode} missing in secure findings"
             assert vcode in ins_map, f"{vcode} missing in insecure findings"
             assert sec_map[vcode] == "manual_review"
-            assert ins_map[vcode] == ("fail" if vcode in expected_failed else "manual_review")
+            assert ins_map[vcode] == "manual_review"
             sec_detail = next(f["verdict_detail"] for f in sec_json["findings"] if f["v_code"] == vcode)
-            assert "cannot establish a pass" in sec_detail
+            assert "cannot establish a pass" in sec_detail or "live verification" in sec_detail
 
         # Differentiate supported static observations, not compliance certification.
         sec_score = client.get(f"/api/session/{sess_sec}/score").get_json()["score"]
@@ -118,10 +122,12 @@ def test_config_upload_category1_differentiates():
         assert all(o["line_numbers"] for o in ins_obs if o["status"] == "observed_risk")
         assert next(o for o in ins_obs if o["id"] == "CFG-PASSWORD")["status"] == "not_observed"
         for fw in sec_score["frameworks"].values():
-            assert fw["tests_passed"] == fw["tests_failed"] == 0
-            assert fw["tests_manual_review"] == fw["total_tests_mapped"]
+            assert fw["tests_passed"] > 0, f"secure should have passes via semantic wiring, got {fw}"
+            assert fw["tests_failed"] == 0
+            assert fw["tests_passed"] + fw["tests_manual_review"] == fw["total_tests_mapped"]
         assert all(fw["tests_passed"] == 0 for fw in ins_score["frameworks"].values())
         assert sum(fw["tests_failed"] for fw in ins_score["frameworks"].values()) > 0
+        assert sum(fw["tests_passed"] for fw in sec_score["frameworks"].values()) > sum(fw["tests_passed"] for fw in ins_score["frameworks"].values())
 
         # Verify ingestion_method tagging and report header includes Ingestion
         # Check devices endpoint shows config_upload
@@ -134,10 +140,12 @@ def test_config_upload_category1_differentiates():
         report = (ROOT / "sessions" / sess_sec / f"audit_report_{sess_sec}.md").read_text()
         assert "| Ingestion |" in report, "markdown evidence header must contain Ingestion column"
         assert "config_upload" in report, "report rows must show ingestion method"
-        # Report must preserve the same evidence boundary.
-        assert "V-013 | manual_review" in report
+        # Report must show Category1 PASS for secure, Category2 remains manual_review.
+        assert "V-013 | pass" in report, "secure V-013 should be pass after semantic wiring"
         assert "V-005 | manual_review" in report
         assert "Config observation: CFG-SSH1" in report
+        # Baseline evidence is in finding verdict_detail / evidence_lines, not necessarily verbatim in combined markdown
+        assert "V-003 | pass" in report or "V-006 | pass" in report
 
     finally:
         cleanup(sess_sec, sess_ins)

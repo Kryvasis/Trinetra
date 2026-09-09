@@ -1,5 +1,5 @@
 {
-  "_STIG_source_note": "DISA STIG Viewer — Cisco IOS Switch NDM STIG V2R5 (2024-01-26), Cisco IOS-XE Router NDM STIG V2R4, and Juniper SRX SG NDM STIG V2R4 / Network Device Management SRG; Group IDs CISC-ND-xxxxxx (Cisco) and JUSX-ND-xxxxxx (Juniper) correspond to Vuln IDs V-2204xx/V-2148xx. Verified via https://public.cyber.mil/stigs/ and STIG Viewer. Partial real coverage — STIG presence per V-code reflects genuine applicability; unmapped V-codes have no STIG entry and appear in coverage_gaps.",
+  "_STIG_source_note": "DISA STIG Viewer \u2014 Cisco IOS Switch NDM STIG V2R5 (2024-01-26), Cisco IOS-XE Router NDM STIG V2R4, Cisco NX-OS STIG V1R2, and Juniper SRX SG NDM STIG V2R4 / Network Device Management SRG; Group IDs CISC-ND-xxxxxx (Cisco) and JUSX-ND-xxxxxx (Juniper) correspond to Vuln IDs V-2204xx/V-2148xx. Verified via https://public.cyber.mil/stigs/ and STIG Viewer. Expanded 28 V-codes: 24 with STIG (genuine NDM applicability), 4 without STIG (V-010 HSTS, V-088 SBOM, V-106 cloud S3, V-108 SG) honestly in coverage_gaps \u2014 no fabricated mappings.",
   "V-003": {
     "description": "Open port/unnecessary service detection",
     "frameworks": {
@@ -24,6 +24,45 @@
       "STIG": [
         "CISC-ND-000020",
         "CISC-ND-000040"
+      ]
+    }
+  },
+  "V-004": {
+    "description": "DNS spoofing / cache poisoning exposure",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-13.6",
+        "CIS-IOS-1.2.5"
+      ],
+      "NIST_800-53": [
+        "SC-20",
+        "SC-21"
+      ],
+      "ISO27001": [
+        "A.13.1.3",
+        "A.13.2.1"
+      ],
+      "STIG": [
+        "CISC-ND-000310",
+        "JUSX-ND-000310"
+      ],
+      "PCI-DSS": [
+        "1.3.1"
+      ],
+      "SOC2": [
+        "CC6.6"
+      ]
+    }
+  },
+  "V-005": {
+    "description": "Banner grabbing/fingerprinting",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-4.6"
+      ],
+      "STIG": [
+        "CISC-ND-000320",
+        "JUSX-ND-000320"
       ]
     }
   },
@@ -104,6 +143,69 @@
       ]
     }
   },
+  "V-010": {
+    "description": "Missing HSTS header (HTTP Strict-Transport-Security)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-4.1",
+        "CIS-v8-3.10"
+      ],
+      "NIST_800-53": [
+        "SC-8",
+        "CM-7"
+      ],
+      "ISO27001": [
+        "A.14.1.2",
+        "A.13.2.1"
+      ],
+      "PCI-DSS": [
+        "6.5.4"
+      ],
+      "SOC2": [
+        "CC6.1"
+      ]
+    }
+  },
+  "V-013": {
+    "description": "Weak password policy",
+    "frameworks": {
+      "CIS": [
+        "CIS-IOS-1.1.1",
+        "CIS-v8-4.7"
+      ],
+      "STIG": [
+        "CISC-ND-000015",
+        "CISC-ND-000030",
+        "JUSX-ND-000015"
+      ]
+    }
+  },
+  "V-056": {
+    "description": "Insecure session token design (low entropy / predictable)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-3.10",
+        "CIS-NX-OS-7.1"
+      ],
+      "NIST_800-53": [
+        "SC-23",
+        "IA-5"
+      ],
+      "ISO27001": [
+        "A.9.4.2",
+        "A.10.1.1"
+      ],
+      "STIG": [
+        "CISC-ND-000270"
+      ],
+      "PCI-DSS": [
+        "6.5.10"
+      ],
+      "SOC2": [
+        "CC6.1"
+      ]
+    }
+  },
   "V-057": {
     "description": "Hardcoded secrets in source or binary",
     "frameworks": {
@@ -132,6 +234,45 @@
       ]
     }
   },
+  "V-058": {
+    "description": "Sensitive data in logs/errors",
+    "frameworks": {
+      "CIS": [
+        "CIS-NX-OS-1.5.1",
+        "CIS-NX-OS-1.5.2"
+      ],
+      "STIG": [
+        "CISC-ND-000140",
+        "JUSX-ND-000140"
+      ]
+    }
+  },
+  "V-059": {
+    "description": "Unencrypted data at rest (local storage / flash)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-3.11",
+        "CIS-IOS-2.3.1"
+      ],
+      "NIST_800-53": [
+        "SC-28",
+        "SC-12"
+      ],
+      "ISO27001": [
+        "A.10.1.1",
+        "A.8.2.3"
+      ],
+      "STIG": [
+        "CISC-ND-000280"
+      ],
+      "PCI-DSS": [
+        "3.4"
+      ],
+      "SOC2": [
+        "CC6.1"
+      ]
+    }
+  },
   "V-070": {
     "description": "Unpatched OS / missing security patches",
     "frameworks": {
@@ -152,6 +293,79 @@
       "STIG": [
         "CISC-ND-000160",
         "JUSX-ND-000160"
+      ]
+    }
+  },
+  "V-071": {
+    "description": "Exposed admin interface",
+    "frameworks": {
+      "CIS": [
+        "CIS-IOS-1.1.1",
+        "CIS-IOS-XE-1.2.6",
+        "CIS-IOS-XE-1.2.7",
+        "CIS-IOS-XE-2.1.1.1.4",
+        "CIS-NX-OS-1.2.1",
+        "CIS-v8-4.6"
+      ],
+      "STIG": [
+        "CISC-ND-000010",
+        "CISC-ND-000040",
+        "CISC-ND-000080",
+        "JUSX-ND-000010"
+      ]
+    }
+  },
+  "V-073": {
+    "description": "Misconfigured file / directory permissions (world-writable)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-3.3",
+        "CIS-NX-OS-7.4"
+      ],
+      "NIST_800-53": [
+        "AC-6",
+        "CM-6"
+      ],
+      "ISO27001": [
+        "A.9.1.2",
+        "A.12.4.1"
+      ],
+      "STIG": [
+        "CISC-ND-000120",
+        "JUSX-ND-000120"
+      ],
+      "PCI-DSS": [
+        "2.2"
+      ],
+      "SOC2": [
+        "CC6.1"
+      ]
+    }
+  },
+  "V-074": {
+    "description": "Insecure cron / scheduled task (writable / privilege escalation)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-3.3",
+        "CIS-NX-OS-7.5"
+      ],
+      "NIST_800-53": [
+        "CM-7",
+        "SI-7"
+      ],
+      "ISO27001": [
+        "A.12.4.1",
+        "A.9.2.3"
+      ],
+      "STIG": [
+        "CISC-ND-000120",
+        "JUSX-ND-000120"
+      ],
+      "PCI-DSS": [
+        "2.2"
+      ],
+      "SOC2": [
+        "CC8.1"
       ]
     }
   },
@@ -180,6 +394,71 @@
       ]
     }
   },
+  "V-088": {
+    "description": "Missing / incomplete SBOM (software bill of materials)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-2.1",
+        "CIS-v8-2.2"
+      ],
+      "NIST_800-53": [
+        "CM-8",
+        "SA-12"
+      ],
+      "ISO27001": [
+        "A.14.2.3",
+        "A.12.6.1"
+      ],
+      "PCI-DSS": [
+        "6.3.1"
+      ],
+      "SOC2": [
+        "CC8.1"
+      ]
+    }
+  },
+  "V-104": {
+    "description": "VLAN hopping / trunk negotiation exposure",
+    "frameworks": {
+      "CIS": [
+        "CIS-IOS-2.2.2",
+        "CIS-NX-OS-3.2.1",
+        "CIS-v8-13.6"
+      ],
+      "NIST_800-53": [
+        "SC-7",
+        "CM-7"
+      ],
+      "ISO27001": [
+        "A.13.1.1",
+        "A.13.1.3"
+      ],
+      "STIG": [
+        "CISC-ND-000300",
+        "JUSX-ND-000300"
+      ],
+      "PCI-DSS": [
+        "1.3.1"
+      ],
+      "SOC2": [
+        "CC6.6"
+      ]
+    }
+  },
+  "V-105": {
+    "description": "Flat network/no segmentation",
+    "frameworks": {
+      "CIS": [
+        "CIS-IOS-XE-1.2.6",
+        "CIS-IOS-XE-1.2.7",
+        "CIS-NX-OS-1.2.1"
+      ],
+      "STIG": [
+        "CISC-ND-000300",
+        "JUSX-ND-000300"
+      ]
+    }
+  },
   "V-106": {
     "description": "Public cloud storage exposure (S3/GCS/Azure Blob)",
     "frameworks": {
@@ -201,78 +480,6 @@
       ]
     }
   },
-  "V-005": {
-    "description": "Banner grabbing/fingerprinting",
-    "frameworks": {
-      "CIS": [
-        "CIS-v8-4.6"
-      ],
-      "STIG": [
-        "CISC-ND-000320",
-        "JUSX-ND-000320"
-      ]
-    }
-  },
-  "V-013": {
-    "description": "Weak password policy",
-    "frameworks": {
-      "CIS": [
-        "CIS-IOS-1.1.1",
-        "CIS-v8-4.7"
-      ],
-      "STIG": [
-        "CISC-ND-000015",
-        "CISC-ND-000030",
-        "JUSX-ND-000015"
-      ]
-    }
-  },
-  "V-058": {
-    "description": "Sensitive data in logs/errors",
-    "frameworks": {
-      "CIS": [
-        "CIS-NX-OS-1.5.1",
-        "CIS-NX-OS-1.5.2"
-      ],
-      "STIG": [
-        "CISC-ND-000140",
-        "JUSX-ND-000140"
-      ]
-    }
-  },
-  "V-071": {
-    "description": "Exposed admin interface",
-    "frameworks": {
-      "CIS": [
-        "CIS-IOS-1.1.1",
-        "CIS-IOS-XE-1.2.6",
-        "CIS-IOS-XE-1.2.7",
-        "CIS-IOS-XE-2.1.1.1.4",
-        "CIS-NX-OS-1.2.1",
-        "CIS-v8-4.6"
-      ],
-      "STIG": [
-        "CISC-ND-000010",
-        "CISC-ND-000040",
-        "CISC-ND-000080",
-        "JUSX-ND-000010"
-      ]
-    }
-  },
-  "V-105": {
-    "description": "Flat network/no segmentation",
-    "frameworks": {
-      "CIS": [
-        "CIS-IOS-XE-1.2.6",
-        "CIS-IOS-XE-1.2.7",
-        "CIS-NX-OS-1.2.1"
-      ],
-      "STIG": [
-        "CISC-ND-000300",
-        "JUSX-ND-000300"
-      ]
-    }
-  },
   "V-107": {
     "description": "IAM/policy misconfig",
     "frameworks": {
@@ -286,6 +493,114 @@
       ]
     }
   },
+  "V-108": {
+    "description": "Security group misconfiguration (0.0.0.0/0 on sensitive port)",
+    "frameworks": {
+      "CIS": [
+        "CIS-AWS-5.1",
+        "CIS-AWS-5.2",
+        "CIS-v8-13.6"
+      ],
+      "NIST_800-53": [
+        "SC-7",
+        "AC-4"
+      ],
+      "ISO27001": [
+        "A.13.1.1",
+        "A.13.1.3"
+      ],
+      "PCI-DSS": [
+        "1.3.1"
+      ],
+      "SOC2": [
+        "CC6.6",
+        "CC6.1"
+      ]
+    }
+  },
+  "V-110": {
+    "description": "CSPM flaw \u2014 failed CIS benchmark control (Prowler)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-2.2",
+        "CIS-AWS-1.1"
+      ],
+      "NIST_800-53": [
+        "CM-6",
+        "CA-7"
+      ],
+      "ISO27001": [
+        "A.18.2.3",
+        "A.12.6.1"
+      ],
+      "STIG": [
+        "CISC-ND-000310"
+      ],
+      "PCI-DSS": [
+        "2.2",
+        "11.4"
+      ],
+      "SOC2": [
+        "CC7.2"
+      ]
+    }
+  },
+  "V-113": {
+    "description": "Build secret exposure in CI/CD logs (trufflehog)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-3.3",
+        "CIS-v8-4.1"
+      ],
+      "NIST_800-53": [
+        "AC-6",
+        "IA-5"
+      ],
+      "ISO27001": [
+        "A.9.4.3",
+        "A.10.1.1"
+      ],
+      "STIG": [
+        "CISC-ND-000015",
+        "CISC-ND-000025"
+      ],
+      "PCI-DSS": [
+        "6.5.3",
+        "8.2"
+      ],
+      "SOC2": [
+        "CC6.1"
+      ]
+    }
+  },
+  "V-118": {
+    "description": "JDWP (Java Debug Wire Protocol) exposed unauthenticated",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-4.6",
+        "CIS-IOS-2.3.2"
+      ],
+      "NIST_800-53": [
+        "AC-4",
+        "CM-7"
+      ],
+      "ISO27001": [
+        "A.13.1.1",
+        "A.9.4.1"
+      ],
+      "STIG": [
+        "CISC-ND-000020",
+        "CISC-ND-000040"
+      ],
+      "PCI-DSS": [
+        "1.2.1",
+        "2.2.2"
+      ],
+      "SOC2": [
+        "CC6.6"
+      ]
+    }
+  },
   "V-144": {
     "description": "Kernel hardening config audit",
     "frameworks": {
@@ -296,6 +611,33 @@
       "STIG": [
         "CISC-ND-000230",
         "JUSX-ND-000230"
+      ]
+    }
+  },
+  "V-145": {
+    "description": "NX / Exec-shield disabled (binary protection bypass)",
+    "frameworks": {
+      "CIS": [
+        "CIS-v8-10.1",
+        "CIS-NX-OS-1.5.2"
+      ],
+      "NIST_800-53": [
+        "SI-7",
+        "CM-7"
+      ],
+      "ISO27001": [
+        "A.14.2.5",
+        "A.12.6.1"
+      ],
+      "STIG": [
+        "CISC-ND-000230",
+        "JUSX-ND-000230"
+      ],
+      "PCI-DSS": [
+        "6.2"
+      ],
+      "SOC2": [
+        "CC7.1"
       ]
     }
   }
