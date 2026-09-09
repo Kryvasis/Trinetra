@@ -249,8 +249,8 @@ export default function TrainingView({ api, toast }) {
       <SceneHeader
         index="03"
         label="Learn"
-        title="Training Loop"
-        description="Label unrecognized config lines to teach Cortex new patterns — no code changes required."
+        title="Training loop"
+        description="Review unrecognized configuration lines and add verified parsing patterns without changing application code."
       />
 
       <form onSubmit={load} noValidate className="assessment-toolbar">
@@ -263,10 +263,9 @@ export default function TrainingView({ api, toast }) {
           value={inputSession}
           onChange={e => setInputSession(e.target.value)}
           placeholder="Session name"
-          style={{ flex: 1, maxWidth: 300 }}
         />
         <button type="submit" className="btn-primary" disabled={loading || training || !inputSession.trim()}>
-          {loading ? <><Spinner size={14} /> Loading...</> : 'Load Unrecognized Lines'}
+          {loading ? <><Spinner size={14} /> Loading…</> : 'Load unrecognized lines'}
         </button>
       </form>
 
@@ -275,16 +274,16 @@ export default function TrainingView({ api, toast }) {
       {loading && (
         <div className="empty-state card">
           <Spinner size={24} />
-          <p style={{ marginTop: 12 }}>Loading unrecognized lines...</p>
+          <p>Loading unrecognized lines…</p>
         </div>
       )}
 
       {error && !loading && (
-        <div className="card" role="alert" id="training-error">
-          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Training request unavailable</h3>
-          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
-          <button className="btn-secondary" onClick={() => fetchUnrecognized(inputSession.trim())} style={{ marginTop: 8 }}>
-            Retry
+        <div className="status-panel status-panel-error" role="alert" id="training-error">
+          <h2>Training request unavailable</h2>
+          <p>{error}</p>
+          <button type="button" className="btn-secondary" onClick={() => fetchUnrecognized(inputSession.trim())}>
+            Retry request
           </button>
         </div>
       )}
@@ -298,13 +297,12 @@ export default function TrainingView({ api, toast }) {
 
       {!loading && unrecognized.length > 0 && (
         <div className="grid-2">
-          {/* Left: unrecognized lines */}
-          <div className="card" style={{ maxHeight: 500, overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 600 }}>Unrecognized Lines</h2>
+          <section className="card training-lines-panel" aria-labelledby="unrecognized-lines-heading">
+            <div className="section-heading section-heading-compact">
+              <h2 id="unrecognized-lines-heading">Unrecognized lines</h2>
               <span className="badge badge-review">{unrecognized.length}</span>
             </div>
-            {unrecognized.map((u, i) => {
+            <div className="training-line-list">{unrecognized.map((u, i) => {
               const ml = mlSuggestions[u.line]
               const nlp = nlpSuggestions[u.line]
               return (
@@ -312,33 +310,26 @@ export default function TrainingView({ api, toast }) {
                 type="button"
                 disabled={training}
                 key={i}
-                className="line-item"
-                style={{
-                  cursor: 'pointer',
-                  background: selectedLine === u.line ? 'var(--surface2)' : 'transparent',
-                  border: selectedLine === u.line ? '1px solid var(--accent)' : '1px solid var(--border)',
-                }}
+                className={`line-item${selectedLine === u.line ? ' is-selected' : ''}`}
                 onClick={() => selectLine(u.line)}
                 aria-pressed={selectedLine === u.line}
               >
-                <span style={{ fontSize: 11, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{u.device}</span>
+                <span className="line-device">{u.device}</span>
                 <span className="line-text">{u.line}</span>
-                {ml && <span className="badge" style={{ marginLeft:8, background:'var(--surface3)', fontSize:10 }} title={`ML: ${ml.source} conf ${ml.confidence}`}>AI: {ml.label} {Math.round(ml.confidence*100)}%</span>}
-                {nlp && <span className="badge" style={{ marginLeft:8, background:'var(--accent)', color:'#fff', fontSize:10 }} title={`NLP: ${nlp.reasoning}`}>NLP: {nlp.category} {Math.round(nlp.confidence*100)}%</span>}
+                {ml && <span className="badge training-suggestion" title={`ML: ${ml.source} conf ${ml.confidence}`}>AI: {ml.label} {Math.round(ml.confidence*100)}%</span>}
+                {nlp && <span className="badge badge-info training-suggestion" title={`NLP: ${nlp.reasoning}`}>NLP: {nlp.category} {Math.round(nlp.confidence*100)}%</span>}
               </button>
               )
-            })}
-          </div>
+            })}</div>
+          </section>
 
-          {/* Right: training form */}
-          <div className="card">
-            <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>
-              {selectedLine ? 'Label Selected Line' : 'Select a line to label'}
-            </h2>
+          <section className="card training-editor" aria-labelledby="training-editor-heading">
+            <h2 id="training-editor-heading">{selectedLine ? 'Label selected line' : 'Select a line to label'}</h2>
             {selectedLine && (
               <form onSubmit={handleTrain} noValidate>
-                <div className="card" style={{ marginBottom: 16, padding: 12 }}>
-                  <code style={{ fontSize: 12, wordBreak: 'break-all' }}>{selectedLine}</code>
+                <div className="selected-evidence">
+                  <span>Selected evidence</span>
+                  <code>{selectedLine}</code>
                 </div>
 
                 <div className="form-group">
@@ -361,9 +352,9 @@ export default function TrainingView({ api, toast }) {
                     type="text"
                     value={pattern}
                     onChange={e => { setPattern(e.target.value); setTrainErrors(prev => ({ ...prev, pattern: null })) }}
-                    style={{ fontFamily: 'var(--mono)' }}
+                    className="mono-input"
                   />
-                  {trainErrors.pattern && <div id="training-pattern-error" style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.pattern}</div>}
+                  {trainErrors.pattern && <div id="training-pattern-error" className="field-error">{trainErrors.pattern}</div>}
                 </div>
 
                 <div className="form-group">
@@ -375,7 +366,7 @@ export default function TrainingView({ api, toast }) {
                     onChange={e => { setCategory(e.target.value); setTrainErrors(prev => ({ ...prev, category: null })) }}
                     placeholder="e.g. Access Control, Logging, Encryption"
                   />
-                  {trainErrors.category && <div id="training-category-error" style={{ color: 'var(--red)', fontSize: 12, marginTop: 4 }}>{trainErrors.category}</div>}
+                  {trainErrors.category && <div id="training-category-error" className="field-error">{trainErrors.category}</div>}
                 </div>
 
                 <div className="form-group">
@@ -412,45 +403,34 @@ export default function TrainingView({ api, toast }) {
                   />
                 </div>
 
-                <button type="submit" className="btn-primary" disabled={training} style={{ width: '100%' }}>
-                  {training ? <><Spinner size={14} /> Training...</> : 'Add Training Entry'}
+                <button type="submit" className="btn-primary training-submit" disabled={training}>
+                  {training ? <><Spinner size={14} /> Saving entry…</> : 'Add training entry'}
                 </button>
               </form>
             )}
-          </div>
+            {!selectedLine && <div className="training-empty-state"><p>Choose one directive from the review queue. Cortex will generate an editable pattern and advisory classification.</p><ol><li>Confirm the vendor and pattern.</li><li>Add the security category and mapped controls.</li><li>Save, then re-upload to verify recognition.</li></ol><small>A saved label improves parsing; it does not prove that a configuration is secure.</small></div>}
+          </section>
         </div>
       )}
 
       {/* Before/after summary */}
       {hasLoaded && totalBefore > 0 && (
-        <div ref={summaryRef} tabIndex={-1} className="card" role="region" aria-label="Training review progress" style={{ marginTop: 16 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Loaded for review
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)' }}>{totalBefore}</div>
-            </div>
-            <div style={{ fontSize: 24, color: 'var(--text-dim)' }}>→</div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                Remaining in this review
-              </div>
-              <div style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)', color: totalAfter < totalBefore ? 'var(--green)' : 'inherit' }}>
-                {totalAfter}
-              </div>
-            </div>
+        <section ref={summaryRef} tabIndex={-1} className="card training-progress" role="region" aria-label="Training review progress">
+          <div className="training-progress-metrics">
+            <div><span>Loaded for review</span><strong>{totalBefore}</strong></div>
+            <div className="training-progress-rule" aria-hidden="true" />
+            <div><span>Remaining</span><strong className={totalAfter < totalBefore ? 'status-good' : ''}>{totalAfter}</strong></div>
             {totalAfter < totalBefore && (
               <span className="badge badge-pass">{totalBefore - totalAfter} line(s) labeled in this review</span>
             )}
           </div>
-          <p style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 12 }}>
+          <p>
             Saved patterns take effect on the next configuration upload. These counts track this review only; re-upload the configuration to verify recognition. A saved label is not proof of security compliance.
           </p>
-          {mlStatus && <p style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 8 }}>
+          {mlStatus && <p className="field-help">
             ML: {mlStatus.has_sklearn ? `TF-IDF char 3-5 + KNN(k=${mlStatus.k}, cosine) — corpus ${mlStatus.corpus_size}, model ${mlStatus.model_exists ? 'ready' : 'training'}` : 'sklearn not installed — regex only fallback'} · Threshold 0.55 · Deterministic scorer remains authoritative, ML is advisory
           </p>}
-        </div>
+        </section>
       )}
     </div>
   )

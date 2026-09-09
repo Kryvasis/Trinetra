@@ -143,8 +143,8 @@ export default function SessionDevicesView({ api, toast }) {
       <SceneHeader
         index="04"
         label="Observe"
-        title="Session Devices"
-        description="View all devices within a session, their ingestion method, and per-device compliance results."
+        title="Session devices"
+        description="Review device inventory, evidence sources, recorded outcomes, and assessment-to-assessment changes."
       />
 
       <form onSubmit={handleSubmit} noValidate className="assessment-toolbar" aria-busy={loading}>
@@ -159,40 +159,40 @@ export default function SessionDevicesView({ api, toast }) {
           aria-describedby={error ? 'devices-error' : undefined}
         />
         <button type="submit" className="btn-primary" disabled={loading || changingScope || !inputSession.trim()}>
-          {loading ? <><Spinner size={14} /> Loading...</> : 'Load Devices'}
+          {loading ? <><Spinner size={14} /> Loading…</> : 'Load devices'}
         </button>
       </form>
 
-      {removeTarget && <section className="card" aria-labelledby="remove-device-title" style={{ marginBottom: 24 }} onKeyDown={event => { if (event.key === 'Escape' && !changingScope) cancelRemoval() }}>
+      {removeTarget && <section className="inline-confirmation" aria-labelledby="remove-device-title" onKeyDown={event => { if (event.key === 'Escape' && !changingScope) cancelRemoval() }}>
         <h2 id="remove-device-title">Remove {removeTarget}?</h2>
         <p>This removes the device from session {session}, active counts, and newly generated reports. Historical evidence and earlier exports are retained. You can restore it below.</p>
-        <div className="assessment-toolbar">
+        <div className="action-cluster">
           <button ref={cancelRef} className="btn-secondary" type="button" disabled={changingScope} onClick={cancelRemoval}>Cancel</button>
-          <button className="btn-primary" type="button" disabled={changingScope} onClick={() => changeScope(removeTarget)}>{changingScope ? 'Removing…' : 'Remove from assessment'}</button>
+          <button className="btn-danger" type="button" disabled={changingScope} onClick={() => changeScope(removeTarget)}>{changingScope ? 'Removing…' : 'Remove from assessment'}</button>
         </div>
       </section>}
-      {scopeError && <p role="alert">{scopeError}</p>}
-      {!!sessionMeta?.removed_devices?.length && <section className="card" style={{ marginBottom: 24 }}>
-        <h2>Removed devices</h2>
+      {scopeError && <p className="inline-error" role="alert">{scopeError}</p>}
+      {!!sessionMeta?.removed_devices?.length && <section className="card retained-items">
+        <div className="section-heading section-heading-compact"><h2>Removed devices</h2><span className="badge badge-info">{sessionMeta.removed_devices.length} retained</span></div>
         <p>Retained evidence is excluded from this assessment. Restore a device to include it again.</p>
-        {sessionMeta.removed_devices.map(id => <div key={id} style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginTop: 12 }}>
-          <span>{id}</span><button className="btn-secondary" disabled={changingScope || loading} type="button" onClick={() => changeScope(id, true)} aria-label={`Restore ${id}`}>Restore</button>
-        </div>)}
+        <ul className="retained-list">{sessionMeta.removed_devices.map(id => <li key={id}>
+          <code>{id}</code><button className="btn-secondary" disabled={changingScope || loading} type="button" onClick={() => changeScope(id, true)} aria-label={`Restore ${id}`}>Restore</button>
+        </li>)}</ul>
       </section>}
 
       {loading && (
         <div className="empty-state card">
           <Spinner size={24} />
-          <p style={{ marginTop: 12 }}>Loading device data...</p>
+          <p>Loading device data…</p>
         </div>
       )}
 
       {error && !loading && (
-        <div className="card" role="alert" id="devices-error">
-          <h3 style={{ color: 'var(--red)', fontSize: 16, marginBottom: 4 }}>Failed to load devices</h3>
-          <p style={{ color: 'var(--text-dim)', fontSize: 13 }}>{error}</p>
-          <button className="btn-secondary" onClick={() => fetchDevices(inputSession.trim())} style={{ marginTop: 8 }}>
-            Retry
+        <div className="status-panel status-panel-error" role="alert" id="devices-error">
+          <h2>Device inventory unavailable</h2>
+          <p>{error}</p>
+          <button type="button" className="btn-secondary" onClick={() => fetchDevices(inputSession.trim())}>
+            Retry request
           </button>
         </div>
       )}
@@ -215,7 +215,7 @@ export default function SessionDevicesView({ api, toast }) {
         <>
           {/* Session summary */}
           {sessionMeta && (
-            <div className="stat-grid" style={{ marginBottom: 24 }}>
+            <div className="stat-grid session-stat-grid">
               <div className="stat-card">
                 <div className="stat-value">{sessionMeta.device_count ?? devices.length}</div>
                 <div className="stat-label">Devices</div>
@@ -224,60 +224,60 @@ export default function SessionDevicesView({ api, toast }) {
                 <div className="stat-value">
                   {totals.passed}
                 </div>
-                <div className="stat-label">Total Pass</div>
+                <div className="stat-label">Passed checks</div>
               </div>
               <div className="stat-card">
-                <div className="stat-value" style={{ color: 'var(--red)' }}>
+                <div className="stat-value status-risk">
                   {totals.failed}
                 </div>
-                <div className="stat-label">Total Fail</div>
+                <div className="stat-label">Failed checks</div>
               </div>
               <div className="stat-card">
                 <div className="stat-value">
                   {totals.total}
                 </div>
-                <div className="stat-label">Total Checks</div>
+                <div className="stat-label">Recorded checks</div>
               </div>
             </div>
           )}
 
           {/* Device table — now with distinct PS-required Serial/Hardware/OS columns */}
-          <div className="card">
-            <h2 ref={headingRef} tabIndex={-1} style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Devices in session "{session}"</h2>
+          <section className="card" aria-labelledby="session-device-heading">
+            <div className="section-heading"><div><h2 ref={headingRef} id="session-device-heading" tabIndex={-1}>Devices in session “{session}”</h2><p>Inventory and evidence retained for the selected assessment.</p></div><span className="badge badge-info">{devices.length} in scope</span></div>
             <div className="assessment-toolbar">
               <label htmlFor="device-search">Find device</label>
               <input ref={searchRef} id="device-search" type="search" value={query} onChange={event => { setQuery(event.target.value); setPage(0) }} placeholder="Device, vendor, hardware or OS" />
               {query && <button type="button" className="btn-secondary" onClick={() => { setQuery(''); setPage(0); searchRef.current?.focus() }}>Clear search</button>}
             </div>
             <p className="field-help" id="device-table-help">Scroll the table horizontally to see hardware details and device actions. Counts include retained check history.</p>
-            <div className="table-wrap" tabIndex={0} role="region" aria-label="Session devices" aria-describedby="device-table-help" style={{ overflowX: 'auto' }}>
-              <table>
+            <div className="table-wrap" tabIndex={0} role="region" aria-label="Session devices" aria-describedby="device-table-help">
+              <table className="device-table">
                 <caption className="sr-only">Devices in the selected assessment</caption>
                 <thead>
                   <tr>
-                    <th>Device ID</th>
-                    <th>Vendor</th>
-                    <th>Serial</th>
-                    <th>Hardware</th>
-                    <th>OS Version</th>
-                    <th>Ingestion Method</th>
-                    <th>Pass</th>
-                    <th>Fail</th>
-                    <th>Total</th>
-                    <th>Actions</th>
+                    <th scope="col">Device ID</th>
+                    <th scope="col">Vendor</th>
+                    <th scope="col">Serial</th>
+                    <th scope="col">Hardware</th>
+                    <th scope="col">OS version</th>
+                    <th scope="col">Evidence source</th>
+                    <th scope="col">Pass</th>
+                    <th scope="col">Fail</th>
+                    <th scope="col">Total</th>
+                    <th scope="col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visible.map(d => {
                     return (
                       <tr key={d.device_id}>
-                        <td style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{d.device_id}</td>
+                        <td><code className="entity-id">{d.device_id}</code></td>
                         <td>
                           <span className="badge badge-info">{d.vendor}</span>
                         </td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.serial_number || <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.hardware_model || <span style={{ color: 'var(--text-dim)' }}>—</span>}</td>
-                        <td style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>{d.os_version || 'Not recorded'}</td>
+                        <td><code className="table-detail">{d.serial_number || '—'}</code></td>
+                        <td><code className="table-detail">{d.hardware_model || '—'}</code></td>
+                        <td><code className="table-detail">{d.os_version || 'Not recorded'}</code></td>
                         <td>
                           <span className={`badge ${d.ingestion_method === 'config_upload' ? 'badge-pass' : d.ingestion_method === 'live_target' ? 'badge-review' : ''}`}>
                             {d.ingestion_method === 'config_upload' ? 'Config Upload' :
@@ -285,34 +285,31 @@ export default function SessionDevicesView({ api, toast }) {
                              d.ingestion_method}
                           </span>
                           {d.filename && (
-                            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>{d.filename}</div>
+                            <div className="table-detail">{d.filename}</div>
                           )}
                         </td>
-                        <td style={{ fontFamily: 'var(--mono)', color: 'var(--green)' }}>{d.pass_count}</td>
-                        <td style={{ fontFamily: 'var(--mono)', color: 'var(--red)' }}>{d.fail_count}</td>
-                        <td style={{ fontFamily: 'var(--mono)' }}>{d.total_checks}</td>
+                        <td><code className="status-good">{d.pass_count}</code></td>
+                        <td><code className="status-risk">{d.fail_count}</code></td>
+                        <td><code>{d.total_checks}</code></td>
                         <td>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            <button type="button" className="btn-secondary" disabled={changingScope || loading} aria-label={`Remove ${d.device_id}`} onClick={event => { triggerRef.current = event.currentTarget; setScopeError(''); setRemoveTarget(d.device_id) }}>Remove</button>
-                            <button type="button" className="btn-secondary" disabled={compareLoading || loading} aria-label={`Compare assessments for ${d.device_id}`} onClick={() => fetchComparison(d.device_id)} style={{ fontSize: 12, padding: '4px 10px' }}>Compare</button>
+                          <div className="action-cluster action-cluster-compact">
+                            <button type="button" className="btn-danger" disabled={changingScope || loading} aria-label={`Remove ${d.device_id}`} onClick={event => { triggerRef.current = event.currentTarget; setScopeError(''); setRemoveTarget(d.device_id) }}>Remove</button>
+                            <button type="button" className="btn-secondary" disabled={compareLoading || loading} aria-label={`Compare assessments for ${d.device_id}`} onClick={() => fetchComparison(d.device_id)}>Compare</button>
                             <Link
                               to={`/results?session=${encodeURIComponent(session)}`}
                               className="btn-secondary"
-                              style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
                             >
                               Results
                             </Link>
                             <Link
                               to={`/training?session=${encodeURIComponent(session)}`}
                               className="btn-secondary"
-                              style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
                             >
                               Training
                             </Link>
                             <a
                               href={`${api}/session/${encodeURIComponent(session)}/devices/${encodeURIComponent(d.device_id)}/pdf`}
                               className="btn-secondary"
-                              style={{ fontSize: 12, padding: '4px 10px', textDecoration: 'none' }}
                               target="_blank"
                               rel="noopener noreferrer"
                             >
@@ -330,16 +327,16 @@ export default function SessionDevicesView({ api, toast }) {
             <div className="assessment-pagination" aria-label="Device pages"><span role="status">{filtered.length ? currentPage * 10 + 1 : 0}–{Math.min((currentPage + 1) * 10, filtered.length)} of {filtered.length} devices</span><button type="button" className="btn-secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>Previous</button><button type="button" className="btn-secondary" disabled={(currentPage + 1) * 10 >= filtered.length} onClick={() => setPage(currentPage + 1)}>Next</button></div>
 
             {/* Compliance progress per device */}
-            <div style={{ marginTop: 20 }}>
-              <h3 style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Recorded-check pass rate · displayed devices</h3>
+            <section className="device-rates" aria-labelledby="device-rates-heading">
+              <h3 id="device-rates-heading">Recorded-check pass rate · displayed devices</h3>
               <p className="field-help">Unresolved checks need review. These rates do not establish compliance.</p>
               {visible.map(d => {
                 const pct = count(d.total_checks) > 0 ? Math.min(100, Math.round((count(d.pass_count) / count(d.total_checks)) * 100)) : 0
                 return (
-                  <div key={d.device_id} style={{ marginBottom: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontFamily: 'var(--mono)' }}>{d.device_id}</span>
-                      <span style={{ fontSize: 13, color: 'var(--text-dim)' }}>{count(d.total_checks) ? `${pct}%` : '—'} ({count(d.pass_count)}/{count(d.total_checks)})</span>
+                  <div className="device-rate" key={d.device_id}>
+                    <div>
+                      <code>{d.device_id}</code>
+                      <span>{count(d.total_checks) ? `${pct}%` : '—'} ({count(d.pass_count)}/{count(d.total_checks)})</span>
                     </div>
                     <div className="progress">
                       <div
@@ -353,28 +350,27 @@ export default function SessionDevicesView({ api, toast }) {
                   </div>
                 )
               })}
-            </div>
-          </div>
+            </section>
+          </section>
 
           {/* Assessment comparison — latest-two per V-code from hash-chained history, no new storage */}
           {(compareLoading || compareError || compareData) && (
-            <div className="card" style={{ marginTop: 24 }} aria-live="polite">
-              <h2 style={{ fontSize: 16, fontWeight: 600 }}>Assessment comparison{compareDevice ? ` — ${compareDevice}` : ''}</h2>
+            <section className="card comparison-panel" aria-live="polite" aria-labelledby="comparison-heading">
+              <h2 id="comparison-heading">Assessment comparison{compareDevice ? ` — ${compareDevice}` : ''}</h2>
               {compareLoading && <p><Spinner size={14} /> Comparing latest two assessments…</p>}
               {compareError && !compareLoading && <p role="alert">{compareError}</p>}
               {compareData && !compareLoading && (
                 <>
                   <p className="field-help">{compareData.basis}</p>
-                  <p style={{ fontSize: 13 }}>
-                    Resolved: {compareData.summary?.resolved ?? 0} · Newly failing: {compareData.summary?.['newly failing'] ?? 0} · Unchanged: {compareData.summary?.unchanged ?? 0} · Still unresolved: {compareData.summary?.['still unresolved'] ?? 0}
-                  </p>
-                  <div className="table-wrap" style={{ overflowX: 'auto' }}>
+                  <dl className="comparison-summary"><div><dt>Resolved</dt><dd>{compareData.summary?.resolved ?? 0}</dd></div><div><dt>Newly failing</dt><dd>{compareData.summary?.['newly failing'] ?? 0}</dd></div><div><dt>Unchanged</dt><dd>{compareData.summary?.unchanged ?? 0}</dd></div><div><dt>Still unresolved</dt><dd>{compareData.summary?.['still unresolved'] ?? 0}</dd></div></dl>
+                  <div className="table-wrap" tabIndex={0} role="region" aria-label="Latest assessment comparison">
                     <table>
-                      <thead><tr><th>Check</th><th>Before</th><th>After</th><th>Change</th></tr></thead>
+                      <caption className="sr-only">Latest two recorded outcomes for this device</caption>
+                      <thead><tr><th scope="col">Check</th><th scope="col">Before</th><th scope="col">After</th><th scope="col">Change</th></tr></thead>
                       <tbody>
                         {(compareData.comparisons || []).map(c => (
                           <tr key={c.test_id}>
-                            <td style={{ fontFamily: 'var(--mono)' }}>{c.test_id}<br /><small title="assessments compared">{c.assessments_compared}x assessed</small></td>
+                            <td><code>{c.test_id}</code><br /><small title="assessments compared">{c.assessments_compared}× assessed</small></td>
                             <td><span className="badge badge-review">{c.before.finding_class}</span><br /><small>{c.before.verdict}</small></td>
                             <td><span className="badge badge-review">{c.after.finding_class}</span><br /><small>{c.after.verdict}</small></td>
                             <td><span className={`badge ${c.transition === 'resolved' ? 'badge-pass' : c.transition === 'newly failing' ? 'badge-fail' : 'badge-review'}`}>{c.transition}</span></td>
@@ -385,7 +381,7 @@ export default function SessionDevicesView({ api, toast }) {
                   </div>
                 </>
               )}
-            </div>
+            </section>
           )}
         </>
       )}
