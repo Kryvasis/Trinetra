@@ -232,6 +232,109 @@
   .workspace-shell .nav-links a.active { border: 2px solid Highlight; }
 }
 
+/* Assurance is a technical transparency surface, not a marketing scorecard. */
+.assurance-loading {
+  min-height: 120px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-dim);
+}
+
+.assurance-metrics {
+  padding-block: 8px 28px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+}
+
+.assurance-metrics > dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 20px 0 12px;
+  background: var(--surface);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.assurance-metrics > dl > div {
+  min-width: 0;
+  padding: 20px;
+  border-inline-end: 1px solid var(--border);
+}
+
+.assurance-metrics > dl > div:last-child { border-inline-end: 0; }
+.assurance-metrics dt,
+.receipt-summary dt { color: var(--text-faint); font-size: 12px; }
+.assurance-metrics dd { margin: 7px 0 0; font-size: 30px; font-variant-numeric: tabular-nums; }
+
+.assurance-claims {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin-block: 20px 28px;
+  border-block: 1px solid var(--border);
+}
+
+.assurance-claims > h2 { grid-column: 1 / -1; margin: 0; padding-block: 20px 4px; }
+.assurance-claims > div { min-width: 0; padding: 18px 20px 20px 0; }
+.assurance-claims p { color: var(--text-dim); margin: 7px 0 0; overflow-wrap: anywhere; }
+
+.assurance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.assurance-form,
+.rule-review-toolbar { display: grid; gap: 8px; }
+.assurance-form button { justify-self: start; }
+.receipt-summary { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.receipt-summary dl { display: grid; gap: 12px; margin-block: 16px; }
+.receipt-summary dl > div { min-width: 0; }
+.receipt-summary dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.receipt-summary code { white-space: normal; overflow-wrap: anywhere; }
+
+.verification-result {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--surface2);
+}
+.verification-result.is-valid { border-color: var(--green); }
+.verification-result.is-invalid { border-color: var(--red); }
+.verification-result p { color: var(--text-dim); }
+
+.rule-review-panel { margin-top: 20px; }
+.rule-review-toolbar { max-width: 420px; margin-block: 18px; }
+.rule-review-list { border-top: 1px solid var(--border); }
+.rule-review-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding-block: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.rule-review-item > div { display: grid; min-width: 0; gap: 5px; }
+.rule-review-item code { white-space: normal; overflow-wrap: anywhere; color: var(--text-dim); }
+.rule-review-item span { color: var(--text-faint); font-size: 12px; }
+.rule-review-item a { width: fit-content; }
+
+@media (max-width: 900px) {
+  .assurance-metrics > dl,
+  .assurance-claims { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .assurance-grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 560px) {
+  .assurance-metrics > dl,
+  .assurance-claims { grid-template-columns: 1fr; }
+  .assurance-metrics > dl > div { border-inline-end: 0; border-bottom: 1px solid var(--border); }
+  .assurance-metrics > dl > div:last-child { border-bottom: 0; }
+  .rule-review-item { align-items: stretch; flex-direction: column; }
+}
+
 /* Evidence workflows retain the graphite tokens and natural document flow. */
 .assessment-toolbar, .assessment-summary, .assessment-pagination { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 20px; }
 .assessment-toolbar input { flex: 1 1 180px; min-width: 0; max-width: 360px; }

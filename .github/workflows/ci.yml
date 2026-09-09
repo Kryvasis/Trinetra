@@ -1,0 +1,57 @@
+name: Cortex verification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: bridge/requirements.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend dependencies
+        run: pip install -r bridge/requirements.txt
+      - name: Verify Java and native engines
+        run: make test
+      - name: Verify bridge
+        run: python -m pytest bridge/tests -q
+      - name: Compile validation tooling
+        run: python -m py_compile tools/measure_accuracy.py
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Verify frontend
+        working-directory: frontend
+        run: npm run lint && npm run build && node --test tests/*.mjs
+      - name: Generate dependency inventories
+        if: always()
+        run: |
+          python -m pip freeze > python-dependencies.txt
+          cd frontend
+          npm sbom --sbom-format cyclonedx > ../frontend-sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cortex-dependency-inventory
+          path: |
+            python-dependencies.txt
+            frontend-sbom.cdx.json

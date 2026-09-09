@@ -11,6 +11,7 @@ import OverviewView from './pages/OverviewView'
 import ActiveSession from './components/ActiveSession'
 import WorkspaceErrorBoundary from './components/WorkspaceErrorBoundary'
 import ActivityConsole from './components/ActivityConsole'
+import AssuranceView from './pages/AssuranceView'
 import { sessionSearch } from './utils/activeSession'
 
 const API = '/api'
@@ -21,6 +22,7 @@ const NAV_ITEMS = [
   { to: '/results', label: 'Results' },
   { to: '/training', label: 'Training' },
   { to: '/devices', label: 'Devices' },
+  { to: '/assurance', label: 'Assurance' },
   { to: '/system', label: 'System' },
 ]
 
@@ -32,6 +34,7 @@ const TITLES = {
   '/devices': 'Session Devices',
   '/dashboard': 'Overview',
   '/system': 'System Status',
+  '/assurance': 'Assurance & Verification',
 }
 
 function IntroExperience({ entering, onOpen }) {
@@ -113,6 +116,7 @@ function WorkspaceShell({ addToast, sessionBanner }) {
             <Route path="/devices" element={<SessionDevicesView api={API} toast={addToast} />} />
             <Route path="/dashboard" element={<OverviewView api={API} />} />
             <Route path="/system" element={<DashboardView api={API} toast={addToast} />} />
+            <Route path="/assurance" element={<AssuranceView api={API} toast={addToast} />} />
             <Route path="*" element={<div className="empty-state card"><h1>Page not found</h1><p>Choose a workspace page from the navigation.</p><NavLink to="/dashboard">Return to overview</NavLink></div>} />
           </Routes></WorkspaceErrorBoundary>
         </div>

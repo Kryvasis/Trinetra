@@ -16,6 +16,8 @@ Iskabon/iskabon_debug
 # Runtime scan/session output (regenerated per run)
 Iskabon/session/
 session/
+sessions/
+brain_state.json
 trinetra_audit.db*
 
 # Derived compliance score reports (per-session artifacts)
@@ -85,7 +87,14 @@ sessions/mix2_*/
 sessions/score_*/
 sessions/ssrf_*/
 sessions/train_check*/
+sessions/accuracy_*/
+sessions/cortex-parser-test-*/
+
+# Reproducible ML build output; config/ml_corpus.json is the source of truth.
+config/ml_model.pkl
+config/ml_vectorizer.pkl
 
 # React frontend build artifacts
 frontend/node_modules/
 frontend/dist/
+.cortex/

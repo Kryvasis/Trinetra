@@ -2,21 +2,24 @@ import re
 import subprocess
 import json
 import os
+import hashlib
 import shlex
 import threading
 import ipaddress
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 
 try:
     from bridge import live_fetcher
+    from bridge.assurance import build_receipt, capability_report, verify_receipt
     from bridge.request_boundary import install_request_boundary
     from bridge.website import bp as website_bp
     from bridge.config_validation import is_web_document, HTML_ERROR, CONFIG_SANITY_ERROR, is_plausible_config, looks_like_html
 except ImportError:
     import live_fetcher
+    from assurance import build_receipt, capability_report, verify_receipt
     from request_boundary import install_request_boundary
     from website import bp as website_bp
     from config_validation import is_web_document, HTML_ERROR, CONFIG_SANITY_ERROR, is_plausible_config, looks_like_html
@@ -299,7 +302,68 @@ def markdown_cells(line):
 # ── Health ──
 @app.route("/api/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok", "trinetra_bin": TRINETRA_BIN, "trinetra_root": TRINETRA_ROOT})
+    # Do not expose host filesystem paths or executable locations to callers.
+    return jsonify({"status": "ok", "service": "cortex-bridge"})
+
+
+@app.route("/api/assurance/capabilities", methods=["GET"])
+def assurance_capabilities():
+    """Publish implementation coverage without converting tests into accuracy claims."""
+    try:
+        return jsonify(capability_report(TRINETRA_ROOT)), 200
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return error_response(f"capability registry unavailable: {exc}", 500)
+
+
+@app.route("/api/session/<name>/integrity-receipt", methods=["GET"])
+def integrity_receipt(name):
+    if not validate_session(name):
+        return error_response(f"invalid session name: {name!r}", 400)
+    brain_path = os.path.join(TRINETRA_ROOT, "sessions", name, f"brain_state_{name}.json")
+    if not os.path.isfile(brain_path):
+        return error_response(f"session not found: {name}", 404)
+    try:
+        rc, status_output, status_error = run_java_helper("TrinetraBridgeHelper", ["status", name])
+        if rc != 0:
+            return error_response("assessment chain could not be verified before signing", 409, {"stderr": status_error})
+        status = json.loads(status_output)
+        if not (status.get("chain") or {}).get("intact", False):
+            return error_response("assessment chain is not intact; receipt was not generated", 409, {"chain": status.get("chain")})
+        with open(brain_path, "r", encoding="utf-8") as handle:
+            brain = json.load(handle)
+        return jsonify({"receipt": build_receipt(TRINETRA_ROOT, name, brain, chain_verified=True)}), 200
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return error_response(f"assessment evidence could not be signed: {exc}", 500)
+
+
+@app.route("/api/assurance/verify-receipt", methods=["POST"])
+def verify_integrity_receipt():
+    payload = request.get_json(silent=True) or {}
+    receipt = payload.get("receipt", payload)
+    valid, detail = verify_receipt(receipt)
+    response = {
+        "valid": valid,
+        "detail": detail,
+        "trust_scope": receipt.get("trust_scope") if isinstance(receipt, dict) else None,
+        "external_anchor": receipt.get("external_anchor") if isinstance(receipt, dict) else None,
+        "current_evidence_matches": None,
+    }
+    if valid:
+        session = receipt.get("session", "")
+        if validate_session(session):
+            brain_path = os.path.join(TRINETRA_ROOT, "sessions", session, f"brain_state_{session}.json")
+            if os.path.isfile(brain_path):
+                try:
+                    with open(brain_path, "r", encoding="utf-8") as handle:
+                        current = build_receipt(TRINETRA_ROOT, session, json.load(handle), chain_verified=True)
+                    response["current_evidence_matches"] = (
+                        current["merkle_root"] == receipt.get("merkle_root")
+                        and current["chain_tip"] == receipt.get("chain_tip")
+                        and current["entry_count"] == receipt.get("entry_count")
+                    )
+                except (OSError, ValueError, json.JSONDecodeError):
+                    response["current_evidence_matches"] = False
+    return jsonify(response), 200 if valid else 422
 
 
 # ── Sanitized runtime activity trace ──
@@ -1270,6 +1334,10 @@ def train_vendor(name):
     controls = data.get("control_mapping") or data.get("controls") or []
     remediation = data.get("remediation") or ""
     os_version_train = data.get("os_version") or data.get("osVersion") or data.get("os") or ""
+    requested_status = str(data.get("status") or "active").strip().lower()
+    author = str(data.get("author") or "local-operator").strip()
+    source_reference = str(data.get("source_reference") or "").strip()
+    confidence = data.get("confidence")
 
     if not vendor or not pattern:
         return error_response("missing required fields: vendor and pattern", 400)
@@ -1297,6 +1365,23 @@ def train_vendor(name):
         return error_response("invalid remediation", 400)
     if os_version_train and (not isinstance(os_version_train, str) or len(os_version_train) > 128 or contains_injection(os_version_train)):
         return error_response(f"invalid os_version: {os_version_train!r}", 400)
+    if requested_status not in ("draft", "active"):
+        return error_response("status must be draft or active", 400)
+    if not author or len(author) > 80 or contains_injection(author):
+        return error_response("author must be 1–80 safe characters", 400)
+    if len(source_reference) > 500 or any(c in source_reference for c in ("\n", "\r")):
+        return error_response("source_reference must be one line up to 500 characters", 400)
+    if source_reference:
+        parsed_reference = urlsplit(source_reference)
+        if parsed_reference.scheme not in ("http", "https") or not parsed_reference.hostname:
+            return error_response("source_reference must be an HTTP(S) URL", 400)
+    if confidence is not None:
+        try:
+            confidence = float(confidence)
+        except (TypeError, ValueError):
+            return error_response("confidence must be a number between 0 and 1", 400)
+        if confidence < 0 or confidence > 1:
+            return error_response("confidence must be a number between 0 and 1", 400)
 
     # Directly update the JSON file via Python (no Java code change) — this is the training loop
     try:
@@ -1323,6 +1408,15 @@ def train_vendor(name):
                 "added_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z"),
                 "added_via": f"session:{name}"
             }
+            new_entry["rule_id"] = hashlib.sha256(f"{vendor.lower()}\0{pattern}".encode("utf-8")).hexdigest()[:20]
+            new_entry["status"] = requested_status
+            new_entry["author"] = author
+            new_entry["reviewer"] = None
+            new_entry["reviewed_at"] = None
+            new_entry["source_reference"] = source_reference or None
+            new_entry["confidence"] = confidence
+            new_entry["version"] = 1
+            new_entry["history"] = [{"status": requested_status, "actor": author, "at": new_entry["added_at"]}]
             if os_version_train and os_version_train.strip():
                 new_entry["os_version"] = os_version_train.strip()
             data_json["entries"].append(new_entry)
@@ -1345,11 +1439,13 @@ def train_vendor(name):
         # Retrain lightweight ML (TF-IDF + KNN) in parallel — never fails the training request
         try:
             import ml_knn
-            ml_knn.train()
+            if requested_status == "active":
+                ml_knn.train()
         except ImportError:
             try:
                 from bridge.ml_knn import train as _ml_train
-                _ml_train()
+                if requested_status == "active":
+                    _ml_train()
             except Exception:
                 pass
         except Exception:
@@ -1357,6 +1453,88 @@ def train_vendor(name):
         return jsonify({"message": "training entry added", "entry": new_entry, "total_entries": len(data_json["entries"])}), 201
     except Exception as e:
         return error_response(f"failed to add training entry: {e}", 500)
+
+
+@app.route("/api/training-rules", methods=["GET"])
+def training_rules():
+    status_filter = str(request.args.get("status") or "").strip().lower()
+    if status_filter and status_filter not in ("draft", "active", "deprecated"):
+        return error_response("invalid training-rule status", 400)
+    map_path = Path(TRINETRA_ROOT) / "config" / "vendor_training_map.json"
+    try:
+        data = json.loads(map_path.read_text(encoding="utf-8")) if map_path.exists() else {"entries": []}
+        entries = [entry for entry in data.get("entries", []) if isinstance(entry, dict)]
+        for entry in entries:
+            entry.setdefault("status", "active")
+            entry.setdefault("rule_id", hashlib.sha256(
+                f"{str(entry.get('vendor', '')).lower()}\0{entry.get('pattern', '')}".encode("utf-8")
+            ).hexdigest()[:20])
+        if status_filter:
+            entries = [entry for entry in entries if entry.get("status") == status_filter]
+        return jsonify({"entries": entries, "total": len(entries)}), 200
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return error_response(f"training rules unavailable: {exc}", 500)
+
+
+@app.route("/api/training-rules/<rule_id>/review", methods=["POST"])
+def review_training_rule(rule_id):
+    if not re.fullmatch(r"[a-f0-9]{20}", rule_id):
+        return error_response("invalid rule identifier", 400)
+    data = request.get_json(silent=True) or {}
+    action = str(data.get("action") or "").strip().lower()
+    reviewer = str(data.get("reviewer") or "").strip()
+    if action not in ("approve", "deprecate"):
+        return error_response("action must be approve or deprecate", 400)
+    if not reviewer or len(reviewer) > 80 or contains_injection(reviewer):
+        return error_response("reviewer must be 1–80 safe characters", 400)
+    map_path = Path(TRINETRA_ROOT) / "config" / "vendor_training_map.json"
+    try:
+        with TRAINING_MAP_LOCK:
+            data_json = json.loads(map_path.read_text(encoding="utf-8"))
+            target = None
+            for entry in data_json.get("entries", []):
+                candidate = entry.get("rule_id") or hashlib.sha256(
+                    f"{str(entry.get('vendor', '')).lower()}\0{entry.get('pattern', '')}".encode("utf-8")
+                ).hexdigest()[:20]
+                if candidate == rule_id:
+                    target = entry
+                    target["rule_id"] = candidate
+                    break
+            if target is None:
+                return error_response("training rule not found", 404)
+            if action == "approve" and reviewer.casefold() == str(target.get("author") or "").casefold():
+                return error_response("reviewer must be different from the rule author", 409)
+            now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+            target["status"] = "active" if action == "approve" else "deprecated"
+            target["reviewer"] = reviewer
+            target["reviewed_at"] = now
+            target["version"] = int(target.get("version") or 1) + 1
+            history = target.get("history") if isinstance(target.get("history"), list) else []
+            history.append({"status": target["status"], "actor": reviewer, "at": now})
+            target["history"] = history
+            import tempfile as _tf
+            temp_path = None
+            try:
+                with _tf.NamedTemporaryFile(mode="w", delete=False, dir=str(map_path.parent), encoding="utf-8") as handle:
+                    json.dump(data_json, handle, indent=2)
+                    temp_path = handle.name
+                os.replace(temp_path, map_path)
+                temp_path = None
+            finally:
+                if temp_path:
+                    try:
+                        os.unlink(temp_path)
+                    except OSError:
+                        pass
+        if target["status"] == "active":
+            try:
+                from bridge.ml_knn import train as _retrain
+                _retrain()
+            except Exception:
+                pass
+        return jsonify({"message": f"training rule {target['status']}", "entry": target}), 200
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return error_response(f"training rule review failed: {exc}", 500)
 
 # ── Lightweight ML advisory endpoints (KNN TF-IDF, parallel to regex) ──
 @app.route("/api/ml/suggest", methods=["POST"])
@@ -2017,6 +2195,9 @@ def device_audit_pdf(name, device_id):
 @app.route("/ui", methods=["GET"])
 @app.route("/upload", methods=["GET"])
 def upload_gui():
+    frontend_dist = Path(TRINETRA_ROOT) / "frontend" / "dist"
+    if (frontend_dist / "index.html").is_file():
+        return send_from_directory(frontend_dist, "index.html")
     html = """
 <!doctype html>
 <html lang="en">
@@ -2362,6 +2543,24 @@ def archive_session(name):
         app.logger.exception('Could not update session archive marker')
         return error_response('Could not update session. Refresh the list and retry.', 500)
     return jsonify(session=name, archived=archived, evidence_retained=True)
+
+
+@app.route("/<path:frontend_path>", methods=["GET"])
+def frontend_spa(frontend_path):
+    """Serve the built React workspace while preserving JSON errors for API paths."""
+    if frontend_path == "api" or frontend_path.startswith("api/"):
+        return error_response("not found", 404)
+    frontend_dist = Path(TRINETRA_ROOT) / "frontend" / "dist"
+    if not (frontend_dist / "index.html").is_file():
+        return error_response("Cortex workspace is not built. Run make start.", 404)
+    candidate = (frontend_dist / frontend_path).resolve()
+    try:
+        candidate.relative_to(frontend_dist.resolve())
+    except ValueError:
+        return error_response("not found", 404)
+    if candidate.is_file():
+        return send_from_directory(frontend_dist, frontend_path)
+    return send_from_directory(frontend_dist, "index.html")
 
 
 # ── Error handlers ──

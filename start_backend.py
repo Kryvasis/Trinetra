@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-command local backend startup for Linux/WSL, using Python 3.10+."""
+"""One-command local Cortex startup for Linux/WSL, using Python 3.10+."""
 import hashlib
 import os
 from pathlib import Path
@@ -20,9 +20,18 @@ def main():
         raise RuntimeError("Python 3.10+ is required.")
     if os.name != "posix":
         raise RuntimeError("Run this command in your Ubuntu/WSL terminal.")
-    for tool in ("java", "javac"):
-        if not shutil.which(tool):
-            raise RuntimeError("Install a JDK first: sudo apt install default-jdk")
+    for tool in ("java", "javac", "node", "npm"):
+        resolved = shutil.which(tool)
+        package = "default-jdk" if tool in ("java", "javac") else "nodejs npm"
+        if not resolved:
+            raise RuntimeError(f"Missing {tool}. Install it inside WSL first: sudo apt install {package}")
+        # Windows npm inherited through WSL interop runs lifecycle scripts from a
+        # UNC working directory and fails in cmd.exe. Require a native WSL tool.
+        if tool in ("node", "npm") and Path(resolved).as_posix().startswith("/mnt/"):
+            raise RuntimeError(
+                "Windows Node/npm was found, but Cortex is running in WSL. "
+                "Install Node.js 20+ inside WSL, then reopen the terminal."
+            )
     host = os.environ.get("TRINETRA_BRIDGE_HOST", "127.0.0.1")
     port = int(os.environ.get("TRINETRA_BRIDGE_PORT", "5000"))
     with socket.socket() as probe:
@@ -52,9 +61,19 @@ def main():
     output.mkdir(exist_ok=True)
     sources = sorted(str(path) for path in (ROOT / "src").glob("*.java"))
     run(["javac", "-Xlint:-unchecked", "-d", str(output), *sources])
+    frontend = ROOT / "frontend"
+    frontend_stamp = frontend / "node_modules" / ".cortex-package-lock.sha256"
+    lock_digest = hashlib.sha256((frontend / "package-lock.json").read_bytes()).hexdigest()
+    if not frontend_stamp.exists() or frontend_stamp.read_text().strip() != lock_digest:
+        print("Installing frontend dependencies (first run or changed lockfile)...", flush=True)
+        subprocess.run(["npm", "ci"], cwd=frontend, check=True)
+        frontend_stamp.parent.mkdir(parents=True, exist_ok=True)
+        frontend_stamp.write_text(lock_digest + "\n")
+    print("Building Cortex workspace...", flush=True)
+    subprocess.run(["npm", "run", "build"], cwd=frontend, check=True)
     wrapper = ROOT / "trinetra"
     wrapper.chmod(wrapper.stat().st_mode | 0o100)
-    print(f"Cortex API: http://{host}:{port}\nPress Ctrl+C to stop.", flush=True)
+    print(f"Cortex workspace: http://{host}:{port}\nPress Ctrl+C to stop.", flush=True)
     os.chdir(ROOT)
     # Replace this process: signals and exit status belong directly to Flask.
     os.execv(str(python), [str(python), "-m", "bridge.app"])

@@ -1,7 +1,7 @@
-# Trinetra Demo Script — Judge-Facing Walkthrough
+# Cortex Demo Script — Judge-Facing Walkthrough
 
 **Estimated time:** 8–10 minutes  
-**Pre-requisites:** Bridge running (`python3 -m bridge.app`), React dev server running (`cd frontend && npm run dev`), `make compile` done.
+**Pre-requisites:** JDK, Python 3.10+ and Node/npm installed. `make start` performs the remaining setup.
 
 ---
 
@@ -9,12 +9,10 @@
 
 ```bash
 cd /home/kali/Desktop/Trinetra
-make compile                      # ensure Java is built
-python3 -m bridge.app &           # start Flask bridge on :5000
-cd frontend && npm run dev &      # start React dev server on :5173
+make start
 ```
 
-Open **http://localhost:5173** in the browser.
+Open **http://127.0.0.1:5000** in the browser.
 
 ---
 
@@ -33,7 +31,7 @@ Open **http://localhost:5173** in the browser.
 5. Click **Run Compliance Scan**.
 6. **Show:** Processing spinner appears, then scan results card shows pass/fail/unrecognized counts.
 
-**What to say:** *"Trinetra ingests the config file, parses each line against known vendor patterns, and runs compliance checks using our deterministic decision engine — no live SSH required. Hardware/OS fields are distinct columns, not folded into device_id, and OS auto-detects from the banner if you leave it blank."*
+**What to say:** *"Cortex ingests the config file, records vendor and device evidence, and evaluates deterministic checks without requiring live SSH. Hardware and OS fields remain distinct, and uncertain evidence remains visible instead of becoming a fabricated pass."*
 
 ## Step 1b — Bulk Upload (1 min) — per-file status, same session
 
@@ -83,7 +81,7 @@ Open **http://localhost:5173** in the browser.
 2. Type `demo-judge` and click **Load Unrecognized Lines**.
 3. **Show:** The unrecognized line `custom-vendor-feature enable zone-trust` appears in the list with the device label `cisco-lab-01`.
 
-**What to say:** *"Trinetra flagged this line as unrecognized — it's a vendor-specific command not in our pattern database. Instead of discarding it, we let the operator teach the system."*
+**What to say:** *"Cortex flagged this line as unrecognized instead of guessing. An operator can propose a rule, but a different reviewer must approve it before it affects parsing."*
 
 ---
 
@@ -95,12 +93,13 @@ Open **http://localhost:5173** in the browser.
    - **Security Category:** `Vendor-Specific Hardening`
    - **Control Mapping:** `CIS-v8-4.6`
    - **Remediation:** `Enable zone-trust for vendor-specific hardening`
-3. Click **Add Training Entry**.
-4. **Show:** Toast "Training entry added", before/after count drops by 1.
-5. Navigate back to **Upload**, re-upload the same `cisco-lab-01.txt` config to the same session.
-6. **Show:** Unrecognized count is now 0 — the line is recognized.
+3. Enter the rule author and a vendor hardening reference, then click **Save draft rule**.
+4. **Show:** The rule appears in the approval queue but the unknown line remains. Explain that drafts are deliberately inert.
+5. Enter a different reviewer name and click **Approve and activate**. Cortex rejects self-approval.
+6. Navigate back to **Upload**, re-upload the same `cisco-lab-01.txt` config to the same session.
+7. **Show:** The unrecognized count drops because the independently approved rule is now active.
 
-**What to say:** *"Zero Java code changes. The training entry is stored in a JSON file and takes effect immediately on re-upload. This is how we teach Trinetra new vendor patterns without redeployment."*
+**What to say:** *"AI can suggest a mapping, but it cannot activate one. Cortex records the author, reference, confidence and history, then requires a second operator to approve the rule before it can affect parsing."*
 
 ---
 
@@ -111,7 +110,7 @@ Open **http://localhost:5173** in the browser.
 3. **Show:** Device table with `cisco-lab-01`, vendor "Cisco", ingestion method "Config Upload", pass/fail counts, and per-device compliance progress bars.
 4. If you uploaded a second device (juniper-lab-01), show both rows.
 
-**What to say:** *"For fleet audits, Trinetra tracks every device independently — ingestion method, vendor, and per-device compliance scores — giving a unified view across a multi-vendor network."*
+**What to say:** *"Cortex tracks each device and assessment independently—ingestion method, vendor, evidence and mapped-check posture—while preserving one fleet view."*
 
 ---
 

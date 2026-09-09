@@ -174,3 +174,11 @@ marker is not a security boundary or a hash-chain record. Saved links and manual
 session lookup still work, and diagnostics still validate retained sessions.
 The doctor response partitions real session files into `sessions` and
 `archived_sessions`; the UI never turns validation errors into session inventory.
+
+## Assurance and governed rules (2026-09-09)
+
+- `/assurance` publishes repository-derived control, probe and vendor-depth counts. Missing expert-labelled accuracy remains visibly unavailable rather than rendered as zero or estimated.
+- Integrity receipt generation requires a valid saved session. Receipts commit to recorded chain hashes with a Merkle root and local Ed25519 signature; the interface explicitly distinguishes this from an independently anchored ledger transaction.
+- Receipt verification accepts JSON, reports malformed, signature-failed and current-evidence-mismatch states separately, and never treats an embedded public key as external identity proof.
+- New UI-created training rules enter `draft`. Draft and deprecated rules are ignored by the Java parser. A different named reviewer must approve a draft before it becomes active; author, reviewer, timestamps, version, reference, confidence and state history remain in the rule record.
+- `make start` builds the React application and serves the SPA through the loopback Flask service at port 5000. Vite remains a development-only workflow.

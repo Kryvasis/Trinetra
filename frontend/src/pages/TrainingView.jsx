@@ -1,8 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
 import Spinner from '../components/Spinner'
 import SceneHeader from '../components/SceneHeader'
 import { rememberSession, validSession } from '../utils/activeSession'
+
+const safeReference = value => {
+  try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) ? url.href : '' } catch { return '' }
+}
 
 export default function TrainingView({ api, toast }) {
   const [params] = useSearchParams()
@@ -30,13 +34,32 @@ export default function TrainingView({ api, toast }) {
   const [controlMapping, setControlMapping] = useState('')
   const [remediation, setRemediation] = useState('')
   const [osVersionTrain, setOsVersionTrain] = useState('')
+  const [author, setAuthor] = useState('operator')
+  const [sourceReference, setSourceReference] = useState('')
+  const [confidence, setConfidence] = useState('')
   const [training, setTraining] = useState(false)
   const [trainErrors, setTrainErrors] = useState({})
   const [mlSuggestions, setMlSuggestions] = useState({}) // line -> {label, confidence, source}
   const [nlpSuggestions, setNlpSuggestions] = useState({}) // line -> {category, control, remediation, confidence, reasoning}
   const [mlStatus, setMlStatus] = useState(null)
+  const [draftRules, setDraftRules] = useState([])
+  const [reviewer, setReviewer] = useState('')
+  const [reviewingRule, setReviewingRule] = useState('')
+  const [reviewError, setReviewError] = useState('')
   const abortRef = useRef(null)
   useEffect(() => () => { abortRef.current?.abort(); abortRef.current = null }, [])
+
+  const loadDraftRules = useCallback(async () => {
+    try {
+      const response = await fetch(`${api}/training-rules?status=draft`)
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Draft rules are unavailable')
+      setDraftRules(Array.isArray(data.entries) ? data.entries : [])
+    } catch (err) {
+      setReviewError(err.message)
+    }
+  }, [api])
+  useEffect(() => { loadDraftRules() }, [loadDraftRules])
 
   useEffect(() => {
     if (sessionParam && sessionParam !== session) {
@@ -153,6 +176,8 @@ export default function TrainingView({ api, toast }) {
     }
     if (!category.trim()) e.category = 'Security category is required'
     else if (category.trim().length < 2) e.category = 'Category must be at least 2 characters'
+    if (!author.trim()) e.author = 'Rule author is required'
+    if (confidence !== '' && (Number.isNaN(Number(confidence)) || Number(confidence) < 0 || Number(confidence) > 1)) e.confidence = 'Confidence must be between 0 and 1'
     setTrainErrors(e)
     if (e.pattern) patternRef.current?.focus()
     else if (e.category) categoryRef.current?.focus()
@@ -178,6 +203,10 @@ export default function TrainingView({ api, toast }) {
         control_mapping: controlMapping.split(',').map(s => s.trim()).filter(Boolean),
         remediation: remediation.trim() || `Configure ${category.trim()} properly`,
         os_version: osVersionTrain.trim() || undefined,
+        status: 'draft',
+        author: author.trim(),
+        source_reference: sourceReference.trim() || undefined,
+        confidence: confidence === '' ? undefined : Number(confidence),
       }
       const res = await fetch(`${api}/session/${encodeURIComponent(session)}/train`, {
         method: 'POST',
@@ -191,7 +220,9 @@ export default function TrainingView({ api, toast }) {
         throw new Error(err.error || `Training failed: ${res.status}`)
       }
       if (abortRef.current !== controller) return
-      toast('Training entry added — re-upload config to see effect', 'success')
+      const body = await res.json()
+      toast('Draft rule saved for independent review', 'success')
+      setDraftRules(current => [body.entry, ...current.filter(item => item.rule_id !== body.entry.rule_id)])
       // Clear form
       setSelectedLine(null)
       setPattern('')
@@ -199,11 +230,11 @@ export default function TrainingView({ api, toast }) {
       setControlMapping('')
       setRemediation('')
       setOsVersionTrain('')
+      setSourceReference('')
+      setConfidence('')
       setTrainErrors({})
       // Re-fetch to show updated count
-      const newUnrecognized = unrecognized.filter(u => u.line !== selectedLine)
-      setUnrecognized(newUnrecognized)
-      setTotalAfter(newUnrecognized.length)
+      setTotalAfter(unrecognized.length)
     } catch (err) {
       if (abortRef.current !== controller) return
       setError(err.name === 'AbortError' ? 'Training timed out and may have completed. Check saved patterns before retrying.' : err.message)
@@ -223,6 +254,7 @@ export default function TrainingView({ api, toast }) {
     setPattern(line.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\.\*/g, '.*'))
     const nlp = nlpSuggestions[line]
     const ml = mlSuggestions[line]
+    setConfidence(nlp?.confidence != null ? String(nlp.confidence) : ml?.confidence != null ? String(ml.confidence) : '')
     if (nlp && nlp.category) {
       setCategory(nlp.category)
       setControlMapping(nlp.control || '')
@@ -242,6 +274,28 @@ export default function TrainingView({ api, toast }) {
     if (!nlp) setRemediation('')
     setOsVersionTrain('')
     setTrainErrors({})
+  }
+
+  const reviewRule = async (ruleId) => {
+    if (!reviewer.trim() || reviewingRule) {
+      setReviewError('Enter the independent reviewer name before approval.')
+      return
+    }
+    setReviewingRule(ruleId); setReviewError('')
+    try {
+      const response = await fetch(`${api}/training-rules/${encodeURIComponent(ruleId)}/review`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', reviewer: reviewer.trim() }),
+      })
+      const data = await response.json()
+      if (!response.ok) throw new Error(data.error || 'Rule approval failed')
+      setDraftRules(current => current.filter(item => item.rule_id !== ruleId))
+      toast('Training rule approved and activated', 'success')
+    } catch (err) {
+      setReviewError(err.message)
+    } finally {
+      setReviewingRule('')
+    }
   }
 
   return (
@@ -403,15 +457,40 @@ export default function TrainingView({ api, toast }) {
                   />
                 </div>
 
+                <div className="form-group">
+                  <label htmlFor="training-author">Rule author</label>
+                  <input id="training-author" disabled={training} maxLength={80} required value={author} aria-invalid={!!trainErrors.author} onChange={e => { setAuthor(e.target.value); setTrainErrors(prev => ({ ...prev, author: null })) }} />
+                  {trainErrors.author && <div className="field-error">{trainErrors.author}</div>}
+                  <p className="field-help">The reviewer must be a different person.</p>
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="training-source">Security reference (optional)</label>
+                  <input id="training-source" disabled={training} maxLength={500} value={sourceReference} onChange={e => setSourceReference(e.target.value)} placeholder="Vendor hardening guide or control URL" />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="training-confidence">Advisory confidence (0–1, optional)</label>
+                  <input id="training-confidence" disabled={training} type="number" min="0" max="1" step="0.01" value={confidence} aria-invalid={!!trainErrors.confidence} onChange={e => { setConfidence(e.target.value); setTrainErrors(prev => ({ ...prev, confidence: null })) }} />
+                  {trainErrors.confidence && <div className="field-error">{trainErrors.confidence}</div>}
+                </div>
+
                 <button type="submit" className="btn-primary training-submit" disabled={training}>
-                  {training ? <><Spinner size={14} /> Saving entry…</> : 'Add training entry'}
+                  {training ? <><Spinner size={14} /> Saving draft…</> : 'Save draft rule'}
                 </button>
               </form>
             )}
-            {!selectedLine && <div className="training-empty-state"><p>Choose one directive from the review queue. Cortex will generate an editable pattern and advisory classification.</p><ol><li>Confirm the vendor and pattern.</li><li>Add the security category and mapped controls.</li><li>Save, then re-upload to verify recognition.</li></ol><small>A saved label improves parsing; it does not prove that a configuration is secure.</small></div>}
+            {!selectedLine && <div className="training-empty-state"><p>Choose one directive from the evidence queue. Cortex creates an editable advisory draft; a second operator must approve it before parsing changes.</p><ol><li>Confirm the vendor, version and pattern.</li><li>Cite the security category and mapped controls.</li><li>Save a draft for independent review.</li></ol><small>An approved label improves parsing; it does not prove that a configuration is secure.</small></div>}
           </section>
         </div>
       )}
+
+      <section className="card rule-review-panel" aria-labelledby="rule-review-heading">
+        <div className="section-heading"><div><h2 id="rule-review-heading">Rule approval queue</h2><p>Draft rules remain inert until a different operator reviews and activates them.</p></div><span className="badge badge-review">{draftRules.length} drafts</span></div>
+        <div className="rule-review-toolbar"><label htmlFor="training-reviewer">Independent reviewer</label><input id="training-reviewer" maxLength={80} value={reviewer} onChange={event => setReviewer(event.target.value)} placeholder="Reviewer name" /></div>
+        {reviewError && <p className="field-error" role="alert">{reviewError}</p>}
+        {draftRules.length === 0 ? <p className="field-help">No draft rules are waiting for approval.</p> : <div className="rule-review-list">{draftRules.map(rule => <article key={rule.rule_id} className="rule-review-item"><div><strong>{rule.vendor} · {rule.security_category || 'Unclassified'}</strong><code>{rule.pattern}</code><span>Author: {rule.author || 'legacy operator'} · Version {rule.version || 1}</span>{safeReference(rule.source_reference) && <a href={safeReference(rule.source_reference)} target="_blank" rel="noreferrer">Review source</a>}</div><button type="button" className="btn-primary" disabled={!!reviewingRule} onClick={() => reviewRule(rule.rule_id)}>{reviewingRule === rule.rule_id ? <><Spinner size={14} /> Activating…</> : 'Approve and activate'}</button></article>)}</div>}
+      </section>
 
       {/* Before/after summary */}
       {hasLoaded && totalBefore > 0 && (
@@ -425,7 +504,7 @@ export default function TrainingView({ api, toast }) {
             )}
           </div>
           <p>
-            Saved patterns take effect on the next configuration upload. These counts track this review only; re-upload the configuration to verify recognition. A saved label is not proof of security compliance.
+            Only independently approved patterns take effect on the next configuration upload. Drafts remain inert. Re-upload the configuration to verify recognition after approval.
           </p>
           {mlStatus && <p className="field-help">
             ML: {mlStatus.has_sklearn ? `TF-IDF char 3-5 + KNN(k=${mlStatus.k}, cosine) — corpus ${mlStatus.corpus_size}, model ${mlStatus.model_exists ? 'ready' : 'training'}` : 'sklearn not installed — regex only fallback'} · Threshold 0.55 · Deterministic scorer remains authoritative, ML is advisory

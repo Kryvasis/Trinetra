@@ -1,5 +1,5 @@
 # ================================================================
-# Trinetra Beta Makefile -- Build, lifecycle, and diagnostics
+# Cortex Makefile -- Build, lifecycle, and diagnostics
 # ================================================================
 
 # -- Configuration -----------------------------------------------
@@ -18,7 +18,7 @@ start:
 # compiled but not listed here: it is a helper spawned by the concurrency
 # test, not a runnable suite.
 JAVA_TEST_CLASSES := TrinetraNormalizedResultsTest TrinetraAuditTest \
-                     TrinetraTestSelectionTest TrinetraVendorConnectorTest \
+                     TrinetraTestSelectionTest TrinetraVendorConnectorTest VendorTrainingGovernanceTest \
                      TrinetraComplianceTest TrinetraStatNormalizedResultsTest \
                      TrinetraComplianceScorerTest TrinetraNarrativeGeneratorTest \
                      TrinetraAuditReportBuilderTest TrinetraJuniperConnectorTest \
@@ -29,8 +29,8 @@ RUNTIME_CP        := $(CURDIR)/$(OUT_DIR):$(CURDIR)/lib/*
 # help -- show available targets
 # ================================================================
 help:
-	@echo "Trinetra Beta -- Available targets:"
-	@echo "  make start        Set up and start backend (Linux/WSL)"
+	@echo "Cortex -- Available targets:"
+	@echo "  make start        Build and start the Cortex workspace (Linux/WSL)"
 	@echo ""
 	@echo "  make compile      Build Java classes to $(OUT_DIR)/"
 	@echo "  make clean        Remove $(OUT_DIR)/ directory"

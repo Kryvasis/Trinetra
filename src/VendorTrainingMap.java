@@ -68,6 +68,10 @@ public class VendorTrainingMap {
                 for (Object o : (List<?>) entriesObj) {
                     if (!(o instanceof Map)) continue;
                     Map<String, Object> m = (Map<String, Object>) o;
+                    // Governed entries are inert until a second operator approves them.
+                    // Legacy entries without a status remain active for compatibility.
+                    String status = TrinetraCommon.getString(m, "status", "active");
+                    if (!status.equalsIgnoreCase("active")) continue;
                     String vendor = TrinetraCommon.getString(m, "vendor", "");
                     String pattern = TrinetraCommon.getString(m, "pattern", "");
                     String cat = TrinetraCommon.getString(m, "security_category", "");

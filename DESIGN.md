@@ -191,7 +191,7 @@ The introduction retains the original circular model and entry action and its in
 
 ### Navigation
 
-Six plain-language route links sit inside the graphite rail. Current navigation is a white filled pill with dark text; the legacy underline is explicitly removed. Hover uses surface3. Desktop links are at least 38px high; narrow links at least 42px. Focus is a 2px focus-color outline offset 4px. The Cortex brand links to Overview.
+Seven plain-language route links sit inside the graphite rail. Current navigation is a white filled pill with dark text; the legacy underline is explicitly removed. Hover uses surface3. Desktop links are at least 38px high; narrow links at least 42px. Focus is a 2px focus-color outline offset 4px. The Cortex brand links to Overview. Assurance is a first-class route for implementation coverage and signed-receipt verification; it uses the same restrained tables, rules and semantic status language.
 
 ### Buttons and fields
 

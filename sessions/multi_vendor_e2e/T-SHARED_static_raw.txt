@@ -1,8 +1,0 @@
-=== T-SHARED ===
-Target: 10.10.1.20
-Exit code: 3
-=== STDOUT ===
-T-SHARED VENDOR=[Juniper] CONNECTOR=[JuniperConnector] TARGET=[10.10.1.20]
-CONTROL_VIOLATION: Juniper weak TLS 1.0 offered
-=== STDERR ===
-

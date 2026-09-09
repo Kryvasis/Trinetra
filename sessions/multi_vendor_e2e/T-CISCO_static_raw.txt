@@ -1,8 +1,0 @@
-=== T-CISCO ===
-Target: 10.10.1.10
-Exit code: 0
-=== STDOUT ===
-T-CISCO VENDOR=[Cisco] CONNECTOR=[CiscoConnector] TARGET=[10.10.1.10]
-terminal length 0 ; show version -> Cisco IOS 15.9
-=== STDERR ===
-
